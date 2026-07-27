@@ -21,6 +21,10 @@
       undoTip: 'Undo', redoTip: 'Redo', history: 'History', deleteFromProject: 'Delete from Project',
       templates: 'Templates', discover: 'Discover', addTrade: 'Add Trade',
       applyToView: 'Apply to view', removeFromView: 'Remove from view',
+      targets: 'Apply to', targetsTip: 'Choose which views and view templates the filters are applied to.',
+      targetsTitle: 'Apply to', targetsActiveView: 'Active view', targetsVtHeader: 'View templates',
+      targetsVtNone: 'No view templates in this document.', targetsSearch: 'Search view templates...',
+      targetsClear: 'Reset to active view',
       editTradeTip: 'Edit trade', editRuleTip: 'Edit rule', addRule: 'Add Rule',
       applyTradeToView: 'Apply trade to view', noRule: 'Select a rule to edit it.',
       filterLogic: 'Filter Logic', overrideStyle: 'Override Style', appearance: 'Appearance & Visibility',
@@ -47,6 +51,13 @@
         { id: 'T6', label: 'Ceiling Heatmap...', color: '#57b0e0', checked: true, active: false },
         { id: 'T7', label: 'Ceiling Heatmap', color: '#57b0e0', checked: true, active: false },
         { id: 'T8', label: 'Ceiling Grids —...', color: '#9a9a9a', checked: true, active: false }
+      ],
+      targetActiveView: true, targetCount: 1, activeViewName: 'L02 - Mechanical RCP',
+      viewTemplates: [
+        { id: 1, name: 'MEP - Ceiling Coordination', viewType: 'Ceiling Plan', checked: false },
+        { id: 2, name: 'Architectural RCP', viewType: 'Ceiling Plan', checked: false },
+        { id: 3, name: 'MEP - Services Layout', viewType: 'Floor Plan', checked: false },
+        { id: 4, name: 'Coordination 3D', viewType: '3D View', checked: false }
       ],
       rules: [
         { id: 'R1', name: 'Fire Dampers (copy)', color: '#d94b40', catLabel: 'Duct Accessories', active: true, enabled: true },

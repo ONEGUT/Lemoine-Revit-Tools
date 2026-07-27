@@ -80,6 +80,30 @@ namespace LemoineTools.Tools.AutoFilters
         /// </summary>
         public bool ShowFailureDialog { get; set; } = false;
 
+        /// <summary>
+        /// Views and/or VIEW TEMPLATES to attach filters to (apply-to-view mode only — has no
+        /// effect when <see cref="CreateOnly"/> is set). Empty (the default) targets the active
+        /// view alone, preserving the historical behaviour for callers that don't pick targets.
+        ///
+        /// A view template is just a <c>View</c> with <c>IsTemplate == true</c> and accepts the
+        /// same AddFilter / SetIsFilterEnabled / SetFilterOverrides calls, so it needs no special
+        /// casing here. Targeting the template is in fact the authoritative placement: a view
+        /// whose filters are governed by a template rejects SetFilterOverrides outright.
+        ///
+        /// An id that no longer resolves to a View is logged and skipped, never silently dropped.
+        /// </summary>
+        public IList<ElementId> TargetViewIds { get; set; } = new List<ElementId>();
+
+        /// <summary>
+        /// Whether the ACTIVE VIEW is also an apply target, alongside anything in
+        /// <see cref="TargetViewIds"/>. Defaults to true so a caller that sets no targets at all
+        /// behaves exactly as before (active view only). The window cannot resolve the active
+        /// view itself — it runs off the Revit thread — so this stays a flag the handler honours.
+        /// Setting it false with an empty <see cref="TargetViewIds"/> still falls back to the
+        /// active view, since a run with no targets at all would be a silent no-op.
+        /// </summary>
+        public bool IncludeActiveView { get; set; } = true;
+
         // ── Callbacks ─────────────────────────────────────────────────────────
         public Action<string, string>?        PushLog    { get; set; }
         public Action<int, int, int, int>?    OnProgress { get; set; }
@@ -89,6 +113,11 @@ namespace LemoineTools.Tools.AutoFilters
         // Per-run accumulation of failure messages, surfaced via the TaskDialog when
         // ShowFailureDialog is set. Cleared at the start of every Execute().
         private readonly List<string> _failures = new List<string>();
+
+        // Successful (filter x target) attachments this run. With multiple targets a single rule
+        // can land several times, so the completion line reports placements separately from the
+        // rule-level pass/fail counters — "12 applied" must not be read as 12 filters.
+        private int _placements;
 
         // Lazily-built once per run: every view in the document, reused across all
         // RebuildFilter calls so several rule rebuilds in one run don't each re-enumerate
@@ -109,13 +138,13 @@ namespace LemoineTools.Tools.AutoFilters
         public void Execute(UIApplication app)
         {
             var doc  = app.ActiveUIDocument.Document;
-            var view = doc.ActiveView;
             int pass = 0, fail = 0, skip = 0, removed = 0;
             _failures.Clear();
+            _placements = 0;
 
             try
             {
-                Run(app, doc, view, ref pass, ref fail, ref skip, ref removed);
+                Run(app, doc, ResolveTargets(doc), ref pass, ref fail, ref skip, ref removed);
             }
             catch (Exception ex)
             {
@@ -131,6 +160,8 @@ namespace LemoineTools.Tools.AutoFilters
                 SelectedDisciplines = new List<string>();
                 IncludeSelectedExternallyManaged = false;
                 ApplyOverrideFilterNames = null;
+                TargetViewIds       = new List<ElementId>();
+                IncludeActiveView   = true;
             }
 
             Progress(100, pass, fail, skip);
@@ -138,6 +169,46 @@ namespace LemoineTools.Tools.AutoFilters
 
             if (ShowFailureDialog && fail > 0)
                 ShowFailureSummary(fail);
+        }
+
+        // Resolves TargetViewIds into live View objects. Views and view templates are both
+        // plain Views here — no special casing. An id that no longer resolves (deleted between
+        // the picker capture and the run) is logged rather than silently dropped, so a target
+        // the user chose can never vanish without a trace. An empty/all-unresolvable list falls
+        // back to the active view, which is the historical single-target behaviour.
+        private List<View> ResolveTargets(Document doc)
+        {
+            var targets = new List<View>();
+            var seen    = new HashSet<long>();
+
+            if (IncludeActiveView && doc.ActiveView != null)
+            {
+                targets.Add(doc.ActiveView);
+                seen.Add(doc.ActiveView.Id.Value);
+            }
+
+            foreach (var id in TargetViewIds)
+            {
+                if (id == null || id == ElementId.InvalidElementId) continue;
+                if (doc.GetElement(id) is View v)
+                {
+                    // The active view can also appear in the picked list — attach once only,
+                    // or the placement count double-reports it.
+                    if (seen.Add(v.Id.Value)) targets.Add(v);
+                }
+                else
+                {
+                    Log(AppStrings.T("autofilters.filtersWindow.log.targetMissing", id.Value), "warn");
+                    DiagnosticsLog.Warn("AutoFilters", $"Target view id {id.Value} no longer resolves — skipped.");
+                }
+            }
+
+            if (targets.Count == 0)
+            {
+                var active = doc.ActiveView;
+                if (active != null) targets.Add(active);
+            }
+            return targets;
         }
 
         // Surfaces a run's per-filter failures as a Revit TaskDialog. Runs on Revit's main
@@ -179,7 +250,7 @@ namespace LemoineTools.Tools.AutoFilters
         // One ParameterFilterElement per enabled Rule (unless matchType == "all" where
         // a HasValue rule is used to match all elements with any value for the parameter).
         //
-        private void Run(UIApplication app, Document doc, View view,
+        private void Run(UIApplication app, Document doc, IList<View> targets,
             ref int pass, ref int fail, ref int skip, ref int removed)
         {
             _allViewsCache = null; // rebuild the per-run view snapshot fresh
@@ -190,10 +261,27 @@ namespace LemoineTools.Tools.AutoFilters
             // ElementIds — and therefore their view assignments and legend links — survive.
             bool overwriteDef = OverwriteFilterDefinition;
 
-            if (!createOnly && !view.AreGraphicsOverridesAllowed())
+            // Drop targets that can't carry graphic overrides, but keep going with the rest —
+            // one incompatible target must never sink the whole run. Only meaningful in
+            // apply mode; CreateOnly never touches a view.
+            if (!createOnly)
             {
-                Log(AppStrings.T("autofilters.filtersWindow.log.viewNoOverrides", view.Name), "fail");
-                fail++; return;
+                var usable = new List<View>();
+                foreach (var t in targets)
+                {
+                    if (t.AreGraphicsOverridesAllowed()) { usable.Add(t); continue; }
+                    Log(AppStrings.T("autofilters.filtersWindow.log.viewNoOverrides", t.Name), "fail");
+                    fail++;
+                }
+                targets = usable;
+                if (targets.Count == 0) return;   // every target rejected — already logged above
+
+                // Name the targets up front so the log always shows WHERE the run landed —
+                // especially important once a run can write to a template the user can't see.
+                int templateCount = targets.Where(t => t.IsTemplate).Count();
+                Log(AppStrings.T("autofilters.filtersWindow.log.applyingToTargets",
+                                 targets.Count, templateCount,
+                                 string.Join(", ", targets.Select(t => t.Name))), "info");
             }
 
             // ── Collect source documents ──────────────────────────────────────
@@ -261,9 +349,29 @@ namespace LemoineTools.Tools.AutoFilters
                 .Cast<ParameterFilterElement>()
                 .ToDictionary(f => f.Name);
 
-            var existingViewFilterIds = createOnly
-                ? new HashSet<long>()
-                : new HashSet<long>(view.GetFilters().Select(id => id.Value));
+            // Filters already on each target, keyed by target ElementId. Built once per run so
+            // the per-rule attach loop never re-reads GetFilters(); kept per-target because
+            // "already on this view" is a per-target fact (it drives KeepExistingOverrides).
+            var existingViewFilterIds = new Dictionary<long, HashSet<long>>();
+            if (!createOnly)
+            {
+                foreach (var t in targets)
+                {
+                    HashSet<long> onTarget;
+                    try
+                    {
+                        onTarget = new HashSet<long>(t.GetFilters().Select(id => id.Value));
+                    }
+                    catch (Exception ex)
+                    {
+                        // A target that can't report its filters can't be reasoned about — log
+                        // and treat as empty so the attach still gets attempted (and reports).
+                        DiagnosticsLog.Swallowed($"AutoFilters: read filters on target {t.Id.Value}", ex);
+                        onTarget = new HashSet<long>();
+                    }
+                    existingViewFilterIds[t.Id.Value] = onTarget;
+                }
+            }
 
             int reused = 0;
 
@@ -344,7 +452,7 @@ namespace LemoineTools.Tools.AutoFilters
                                 break;
                             }
 
-                            ApplyExistingFilterToView(view, trade, rule,
+                            ApplyExistingFilterToView(targets, trade, rule,
                                 solidFillId, solidLineId, fillPatternMap, linePatternMap,
                                 existingFilters, existingViewFilterIds,
                                 ref pass, ref fail, ref skip, ref rulesDone, totalRules);
@@ -367,7 +475,7 @@ namespace LemoineTools.Tools.AutoFilters
                             break;
                         }
 
-                        ProcessRule(doc, sourceDocs, view, trade, rule, bipMap, matMap, paramCache,
+                        ProcessRule(doc, sourceDocs, targets, trade, rule, bipMap, matMap, paramCache,
                             solidFillId, solidLineId, fillPatternMap, linePatternMap,
                             existingFilters, existingViewFilterIds,
                             createOnly, overwriteDef,
@@ -403,11 +511,18 @@ namespace LemoineTools.Tools.AutoFilters
 
             string removeMsg = removed > 0 ? AppStrings.T("autofilters.filtersWindow.log.removedSuffix", removed) : "";
             Log(AppStrings.T("autofilters.filtersWindow.log.completeSummary", pass, reused, fail, skip, removeMsg), "pass");
+
+            // Placement count only means something when more than one target was written to;
+            // for the classic single-view run it would just restate the line above.
+            if (!createOnly && targets.Count > 1)
+                Log(AppStrings.T("autofilters.filtersWindow.log.placementSummary",
+                                 _placements, targets.Count), "info");
+
             pass += reused;
         }
 
         private void ProcessRule(
-            Document doc, IList<Document> sourceDocs, View view,
+            Document doc, IList<Document> sourceDocs, IList<View> targets,
             FilterTradeConfig trade, FilterRuleConfig rule,
             Dictionary<string, BuiltInParameter> bipMap,
             Dictionary<string, ElementId> matMap,
@@ -416,7 +531,7 @@ namespace LemoineTools.Tools.AutoFilters
             Dictionary<string, ElementId> fillPatternMap,
             Dictionary<string, ElementId> linePatternMap,
             Dictionary<string, ParameterFilterElement> existingFilters,
-            HashSet<long> existingViewFilterIds,
+            Dictionary<long, HashSet<long>> existingViewFilterIds,
             bool createOnly, bool overwriteDef,
             ref int pass, ref int fail, ref int skip, ref int reused,
             ref int rulesDone, int totalRules)
@@ -604,25 +719,10 @@ namespace LemoineTools.Tools.AutoFilters
 
                 if (!createOnly)
                 {
-                    bool wasOnView = existingViewFilterIds.Contains(pfe!.Id.Value);
-                    if (!wasOnView)
-                    {
-                        view.AddFilter(pfe.Id);
-                        existingViewFilterIds.Add(pfe.Id.Value);
-                    }
-
-                    // Preserve overrides only for a filter that was ALREADY on this view;
-                    // a newly-attached one has nothing to preserve, so it is styled normally.
-                    if (!(keepExistingForThis && wasOnView))
-                    {
-                        // A reached rule is always Enabled (disabled rules are gated out above),
-                        // so the filter is active in the view. Enabled is the single "Apply" switch
-                        // after the Stage 2 merge; FilterOn is kept in sync by the editor.
-                        view.SetIsFilterEnabled(pfe.Id, rule.Enabled);
-
-                        // Apply graphic overrides (colors, line style, halftone, transparency)
-                        ApplyRuleOverride(view, pfe.Id, rule, solidFillId, solidLineId, fillPatternMap, linePatternMap);
-                    }
+                    AttachToTargets(targets, pfe!, rule, keepExistingForThis,
+                                    solidFillId, solidLineId, fillPatternMap, linePatternMap,
+                                    existingViewFilterIds, out int targetFails);
+                    if (targetFails > 0) fail++; // at most one increment per rule
                 }
             }
             catch (Exception ex)
@@ -696,12 +796,12 @@ namespace LemoineTools.Tools.AutoFilters
         // so it is found in the existing-filter index built for this run. A missing filter is a
         // skip-and-log (the owning tool hasn't created it yet), never a failure.
         private void ApplyExistingFilterToView(
-            View view, FilterTradeConfig trade, FilterRuleConfig rule,
+            IList<View> targets, FilterTradeConfig trade, FilterRuleConfig rule,
             ElementId solidFillId, ElementId solidLineId,
             Dictionary<string, ElementId> fillPatternMap,
             Dictionary<string, ElementId> linePatternMap,
             Dictionary<string, ParameterFilterElement> existingFilters,
-            HashSet<long> existingViewFilterIds,
+            Dictionary<long, HashSet<long>> existingViewFilterIds,
             ref int pass, ref int fail, ref int skip, ref int rulesDone, int totalRules)
         {
             if (!rule.Enabled) { skip++; rulesDone++; return; }
@@ -714,26 +814,79 @@ namespace LemoineTools.Tools.AutoFilters
                 return;
             }
 
-            try
-            {
-                bool wasOnView = existingViewFilterIds.Contains(pfe.Id.Value);
-                if (!wasOnView)
-                {
-                    view.AddFilter(pfe.Id);
-                    existingViewFilterIds.Add(pfe.Id.Value);
-                }
-                view.SetIsFilterEnabled(pfe.Id, rule.Enabled);
-                ApplyRuleOverride(view, pfe.Id, rule, solidFillId, solidLineId, fillPatternMap, linePatternMap);
-                pass++;
-            }
-            catch (Exception ex)
-            {
-                Log(AppStrings.T("autofilters.filtersWindow.log.errorFilter", filterName, ex.Message), "fail");
-                fail++;
-            }
+            AttachToTargets(targets, pfe, rule, false,
+                            solidFillId, solidLineId, fillPatternMap, linePatternMap,
+                            existingViewFilterIds, out int targetFails);
+            if (targetFails > 0) fail++; else pass++; // at most one increment per rule
 
             rulesDone++;
             Progress(5 + (int)(rulesDone * 90.0 / totalRules), pass, fail, skip);
+        }
+
+        // Attaches one filter to every target (view or view template) and applies the rule's
+        // graphic overrides. Each target is isolated in its own try/catch: AddFilter throws when
+        // the filter's categories aren't valid for that target's view type, and one incompatible
+        // template must never sink the rest of the run. Every failure is logged with the target's
+        // name — never silently swallowed. Increments _placements per successful attach.
+        //
+        // failedTargetCount reports how many targets failed, for the caller's OWN target-level
+        // reporting — it is deliberately NOT the same counter as the caller's rule-level `fail`.
+        // With a single target the two used to be the same thing (at most one failure per rule),
+        // but with several targets a rule can now fail on some and succeed on others; folding
+        // every target failure into the shared rule-level `fail` would let one bad rule inflate
+        // that count past the total rule count. Callers add at most 1 to their own `fail` when
+        // failedTargetCount > 0, preserving the original "fail counts rules, not attempts" meaning.
+        private void AttachToTargets(
+            IList<View> targets, ParameterFilterElement pfe, FilterRuleConfig rule,
+            bool keepExistingForThis,
+            ElementId solidFillId, ElementId solidLineId,
+            Dictionary<string, ElementId> fillPatternMap,
+            Dictionary<string, ElementId> linePatternMap,
+            Dictionary<long, HashSet<long>> existingViewFilterIds,
+            out int failedTargetCount)
+        {
+            failedTargetCount = 0;
+            foreach (var target in targets)
+            {
+                try
+                {
+                    if (!existingViewFilterIds.TryGetValue(target.Id.Value, out var onTarget))
+                    {
+                        onTarget = new HashSet<long>();
+                        existingViewFilterIds[target.Id.Value] = onTarget;
+                    }
+
+                    bool wasOnView = onTarget.Contains(pfe.Id.Value);
+                    if (!wasOnView)
+                    {
+                        target.AddFilter(pfe.Id);
+                        onTarget.Add(pfe.Id.Value);
+                    }
+
+                    // Preserve overrides only for a filter that was ALREADY on this target;
+                    // a newly-attached one has nothing to preserve, so it is styled normally.
+                    if (!(keepExistingForThis && wasOnView))
+                    {
+                        // A reached rule is always Enabled (disabled rules are gated out above),
+                        // so the filter is active in the view. Enabled is the single "Apply" switch
+                        // after the Stage 2 merge; FilterOn is kept in sync by the editor.
+                        target.SetIsFilterEnabled(pfe.Id, rule.Enabled);
+
+                        // Apply graphic overrides (colors, line style, halftone, transparency)
+                        ApplyRuleOverride(target, pfe.Id, rule, solidFillId, solidLineId,
+                                          fillPatternMap, linePatternMap);
+                    }
+                    _placements++;
+                }
+                catch (Exception ex)
+                {
+                    Log(AppStrings.T("autofilters.filtersWindow.log.errorFilterOnTarget",
+                                     pfe.Name, target.Name, ex.Message), "fail");
+                    DiagnosticsLog.Swallowed(
+                        $"AutoFilters: attach '{pfe.Name}' to target {target.Id.Value}", ex);
+                    failedTargetCount++;
+                }
+            }
         }
 
         // Deletes an existing filter and recreates it with the given categories and element
@@ -749,13 +902,20 @@ namespace LemoineTools.Tools.AutoFilters
             Document doc, string filterName, ICollection<ElementId> catIds,
             ElementFilter? elementFilter, ParameterFilterElement old,
             Dictionary<string, ParameterFilterElement> existingFilters,
-            HashSet<long> existingViewFilterIds)
+            Dictionary<long, HashSet<long>> existingViewFilterIds)
         {
-            bool activeHadFilter = existingViewFilterIds.Remove(old.Id.Value);
+            // Remember which targets carried the OLD id, then re-key them onto the new one so
+            // the attach loop does not double-add. RebuildFilterStatic restores the actual
+            // Revit-side assignments; this only keeps our per-target index honest.
+            var hadFilter = new List<long>();
+            foreach (var kv in existingViewFilterIds)
+                if (kv.Value.Remove(old.Id.Value)) hadFilter.Add(kv.Key);
+
             var pfe = RebuildFilterStatic(doc, filterName, catIds, elementFilter, old,
                                           existingFilters, AllViews(doc));
-            // Keep the active-view bookkeeping in sync so ProcessRule does not double-add.
-            if (activeHadFilter) existingViewFilterIds.Add(pfe.Id.Value);
+
+            foreach (var targetId in hadFilter)
+                existingViewFilterIds[targetId].Add(pfe.Id.Value);
             return pfe;
         }
 

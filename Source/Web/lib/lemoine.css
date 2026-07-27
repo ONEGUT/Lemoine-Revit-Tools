@@ -644,10 +644,48 @@ html, body { height:100%; }
 .l-af-trade .nm { flex: 1 1 auto; font-size: var(--l-fs-md); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .l-af-side-actions { display: flex; gap: 8px; padding: 10px 12px; }
 .l-af-side-actions .l-btn { flex: 1 1 auto; }
+
+/* Apply-target row — shows/opens the picker for which views + view templates the
+   footer's Apply button writes to. Sits between the trade actions and the footer. */
+.l-af-targets { display: flex; align-items: center; gap: 8px; padding: 9px 12px;
+                border-top: 1px solid var(--l-border); cursor: pointer; }
+.l-af-targets:hover { background: var(--l-raised); }
+.l-af-targets .lbl { font-size: var(--l-fs-sm); color: var(--l-text-sub); flex-shrink: 0; }
+.l-af-targets .val { flex: 1 1 auto; font-size: var(--l-fs-sm); color: var(--l-text);
+                      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.l-af-targets .car { font-size: 9px; color: var(--l-text-dim); }
+.l-af-targets .badge { font-size: 10px; color: var(--l-accent); border: 1px solid var(--l-accent);
+                        border-radius: 9px; padding: 1px 7px; background: var(--l-accent-dim);
+                        flex-shrink: 0; }
+
 .l-af-side-foot { display: flex; border-top: 1px solid var(--l-border); }
 .l-af-side-foot .l-btn { flex: 1 1 auto; border: 0; border-radius: 0; min-height: 44px; }
 .l-af-side-foot .l-btn + .l-btn { border-left: 1px solid var(--l-border); }
 .l-af-side-foot .apply { color: var(--l-accent); }
+
+/* Apply-targets popup body (rendered inside the shared .l-sbm-card overlay) */
+.l-af-tgt-active { border: 1px solid var(--l-border); border-radius: var(--l-radius-md);
+                    background: var(--l-bg); padding: 9px 10px; display: flex; align-items: center;
+                    gap: 9px; font-size: var(--l-fs-md); cursor: pointer; }
+.l-af-tgt-active input { accent-color: var(--l-accent); margin: 0; }
+.l-af-tgt-active .sub { font-size: var(--l-fs-sm); color: var(--l-text-dim); }
+.l-af-tgt-hdr { font-size: var(--l-fs-sm); font-weight: 600; color: var(--l-text-sub);
+                text-transform: uppercase; letter-spacing: .04em; margin: 14px 0 6px; }
+.l-af-tgt-search { width: 100%; padding: 6px 9px; font-size: var(--l-fs-sm); background: var(--l-bg);
+                    color: var(--l-text); border: 1px solid var(--l-border); border-radius: var(--l-radius-md);
+                    font-family: inherit; box-sizing: border-box; }
+.l-af-tgt-grp { font-size: 10px; color: var(--l-text-dim); text-transform: uppercase;
+                letter-spacing: .05em; padding: 8px 0 3px; border-top: 1px solid var(--l-border);
+                margin-top: 6px; }
+.l-af-tgt-grp:first-of-type { border-top: 0; margin-top: 6px; }
+.l-af-tgt-row { display: flex; align-items: center; gap: 9px; padding: 7px 8px;
+                border-radius: var(--l-radius-md); font-size: var(--l-fs-md); cursor: pointer; }
+.l-af-tgt-row:hover { background: var(--l-raised); }
+.l-af-tgt-row.on { background: var(--l-accent-dim); }
+.l-af-tgt-row input { accent-color: var(--l-accent); margin: 0; }
+.l-af-tgt-row .nm { flex: 1 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.l-af-tgt-row .tag { font-size: var(--l-fs-sm); color: var(--l-text-dim); flex-shrink: 0; }
+.l-af-tgt-empty { font-size: var(--l-fs-sm); font-style: italic; color: var(--l-text-dim); padding: 8px 0; }
 
 /* Rule list (centre) */
 .l-af-mid { flex: 1 1 auto; display: flex; flex-direction: column; min-width: 0; min-height: 0; }

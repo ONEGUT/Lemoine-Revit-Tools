@@ -32,6 +32,19 @@ namespace LemoineTools.Framework.Web
         private readonly List<string> _fillPatterns;
         private readonly List<string> _linePatterns;
 
+        // View templates captured on the Revit main thread at window open, plus the user's
+        // chosen apply targets. "View template" = a Revit view template, NOT an Auto Filters
+        // preset (that is _trades + AutoFiltersSettings.Templates).
+        private readonly List<ViewTemplateEntry> _viewTemplates;
+        // Ids of the view templates ticked in the Apply to... popup. Empty (default) = the
+        // active view alone, which is the pre-existing behaviour.
+        private readonly HashSet<long> _targetTemplateIds = new HashSet<long>();
+        // Whether the active view is also a target. Default true so Apply keeps working
+        // exactly as before until the user deliberately changes it.
+        private bool _targetActiveView = true;
+        // Display-only — the handler resolves the actual active view itself at run time.
+        private readonly string _activeViewName;
+
         // Undo/redo — a stack of (label, serialized buffer) like the WPF window's history.
         private readonly List<(string Label, string Snapshot)> _history = new List<(string, string)>();
         private int _historyIndex;
@@ -41,10 +54,13 @@ namespace LemoineTools.Framework.Web
         private static string TF(string key, params object[] args) =>
             AppStrings.T("globalSettings.filters." + key, args);
 
-        public WebAutoFilters(List<string> fillPatterns, List<string> linePatterns)
+        public WebAutoFilters(List<string> fillPatterns, List<string> linePatterns,
+                              List<ViewTemplateEntry>? viewTemplates = null, string activeViewName = "")
         {
-            _fillPatterns = fillPatterns ?? new List<string>();
-            _linePatterns = linePatterns ?? new List<string> { "Solid" };
+            _fillPatterns   = fillPatterns ?? new List<string>();
+            _linePatterns   = linePatterns ?? new List<string> { "Solid" };
+            _viewTemplates  = viewTemplates ?? new List<ViewTemplateEntry>();
+            _activeViewName = activeViewName ?? "";
             _trades   = AutoFiltersSettings.DeepCopy(AutoFiltersSettings.Instance.Trades);
             _snapshot = Serialize(_trades);
             _history.Add((TW("window.history.opened"), _snapshot));
@@ -599,7 +615,60 @@ namespace LemoineTools.Framework.Web
             Capture(TW("window.history.editGeneric"));
         }
 
-        // ── Templates ─────────────────────────────────────────────────────────
+        // ── Apply targets (view templates) ────────────────────────────────────
+        //
+        // Distinct from the preset "Templates" block below: these are Revit view templates
+        // the run writes filters INTO, not saved Auto Filters configurations.
+
+        /// <summary>View templates available in the document, for the Apply to... popup.</summary>
+        public IReadOnlyList<ViewTemplateEntry> ViewTemplates => _viewTemplates;
+
+        /// <summary>Whether the active view is one of the apply targets.</summary>
+        public bool TargetActiveView => _targetActiveView;
+
+        /// <summary>Active view's name, for display only (the handler resolves it for real).</summary>
+        public string ActiveViewName => _activeViewName;
+
+        /// <summary>Ids of the view templates ticked as apply targets.</summary>
+        public IReadOnlyCollection<long> TargetTemplateIds => _targetTemplateIds;
+
+        /// <summary>Total apply targets — drives the footer button's count label.</summary>
+        public int TargetCount => (_targetActiveView ? 1 : 0) + _targetTemplateIds.Count;
+
+        /// <summary>
+        /// Ticks/unticks the active view as an apply target. Refuses to leave zero targets
+        /// selected — the handler falls back to the active view when it receives none at all
+        /// (a run must always land somewhere), so letting the picker show "0 targets" here
+        /// would silently lie about what Apply is about to do.
+        /// </summary>
+        public void SetTargetActiveView(bool value)
+        {
+            if (!value && _targetTemplateIds.Count == 0) return;
+            _targetActiveView = value;
+        }
+
+        /// <summary>
+        /// Ticks/unticks one view template as an apply target. An id not present in the
+        /// captured list is ignored — the picker can only offer captured templates, so an
+        /// unknown id means stale UI state rather than a new target. Same zero-targets guard
+        /// as <see cref="SetTargetActiveView"/>: refuses to remove the last remaining target.
+        /// </summary>
+        public void SetTargetTemplate(long id, bool value)
+        {
+            if (value)
+            {
+                if (_viewTemplates.Any(t => t.Id == id)) _targetTemplateIds.Add(id);
+                else DiagnosticsLog.Warn("WebAutoFilters",
+                        $"Ignored apply-target template id {id} — not in the captured list.");
+                return;
+            }
+
+            if (!_targetActiveView && _targetTemplateIds.Count == 1 && _targetTemplateIds.Contains(id))
+                return;
+            _targetTemplateIds.Remove(id);
+        }
+
+        // ── Templates (saved Auto Filters presets — NOT Revit view templates) ──
         public List<string> TemplateNames() =>
             AutoFiltersSettings.Templates.List().Select(t => t.Name).ToList();
 
@@ -696,6 +765,19 @@ namespace LemoineTools.Framework.Web
                 ["history"] = _history.Select((h, i) => (object?)new Dictionary<string, object?>
                 { ["label"] = h.Label, ["index"] = i, ["current"] = i == _historyIndex }).ToList(),
                 ["templates"] = TemplateNames().Cast<object?>().ToList(),
+                // Apply targets. "viewTemplates" are Revit view templates (run destinations);
+                // "templates" above are saved Auto Filters presets. Kept as separate keys so
+                // the two can never be confused on the JS side either.
+                ["viewTemplates"] = _viewTemplates.Select(t => (object?)new Dictionary<string, object?>
+                {
+                    ["id"]       = t.Id,
+                    ["name"]     = t.Name,
+                    ["viewType"] = t.ViewTypeName,
+                    ["checked"]  = _targetTemplateIds.Contains(t.Id),
+                }).ToList(),
+                ["targetActiveView"] = _targetActiveView,
+                ["targetCount"]      = TargetCount,
+                ["activeViewName"]   = _activeViewName,
             };
         }
 
@@ -840,6 +922,15 @@ namespace LemoineTools.Framework.Web
             ["editTradeTip"]   = TF("sidebar.editTradeTooltip"),
             ["applyToView"]    = TF("sidebar.applyToViewLabel"),
             ["removeFromView"] = TF("sidebar.removeFromViewLabel"),
+            // Apply to... target picker (Revit view templates)
+            ["targets"]           = TF("sidebar.applyTargetsLabel"),
+            ["targetsTip"]        = TF("sidebar.applyTargetsTooltip"),
+            ["targetsTitle"]      = TF("targetsPopup.title"),
+            ["targetsActiveView"] = TF("targetsPopup.activeView"),
+            ["targetsVtHeader"]   = TF("targetsPopup.viewTemplatesHeader"),
+            ["targetsVtNone"]     = TF("targetsPopup.noViewTemplates"),
+            ["targetsSearch"]     = TF("targetsPopup.searchPlaceholder"),
+            ["targetsClear"]      = TF("targetsPopup.clearAll"),
             ["noTrades"]       = TF("sidebar.noTrades"),
             ["addRule"]        = TF("ruleList.addRulePill"),
             ["editRuleTip"]    = TF("ruleList.editRuleTooltip"),

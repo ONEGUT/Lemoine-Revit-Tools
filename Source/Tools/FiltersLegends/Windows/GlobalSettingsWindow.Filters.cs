@@ -225,6 +225,11 @@ namespace LemoineTools.Framework
                 RemoveSelectedTradesFromView);
             DockPanel.SetDock(applyAllFooter, Dock.Bottom);
 
+            // Apply-targets row: shows/opens the picker for which views + view templates the
+            // footer's Apply button writes to. Sits between the trade actions and the footer.
+            var targetsRow = BuildTargetsRow();
+            DockPanel.SetDock(targetsRow, Dock.Bottom);
+
             var sidebarDock = new DockPanel { LastChildFill = true };
             sidebarDock.SetResourceReference(DockPanel.BackgroundProperty, "LemoineSurface");
             DockPanel.SetDock(templatesPill,   Dock.Top);
@@ -232,6 +237,7 @@ namespace LemoineTools.Framework
             sidebarDock.Children.Add(templatesPill);
             sidebarDock.Children.Add(templSep);
             sidebarDock.Children.Add(applyAllFooter);
+            sidebarDock.Children.Add(targetsRow);
             sidebarDock.Children.Add(tradeScroll);
 
             _fTradesSidebar = new Border { BorderThickness = new Thickness(0) };
@@ -559,6 +565,270 @@ namespace LemoineTools.Framework
             outer.Child = grid;
             bar.Child   = outer;
             return bar;
+        }
+
+        // Apply-targets row (Revit view templates). Distinct from the "Templates" pill above
+        // it: that button loads/saves saved Auto Filters presets; this row picks which VIEWS
+        // and VIEW TEMPLATES the Apply footer writes filters into.
+        private Border BuildTargetsRow()
+        {
+            var row = new Border
+            {
+                Padding         = new Thickness(12, 9, 12, 9),
+                BorderThickness = new Thickness(0, 1, 0, 0),
+                Cursor          = Cursors.Hand,
+                Background      = Brushes.Transparent, // full-row hit area (WPF hit-testing rule)
+            };
+            row.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            MotionEffects.WireHover(row, normalBgKey: null, hoverBgKey: "LemoineRaised");
+
+            var grid = new Grid();
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var lbl = new TextBlock
+            {
+                Text              = AppStrings.T("globalSettings.filters.sidebar.applyTargetsLabel"),
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin            = new Thickness(0, 0, 8, 0),
+                IsHitTestVisible  = false,
+            };
+            lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_XS");
+            lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            Grid.SetColumn(lbl, 0);
+            grid.Children.Add(lbl);
+
+            var valueTb = new TextBlock
+            {
+                VerticalAlignment  = VerticalAlignment.Center,
+                TextTrimming       = TextTrimming.CharacterEllipsis,
+                IsHitTestVisible   = false,
+            };
+            valueTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_XS");
+            valueTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            valueTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            Grid.SetColumn(valueTb, 1);
+            grid.Children.Add(valueTb);
+            _fTargetsValueTb = valueTb;
+
+            var badge = new Border
+            {
+                CornerRadius      = new CornerRadius(9),
+                BorderThickness   = new Thickness(1),
+                Padding           = new Thickness(7, 1, 7, 1),
+                Margin            = new Thickness(8, 0, 6, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+                IsHitTestVisible  = false,
+            };
+            badge.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
+            badge.SetResourceReference(Border.BackgroundProperty,  "LemoineAccentDim");
+            var badgeTb = new TextBlock { IsHitTestVisible = false };
+            badgeTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_XS");
+            badgeTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineAccent");
+            badgeTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            badge.Child = badgeTb;
+            Grid.SetColumn(badge, 2);
+            grid.Children.Add(badge);
+            _fTargetsBadgeTb = badgeTb;
+
+            var caret = new TextBlock
+            {
+                Text              = "˅",
+                VerticalAlignment = VerticalAlignment.Center,
+                IsHitTestVisible  = false,
+            };
+            caret.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            caret.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            caret.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            Grid.SetColumn(caret, 3);
+            grid.Children.Add(caret);
+
+            row.Child = grid;
+            row.ToolTip = AppStrings.T("globalSettings.filters.sidebar.applyTargetsTooltip");
+            row.MouseLeftButtonUp += (s, e) => { e.Handled = true; ShowTargetsPopup(row); };
+
+            FRefreshTargetsRow();
+            return row;
+        }
+
+        // "Apply to" popup: the active view (always offered) plus a MultiSelectTabs checklist
+        // of the document's view templates, grouped by ViewType — the house component for a
+        // searchable/groupable multi-select (CLAUDE.md "MultiSelectTabs Contract"), reused here
+        // rather than hand-rolling another checkbox list like ShowTemplatesPopup's preset rows.
+        private void ShowTargetsPopup(UIElement anchor)
+        {
+            var popup = new Popup
+            {
+                PlacementTarget    = anchor,
+                Placement          = PlacementMode.Top,
+                StaysOpen          = false,
+                AllowsTransparency = true,
+                PopupAnimation     = PopupAnimation.Fade,
+                MinWidth           = 300,
+            };
+
+            var outer = new Border
+            {
+                BorderThickness = new Thickness(1),
+                CornerRadius    = new CornerRadius(6),
+                Margin          = new Thickness(0, 0, 0, 4),
+                // Direction 270 (down) matches ShowTemplatesPopup's shadow — a light-from-above
+                // look that stays consistent regardless of which side of its anchor a popup
+                // opens on, rather than flipping the shadow to match Placement.Top here.
+                Effect = new System.Windows.Media.Effects.DropShadowEffect
+                {
+                    BlurRadius = 12, Opacity = 0.22, ShadowDepth = 4, Direction = 270,
+                },
+            };
+            outer.SetResourceReference(Border.BackgroundProperty,  "LemoineSurface");
+            outer.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+
+            var root = new StackPanel { Margin = new Thickness(10, 8, 10, 8) };
+
+            // ── Active view row ─────────────────────────────────────────────
+            var activeCb = new CheckBox
+            {
+                IsChecked         = _fTargetActiveView,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin            = new Thickness(0, 0, 6, 0),
+            };
+            var activeLbl = new TextBlock
+            {
+                Text              = AppStrings.T("globalSettings.filters.targetsPopup.activeView"),
+                VerticalAlignment = VerticalAlignment.Center,
+                FontWeight        = FontWeights.Medium,
+            };
+            activeLbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
+            activeLbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            activeLbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+
+            var activeRow = new StackPanel { Orientation = Orientation.Horizontal, Cursor = Cursors.Hand };
+            activeRow.Children.Add(activeCb);
+            activeRow.Children.Add(activeLbl);
+            if (!string.IsNullOrEmpty(_fActiveViewName))
+            {
+                var sub = new TextBlock
+                {
+                    Text              = "  " + _fActiveViewName,
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
+                sub.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_XS");
+                sub.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+                sub.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+                activeRow.Children.Add(sub);
+            }
+            MotionEffects.WireHover(activeRow, normalBgKey: null, hoverBgKey: "LemoineAccentDim");
+            activeCb.Checked += (s, e) => FSetTargetActiveView(true);
+            activeCb.Unchecked += (s, e) =>
+            {
+                // The zero-targets guard in FSetTargetActiveView can refuse this uncheck (it's
+                // the last remaining target). WPF has already flipped the checkbox's own visual
+                // state by the time this fires, so a refused uncheck must be reverted here or
+                // the box shows unchecked while _fTargetActiveView stays true underneath.
+                // Setting IsChecked back to true re-fires Checked, which is idempotent.
+                if (_fTargetTemplateNames.Count == 0) { activeCb.IsChecked = true; return; }
+                FSetTargetActiveView(false);
+            };
+            activeRow.MouseLeftButtonDown += (s, e) =>
+            {
+                if (e.OriginalSource is CheckBox) return;
+                activeCb.IsChecked = !(activeCb.IsChecked == true);
+                e.Handled = true;
+            };
+            var activeBorder = new Border { Padding = new Thickness(4, 4, 4, 6), Child = activeRow };
+            root.Children.Add(activeBorder);
+
+            // ── View templates header ────────────────────────────────────────
+            var hdr = new TextBlock
+            {
+                Text   = AppStrings.T("globalSettings.filters.targetsPopup.viewTemplatesHeader"),
+                Margin = new Thickness(4, 6, 4, 4),
+            };
+            hdr.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_XS");
+            hdr.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            hdr.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+            root.Children.Add(hdr);
+
+            if (_fViewTemplates.Count == 0)
+            {
+                var empty = new TextBlock
+                {
+                    Text      = AppStrings.T("globalSettings.filters.targetsPopup.noViewTemplates"),
+                    Margin    = new Thickness(4, 0, 4, 4),
+                    FontStyle = FontStyles.Italic,
+                };
+                empty.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_XS");
+                empty.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+                empty.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+                root.Children.Add(empty);
+            }
+            else
+            {
+                var groups = new Dictionary<string, List<string>>();
+                foreach (var t in _fViewTemplates)
+                {
+                    if (!groups.TryGetValue(t.ViewTypeName, out var list))
+                        groups[t.ViewTypeName] = list = new List<string>();
+                    list.Add(t.Name);
+                }
+
+                var picker = new MultiSelectTabs
+                {
+                    Height = 260,
+                    Margin = new Thickness(0, 0, 0, 8),
+                    AccessibleName = AppStrings.T("globalSettings.filters.targetsPopup.viewTemplatesHeader"),
+                };
+                // Subscribe BEFORE SetGroups — SetGroups fires SelectionChanged once at the end
+                // of setup, and that callback is the only mechanism that populates a mirrored
+                // field on initialization (MultiSelectTabs Contract, CLAUDE.md).
+                picker.SelectionChanged += selected =>
+                {
+                    // MultiSelectTabs owns the authoritative selection set (unchecking one row
+                    // fires with the whole remaining set, not a single add/remove), so mirror
+                    // it in whole rather than diffing, then apply the zero-targets guard once.
+                    _fTargetTemplateNames.Clear();
+                    foreach (var name in selected) _fTargetTemplateNames.Add(name);
+                    if (_fTargetTemplateNames.Count == 0 && !_fTargetActiveView)
+                    {
+                        // MultiSelectTabs has no min-selection concept, so it already let the
+                        // user's uncheck through visually — it cannot be blocked after the fact.
+                        // Falling back to Active View is the only way to avoid zero targets, so
+                        // the fallback must be shown, not just flagged: re-check the Active View
+                        // box too, or the popup would display NOTHING checked while Apply quietly
+                        // targets the active view underneath — the exact desync this guard exists
+                        // to prevent for the single active-view checkbox case.
+                        _fTargetActiveView = true;
+                        activeCb.IsChecked = true;
+                    }
+                    FRefreshTargetsRow();
+                };
+                picker.SetGroups(groups, _fTargetTemplateNames);
+                root.Children.Add(picker);
+            }
+
+            // ── Footer: reset only — every checkbox above applies live (same pattern as the
+            // per-trade sidebar checkboxes), so there is no pending state to confirm.
+            var footSep = new Border { Height = 1, Margin = new Thickness(0, 2, 0, 8) };
+            footSep.SetResourceReference(Border.BackgroundProperty, "LemoineBorder");
+            root.Children.Add(footSep);
+
+            var resetBtn = FlatSmBtn(AppStrings.T("globalSettings.filters.targetsPopup.clearAll"));
+            resetBtn.HorizontalAlignment = HorizontalAlignment.Stretch;
+            resetBtn.Click += (s, e) =>
+            {
+                _fTargetTemplateNames.Clear();
+                _fTargetActiveView = true;
+                FRefreshTargetsRow();
+                popup.IsOpen = false;
+            };
+            root.Children.Add(resetBtn);
+
+            outer.Child = root;
+            popup.Child = outer;
+            popup.IsOpen = true;
         }
 
         // Per-trade checkbox driving the "Apply selected trades to view" footer. Selection is
