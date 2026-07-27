@@ -40,10 +40,16 @@ namespace LemoineTools.Commands
             // Query pattern lists on the Revit main thread
             var fillNames = new List<string>();
             var lineNames = new List<string> { "Solid" };
+            // View templates the user can pick as apply targets (Apply to... popup). Captured
+            // here on the main thread; the window threads never touch the Revit API.
+            var viewTemplates  = new List<LemoineTools.Tools.AutoFilters.ViewTemplateEntry>();
+            var activeViewName = "";
 
             var doc = commandData.Application.ActiveUIDocument?.Document;
             if (doc != null)
             {
+                activeViewName = doc.ActiveView?.Name ?? "";
+
                 // Capture the exact filterable-category list from this document so the rule
                 // editor's category picker mirrors Revit's own "Edit Filters → Categories" list.
                 LemoineTools.Tools.AutoFilters.AutoFiltersSettings.CaptureFilterableCategories(doc);
@@ -61,6 +67,31 @@ namespace LemoineTools.Commands
                         .Cast<LinePatternElement>()
                         .Select(lp => lp.Name)
                         .OrderBy(n => n, System.StringComparer.OrdinalIgnoreCase));
+
+                // View templates are plain Views with IsTemplate set, and accept the same
+                // AddFilter / SetFilterOverrides calls a normal view does.
+                viewTemplates.AddRange(
+                    new FilteredElementCollector(doc)
+                        .OfClass(typeof(View))
+                        .Cast<View>()
+                        .Where(v => v.IsTemplate)
+                        .Select(v => new LemoineTools.Tools.AutoFilters.ViewTemplateEntry
+                        {
+                            Id           = v.Id.Value,
+                            Name         = v.Name,
+                            // Friendly label ("Ceiling Plan", "3D View", …) — reuses the same
+                            // mapping Replicate Dependent Views already built, rather than a
+                            // second copy of raw ViewType.ToString() → display-name pairs.
+                            ViewTypeName = LemoineTools.Tools.LinkViews.ViewsByTemplateRunHandler.ViewTypeLabel(v.ViewType),
+                        })
+                        .OrderBy(t => t.Name, System.StringComparer.OrdinalIgnoreCase));
+
+                // A zero-result capture is reported, never left as a silently blank picker —
+                // an empty list is otherwise indistinguishable from a broken collector.
+                DiagnosticsLog.Info("OpenFiltersSettings",
+                    viewTemplates.Count > 0
+                        ? $"Captured {viewTemplates.Count} view template(s) for the apply-target picker."
+                        : "No view templates found in this document — apply targets will list the active view only.");
             }
 
             // Open window on dedicated STA thread
@@ -71,6 +102,7 @@ namespace LemoineTools.Commands
             {
                 win = new FiltersSettingsWindow();
                 win.SetPatternLists(fillNames, lineNames);
+                win.SetViewTemplates(viewTemplates, activeViewName);
                 win.Closed += (s, e) =>
                 {
                     _window = null;

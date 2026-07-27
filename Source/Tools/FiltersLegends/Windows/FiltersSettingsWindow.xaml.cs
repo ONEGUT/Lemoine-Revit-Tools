@@ -52,6 +52,57 @@ namespace LemoineTools.Framework
         // Tracked as exclusions so trades added mid-session are applied by default.
         private readonly HashSet<string>            _fApplyExcludedTradeIds = new HashSet<string>();
 
+        // ── Apply targets (Revit view templates) ────────────────────────────
+        // "View template" here is a Revit view template (an Apply run destination) — distinct
+        // from the sidebar's "Templates" button, which loads/saves Auto Filters presets.
+        private IReadOnlyList<ViewTemplateEntry> _fViewTemplates  = Array.Empty<ViewTemplateEntry>();
+        private string                            _fActiveViewName = "";
+        // Ticked view template names. Names are safe keys: Revit enforces unique View.Name
+        // document-wide, so a template name collision can't happen.
+        private readonly HashSet<string>          _fTargetTemplateNames = new HashSet<string>(StringComparer.Ordinal);
+        // Default true so Apply keeps working exactly as before until deliberately changed.
+        private bool                               _fTargetActiveView = true;
+        private TextBlock?                          _fTargetsValueTb;
+        private TextBlock?                            _fTargetsBadgeTb;
+
+        /// <summary>Called once by the launching command with the document's captured view
+        /// templates and active view name — this window never touches the Revit API itself.</summary>
+        internal void SetViewTemplates(IEnumerable<ViewTemplateEntry> templates, string activeViewName)
+        {
+            _fViewTemplates  = templates?.ToList() ?? new List<ViewTemplateEntry>();
+            _fActiveViewName = activeViewName ?? "";
+        }
+
+        private int FTargetCount => (_fTargetActiveView ? 1 : 0) + _fTargetTemplateNames.Count;
+
+        // Refuses to leave zero targets selected — ApplyTradesToView falls back to the active
+        // view when it receives none at all (a run must always land somewhere), so letting the
+        // picker reach "0 targets" would silently misrepresent what Apply is about to do.
+        private void FSetTargetActiveView(bool value)
+        {
+            if (!value && _fTargetTemplateNames.Count == 0) return;
+            _fTargetActiveView = value;
+            FRefreshTargetsRow();
+        }
+
+        private void FRefreshTargetsRow()
+        {
+            if (_fTargetsValueTb == null || _fTargetsBadgeTb == null) return;
+            int n = _fTargetTemplateNames.Count;
+            var parts = new List<string>();
+            if (_fTargetActiveView) parts.Add(AppStrings.T("globalSettings.filters.targetsPopup.activeView"));
+            if (n > 0)
+            {
+                string noun = AppStrings.T("globalSettings.filters.targetsPopup.viewTemplatesHeader").ToLowerInvariant();
+                if (n == 1 && noun.EndsWith("s")) noun = noun.Substring(0, noun.Length - 1);
+                parts.Add($"{n} {noun}");
+            }
+            _fTargetsValueTb.Text = parts.Count > 0
+                ? string.Join(" + ", parts)
+                : AppStrings.T("globalSettings.filters.targetsPopup.activeView");
+            _fTargetsBadgeTb.Text = FTargetCount.ToString();
+        }
+
         // ── Undo/redo history — snapshot stack over the in-window trade buffer ──
         // Captured by a low-frequency poll (coalesces rapid edits), so no per-control wiring.
         private readonly List<(string Label, string Snapshot)> _history = new List<(string, string)>();
@@ -437,6 +488,15 @@ namespace LemoineTools.Framework
             handler.OnProgress                = null;
             handler.OnComplete                = null;
 
+            // Reset the cooperative cancel flag before starting the run — exactly what
+            // StepFlowWindow.StartRun does. A step-flow tool window closed mid-run leaves the
+            // flag SET on purpose (StepFlowWindow.CancelRunOnClose; its CompleteRun/RunState.End
+            // never runs), and AutoFiltersEventHandler's loops test it. Without this reset that
+            // stale flag stops this pass at its first checkpoint — and PushLog is null here, so
+            // the "Stopped by user" line goes nowhere and the filters are silently never created.
+            // No matching End(): this window has no Cancel affordance, so nothing sets the flag
+            // during the run, and the next Begin() clears it regardless.
+            RunState.Begin();
             evt.Raise();
         }
 
@@ -550,6 +610,9 @@ namespace LemoineTools.Framework
             handler.PushLog    = null;
             handler.OnProgress = null;
             handler.OnComplete = null;
+            // Clear any stale cancel flag left by a step-flow window closed mid-run — see
+            // RaiseAutoCreate above. DeleteFiltersEventHandler's delete loop tests it.
+            RunState.Begin();
             evt.Raise();
             FlashStatus(selected.Count == 1
                 ? AppStrings.T("autofilters.filtersWindow.window.status.removingOne", selected[0].Label)
@@ -605,14 +668,32 @@ namespace LemoineTools.Framework
             handler.ChangedFilterNames               = null;
             handler.SelectedDisciplines              = trades.Select(t => t.Label).ToList();
             handler.SelectedLinkTitles               = new List<string>();
+            // Apply targets: the ticked view templates, plus the active view when ticked. An
+            // empty TargetViewIds list makes the handler fall back to the active view on its
+            // own, which is exactly what an "active view only" selection should do.
+            handler.TargetViewIds                    = _fTargetTemplateNames
+                                                          .Select(name => _fViewTemplates.FirstOrDefault(t => t.Name == name))
+                                                          .Where(t => t != null)
+                                                          .Select(t => new Autodesk.Revit.DB.ElementId(t!.Id))
+                                                          .ToList<Autodesk.Revit.DB.ElementId>();
+            handler.IncludeActiveView                = _fTargetActiveView;
             handler.PushLog                          = null;
             handler.OnProgress                       = null;
             handler.OnComplete                       = null;
 
+            // Clear any stale cancel flag left by a step-flow window closed mid-run — see
+            // RaiseAutoCreate above.
+            RunState.Begin();
             evt.Raise();
-            FlashStatus(trades.Count == 1
-                ? AppStrings.T("autofilters.filtersWindow.window.status.applyingOne", trades[0].Label)
-                : AppStrings.T("autofilters.filtersWindow.window.status.applyingMany", trades.Count));
+            // "Active view" wording only when that's actually the sole target — FTargetCount == 1
+            // is also reachable with active view unchecked and exactly one template checked, and
+            // that run does NOT touch the active view at all.
+            bool activeViewOnly = _fTargetActiveView && _fTargetTemplateNames.Count == 0;
+            FlashStatus(!activeViewOnly
+                ? AppStrings.T("autofilters.filtersWindow.window.status.applyingToTargets", trades.Count, FTargetCount)
+                : trades.Count == 1
+                    ? AppStrings.T("autofilters.filtersWindow.window.status.applyingOne", trades[0].Label)
+                    : AppStrings.T("autofilters.filtersWindow.window.status.applyingMany", trades.Count));
         }
 
         // ── Floating bottom-right status chip ───────────────────────────────────

@@ -280,7 +280,12 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                 if (!applyMoves)
                 {
                     foreach (var pr in bestMatch.Pairs)
+                    {
                         Log(AppStrings.T("testing.alignSheetViews.log.wouldAlign", label, pr.Target.ViewName, pr.Source.ViewName, (AlignTitles ? AppStrings.T("testing.alignSheetViews.log.wouldAlignTitle") : AppStrings.T("testing.alignSheetViews.log.wouldAlignEnd"))), "info");
+                        DiagnosePair(doc, pr, label);
+                    }
+                    foreach (var miss in bestMatch.Missing)
+                        DiagnoseMissing(miss, targetEntries, label);
                     s += bestMatch.Pairs.Count;
                     onProgress(Pct(i + 1, total), p, f, s);
                     continue;
@@ -370,9 +375,23 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                 if (!(doc.GetElement(pr.Target.ViewId) is View tv)) return false;
 
                 // Crop size — resize the target crop to the source crop's dimensions, keeping the
-                // target's own crop centre (alignment then centres it on the shared anchor). Skipped
-                // when the view inherited a scope box this run — a scope box governs the crop region.
-                if (gotScopeBox)
+                // target's own crop centre (alignment then centres it on the shared anchor).
+                // Skipped whenever a scope box governs the crop region: one the view inherited this
+                // run, OR one it ALREADY carried. The second case used to slip through, and writing
+                // CropBox underneath a scope box fights it and yields an unpredictable crop.
+                bool scopeGoverned = gotScopeBox;
+                if (!scopeGoverned)
+                {
+                    var tsb = tv.get_Parameter(BuiltInParameter.VIEWER_VOLUME_OF_INTEREST_CROP);
+                    scopeGoverned = tsb != null
+                                 && tsb.StorageType == StorageType.ElementId
+                                 && tsb.AsElementId() != ElementId.InvalidElementId;
+                }
+
+                if (pr.Source.Scale != pr.Target.Scale)
+                    Log(AppStrings.T("testing.alignSheetViews.log.annoScaleDiffers", label, pr.Target.ViewName), "warn");
+
+                if (scopeGoverned)
                 {
                     Log(AppStrings.T("testing.alignSheetViews.log.cropScopeGoverned", label, pr.Target.ViewName), "info");
                 }
@@ -565,6 +584,155 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
             Log(titleFail > 0 ? AppStrings.T("testing.alignSheetViews.log.viewTitlesSome", titled, titleFail) : AppStrings.T("testing.alignSheetViews.log.viewTitlesOk", titled), tone);
         }
 
+        // ── Preview diagnostics ───────────────────────────────────────────────
+        /// <summary>
+        /// Preview-only, read-only report for one matched pair. Its job is to SETTLE, on a real plot,
+        /// whether a viewport's on-sheet footprint includes the annotation crop - the assumption the
+        /// alignment fix rests on. It prints the actual <c>GetBoxOutline</c> size next to the size
+        /// predicted with and without the annotation offsets; whichever matches is the answer.
+        /// It also prints the box centre the old and new formulas produce, so the views that were
+        /// being misplaced (and by how much) are named explicitly.
+        /// </summary>
+        private void DiagnosePair(Document doc, MatchedPair pr, string label)
+        {
+            try
+            {
+                var src = pr.Source; var tgt = pr.Target;
+                if (!(doc.GetElement(tgt.ViewId) is View tv)) return;
+                BoundingBoxXYZ cb = tv.CropBox;
+                if (cb?.Transform == null) return;
+                int scale = tv.Scale;
+                if (scale <= 0 || src.Scale <= 0) return;
+
+                Log(AppStrings.T("testing.alignSheetViews.log.diagHeader", label, tgt.ViewName, src.ViewName), "info");
+                Log(AppStrings.T("testing.alignSheetViews.log.diagScale",
+                        src.Scale, tgt.Scale, tgt.Rotation,
+                        F(src.Transform.BasisX.DotProduct(tgt.Transform.BasisX)),
+                        F(src.Transform.BasisY.DotProduct(tgt.Transform.BasisY))), "info");
+
+                double scw = src.CropMax.X - src.CropMin.X, sch = src.CropMax.Y - src.CropMin.Y;
+                double tcw = cb.Max.X - cb.Min.X,           tch = cb.Max.Y - cb.Min.Y;
+                Log(AppStrings.T("testing.alignSheetViews.log.diagCrop", F(scw), F(sch), F(tcw), F(tch)), "info");
+
+                ReadAnnotationCrop(tv, out bool tAct, out double tTop, out double tBot, out double tLeft, out double tRight);
+                Log(AppStrings.T("testing.alignSheetViews.log.diagAnno", src.AnnoCropActive, tAct), "info");
+                Log(AppStrings.T("testing.alignSheetViews.log.diagAnnoOff",
+                        F(src.AnnoLeft), F(src.AnnoRight), F(src.AnnoBottom), F(src.AnnoTop),
+                        F(tLeft), F(tRight), F(tBot), F(tTop)), "info");
+
+                // The decisive test: actual footprint vs the two predictions.
+                if (TryOutlineSize(doc, src.ViewportId, out double sow, out double soh) &&
+                    TryOutlineSize(doc, tgt.ViewportId, out double tow, out double toh))
+                {
+                    double sNoW = scw / src.Scale,  sNoH = sch / src.Scale;
+                    double tNoW = tcw / scale,      tNoH = tch / scale;
+                    double sYesW = (scw + (src.AnnoCropActive ? src.AnnoLeft + src.AnnoRight : 0)) / src.Scale;
+                    double sYesH = (sch + (src.AnnoCropActive ? src.AnnoTop + src.AnnoBottom : 0)) / src.Scale;
+                    double tYesW = (tcw + (tAct ? tLeft + tRight : 0)) / scale;
+                    double tYesH = (tch + (tAct ? tTop  + tBot   : 0)) / scale;
+
+                    Log(AppStrings.T("testing.alignSheetViews.log.diagOutline", F(sow), F(soh), F(tow), F(toh)), "info");
+                    Log(AppStrings.T("testing.alignSheetViews.log.diagPredNoAnno", F(sNoW), F(sNoH), F(tNoW), F(tNoH)), "info");
+                    Log(AppStrings.T("testing.alignSheetViews.log.diagPredAnno",  F(sYesW), F(sYesH), F(tYesW), F(tYesH)), "info");
+
+                    if (src.AnnoCropActive || tAct)
+                    {
+                        double errNo  = Math.Abs(sow - sNoW)  + Math.Abs(soh - sNoH)  + Math.Abs(tow - tNoW)  + Math.Abs(toh - tNoH);
+                        double errYes = Math.Abs(sow - sYesW) + Math.Abs(soh - sYesH) + Math.Abs(tow - tYesW) + Math.Abs(toh - tYesH);
+                        Log(AppStrings.T("testing.alignSheetViews.log.diagVerdict",
+                                AppStrings.T(errYes <= errNo
+                                    ? "testing.alignSheetViews.log.diagVerdictYes"
+                                    : "testing.alignSheetViews.log.diagVerdictNo")), errYes <= errNo ? "info" : "warn");
+                    }
+                }
+
+                // What the two formulas would do to this viewport.
+                XYZ oldC = LegacyTargetBoxCentre(src, cb, scale);
+                XYZ newC = TargetBoxCentre(src, tgt, tv, cb, scale);
+                double moved = newC.DistanceTo(oldC);
+                Log(AppStrings.T("testing.alignSheetViews.log.diagCentres", P(src.BoxCenter), P(tgt.BoxCenter)), "info");
+                Log(AppStrings.T("testing.alignSheetViews.log.diagNewCentre", P(oldC), P(newC), F(moved)),
+                    moved > 1e-6 ? "warn" : "info");
+
+                if (tgt.Rotation != ViewportRotation.None)
+                {
+                    XYZ anchor = AnchorWorld(src);
+                    XYZ local  = cb.Transform.Inverse.OfPoint(anchor);
+                    FootprintCentre(cb.Min, cb.Max, tAct, tTop, tBot, tLeft, tRight, out double fx, out double fy);
+                    var raw = new XYZ((local.X - fx) / scale, (local.Y - fy) / scale, 0);
+                    XYZ a = SourceAnchorOnSheet(src) - new XYZ( raw.Y, -raw.X, 0);
+                    XYZ b = SourceAnchorOnSheet(src) - new XYZ(-raw.Y,  raw.X, 0);
+                    Log(AppStrings.T("testing.alignSheetViews.log.diagRotCandidates", P(a), P(b)), "warn");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log(AppStrings.T("testing.alignSheetViews.log.diagFailed", label, pr.Target.ViewName), "warn");
+                DiagnosticsLog.Swallowed($"AlignSheetViews: diagnostics for viewport {pr.Target.ViewportId.Value}", ex);
+            }
+        }
+
+        /// <summary>
+        /// Preview-only report for a source view that found no counterpart, listing the candidates it
+        /// was compared against and whether each failed on in-plane overlap or purely on DEPTH. The
+        /// depth veto is worth surfacing: cross-level alignment is the tool's main use case, and two
+        /// levels' plan-view depth ranges do not necessarily overlap.
+        /// </summary>
+        private void DiagnoseMissing(VpEntry miss, List<VpEntry> targetEntries, string label)
+        {
+            try
+            {
+                Log(AppStrings.T("testing.alignSheetViews.log.diagMissingHdr", label, miss.ViewName), "info");
+
+                var cands = targetEntries.Where(t => Eligible(miss, t)).ToList();
+                if (cands.Count == 0)
+                {
+                    Log(AppStrings.T("testing.alignSheetViews.log.diagNoCands"), "info");
+                    return;
+                }
+                foreach (var t in cands)
+                {
+                    OverlapComponents(miss, t, out double inPlane, out double depth);
+                    Log(AppStrings.T("testing.alignSheetViews.log.diagMissingCand",
+                            t.ViewName,
+                            F(inPlane * 100.0),
+                            F(OverlapThreshold * 100.0),
+                            AppStrings.T(depth > 0
+                                ? "testing.alignSheetViews.log.diagDepthOk"
+                                : "testing.alignSheetViews.log.diagDepthNo")), "info");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log(AppStrings.T("testing.alignSheetViews.log.diagFailed", label, miss.ViewName), "warn");
+                DiagnosticsLog.Swallowed($"AlignSheetViews: missing-match diagnostics for view {miss.ViewId.Value}", ex);
+            }
+        }
+
+        private static bool TryOutlineSize(Document doc, ElementId viewportId, out double w, out double h)
+        {
+            w = 0; h = 0;
+            try
+            {
+                if (!(doc.GetElement(viewportId) is Viewport vp)) return false;
+                Outline o = vp.GetBoxOutline();
+                if (o == null) return false;
+                w = o.MaximumPoint.X - o.MinimumPoint.X;
+                h = o.MaximumPoint.Y - o.MinimumPoint.Y;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                // Diagnostics-only: the caller simply omits the measured-outline line. Recorded so a
+                // missing ACTUAL row in the preview report is explainable rather than a mystery.
+                DiagnosticsLog.Swallowed($"AlignSheetViews: GetBoxOutline on viewport {viewportId.Value}", ex);
+                return false;
+            }
+        }
+
+        private static string F(double v) => v.ToString("0.####");
+        private static string P(XYZ p)    => $"({p.X.ToString("0.####")}, {p.Y.ToString("0.####")})";
+
         // ── Capture ───────────────────────────────────────────────────────────
         /// <summary>Reads every viewport on a sheet that hosts a graphical, crop-bearing view.</summary>
         private List<VpEntry> CaptureSheet(Document doc, ViewSheet sheet)
@@ -594,6 +762,10 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                     if (sbParam != null && sbParam.StorageType == StorageType.ElementId)
                         scopeBox = sbParam.AsElementId();
 
+                    ReadAnnotationCrop(view, out bool annoActive,
+                                       out double annoTop, out double annoBot,
+                                       out double annoLeft, out double annoRight);
+
                     entries.Add(new VpEntry
                     {
                         ViewportId    = vp.Id,
@@ -610,6 +782,11 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                         CropActive    = view.CropBoxActive,
                         CropBoxVisible = view.CropBoxVisible,
                         ScopeBoxId    = scopeBox,
+                        AnnoCropActive = annoActive,
+                        AnnoTop       = annoTop,
+                        AnnoBottom    = annoBot,
+                        AnnoLeft      = annoLeft,
+                        AnnoRight     = annoRight,
                     });
 
                     if (!view.CropBoxActive)
@@ -624,20 +801,76 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
         }
 
         // ── Matching ──────────────────────────────────────────────────────────
-        /// <summary>Matches every source view on a sheet to a target view, scoring the whole sheet.</summary>
+        /// <summary>
+        /// Matches every source view on a sheet to a target view, scoring the whole sheet.
+        /// Exact scope-box pairs are claimed first, then the overlap fallback is assigned
+        /// <b>globally best-first</b> rather than in source order - previously the first source
+        /// processed took its best free target, so it could steal a target that was a decisively
+        /// better match for a later source, and a single stolen target mis-pairs two views.
+        /// </summary>
         private SheetMatch MatchSheet(List<VpEntry> srcEntries, List<VpEntry> tgtEntries)
         {
-            var res  = new SheetMatch();
-            var used = new HashSet<ElementId>();
+            var res     = new SheetMatch();
+            var used    = new HashSet<ElementId>();   // claimed targets
+            var settled = new HashSet<ElementId>();   // sources that are paired or reported ambiguous
 
+            // Pass 1 - exact, unambiguous scope-box pairs. A shared scope box is an exact key, so
+            // these are claimed before any overlap candidate can take the target. A scope box that
+            // matches several targets is left to the overlap pass, restricted to those targets.
+            var restrictTo = new Dictionary<ElementId, HashSet<ElementId>>();
             foreach (var src in srcEntries)
             {
-                var (best, ambiguous) = BestMatch(src, tgtEntries, used);
-                if (best == null) { res.Missing.Add(src); continue; }
-                if (ambiguous != null) { res.Ambiguous.Add((src, best, ambiguous)); continue; }
-                used.Add(best.ViewportId);
-                res.Pairs.Add(new MatchedPair(src, best));
+                if (src.ScopeBoxId == ElementId.InvalidElementId) continue;
+                var byScope = tgtEntries.Where(t => !used.Contains(t.ViewportId) && Eligible(src, t)
+                                                 && t.ScopeBoxId == src.ScopeBoxId).ToList();
+                if (byScope.Count == 1)
+                {
+                    used.Add(byScope[0].ViewportId);
+                    settled.Add(src.ViewportId);
+                    res.Pairs.Add(new MatchedPair(src, byScope[0]));
+                }
+                else if (byScope.Count > 1)
+                {
+                    restrictTo[src.ViewportId] = new HashSet<ElementId>(byScope.Select(t => t.ViewportId));
+                }
             }
+
+            // Pass 2 - overlap fallback, every qualifying pair scored up front.
+            var cands = new List<(VpEntry S, VpEntry T, double Score)>();
+            foreach (var src in srcEntries)
+            {
+                if (settled.Contains(src.ViewportId)) continue;
+                restrictTo.TryGetValue(src.ViewportId, out var allowed);
+                foreach (var t in tgtEntries)
+                {
+                    if (used.Contains(t.ViewportId)) continue;
+                    if (allowed != null && !allowed.Contains(t.ViewportId)) continue;
+                    if (!Eligible(src, t)) continue;
+                    double sc = OverlapInSourcePlane(src, t);
+                    if (sc < OverlapThreshold) continue;
+                    cands.Add((src, t, sc));
+                }
+            }
+
+            foreach (var c in cands.OrderByDescending(x => x.Score).ToList())
+            {
+                if (settled.Contains(c.S.ViewportId)) continue;
+                if (used.Contains(c.T.ViewportId))    continue;
+
+                // Ambiguous when another still-free target scores nearly as well for this source.
+                var rival = cands.FirstOrDefault(o => o.S.ViewportId == c.S.ViewportId
+                                                   && o.T.ViewportId != c.T.ViewportId
+                                                   && !used.Contains(o.T.ViewportId)
+                                                   && o.Score >= 0.8 * c.Score);
+                settled.Add(c.S.ViewportId);
+                if (rival.T != null) { res.Ambiguous.Add((c.S, c.T, rival.T)); continue; }
+
+                used.Add(c.T.ViewportId);
+                res.Pairs.Add(new MatchedPair(c.S, c.T));
+            }
+
+            foreach (var src in srcEntries.Where(se => !settled.Contains(se.ViewportId)))
+                res.Missing.Add(src);
             foreach (var t in tgtEntries.Where(te => !used.Contains(te.ViewportId)))
                 res.Extra.Add(t);
 
@@ -649,60 +882,10 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
             return res;
         }
 
-        /// <summary>
-        /// Returns the best target view for a source view (or null if none qualifies), plus a second
-        /// candidate when the match is ambiguous. A shared scope box is the exact, preferred key; only
-        /// views without a scope box (or with no scope-box counterpart) fall back to crop overlap.
-        /// </summary>
-        private (VpEntry? best, VpEntry? ambiguous) BestMatch(
-            VpEntry src, List<VpEntry> candidates, HashSet<ElementId> used)
-        {
-            // Scope-box-first: exact match on the shared scope box ElementId.
-            if (src.ScopeBoxId != ElementId.InvalidElementId)
-            {
-                var byScope = candidates
-                    .Where(t => !used.Contains(t.ViewportId)
-                             && t.Type == src.Type
-                             && Math.Abs(src.ViewDir.DotProduct(t.ViewDir)) >= ParallelDot
-                             && t.ScopeBoxId == src.ScopeBoxId)
-                    .ToList();
-                if (byScope.Count == 1) return (byScope[0], null);
-                if (byScope.Count > 1)  return BestByOverlap(src, byScope, used);
-                // none share the scope box — fall through to overlap matching.
-            }
-            return BestByOverlap(src, candidates, used);
-        }
-
-        /// <summary>Crop-region-overlap matcher (the fallback for views without a shared scope box).</summary>
-        private (VpEntry? best, VpEntry? ambiguous) BestByOverlap(
-            VpEntry src, List<VpEntry> candidates, HashSet<ElementId> used)
-        {
-            VpEntry? best = null, second = null;
-            double bestScore = 0, secondScore = 0;
-
-            foreach (var t in candidates)
-            {
-                if (used.Contains(t.ViewportId)) continue;
-                if (t.Type != src.Type) continue;
-                if (Math.Abs(src.ViewDir.DotProduct(t.ViewDir)) < ParallelDot) continue;
-
-                double score = OverlapInSourcePlane(src, t);
-                if (score < OverlapThreshold) continue;
-
-                if (score > bestScore)
-                {
-                    second = best; secondScore = bestScore;
-                    best = t;      bestScore = score;
-                }
-                else if (score > secondScore)
-                {
-                    second = t; secondScore = score;
-                }
-            }
-
-            bool ambiguous = best != null && second != null && secondScore >= 0.8 * bestScore;
-            return (best, ambiguous ? second : null);
-        }
+        /// <summary>A candidate must be the same view type and look the same way to be pairable.</summary>
+        private static bool Eligible(VpEntry src, VpEntry cand)
+            => cand.Type == src.Type
+            && Math.Abs(src.ViewDir.DotProduct(cand.ViewDir)) >= ParallelDot;
 
         /// <summary>
         /// In-plane overlap fraction (intersection / smaller crop area) of a candidate view's
@@ -711,6 +894,19 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
         /// </summary>
         private static double OverlapInSourcePlane(VpEntry src, VpEntry cand)
         {
+            OverlapComponents(src, cand, out double inPlane, out double depth);
+            return depth <= 0 ? 0 : inPlane;
+        }
+
+        /// <summary>
+        /// Splits the overlap test into its in-plane fraction and its depth (cut-range) overlap, so
+        /// the preview diagnostics can report WHICH of the two vetoed a candidate. A candidate
+        /// rejected purely on depth is worth seeing: cross-level alignment is the tool's main use
+        /// case, and plan-view depth ranges do not always overlap between levels.
+        /// </summary>
+        private static void OverlapComponents(VpEntry src, VpEntry cand, out double inPlaneFraction, out double depthOverlap)
+        {
+            inPlaneFraction = 0; depthOverlap = 0;
             Transform f = src.Transform;
             XYZ o  = f.Origin;
             XYZ bx = f.BasisX, by = f.BasisY, bn = f.BasisZ;
@@ -737,15 +933,15 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                         if (n < nMin) nMin = n; if (n > nMax) nMax = n;
                     }
 
-            if (Overlap1D(sNmin, sNmax, nMin, nMax) <= 0) return 0;
+            depthOverlap = Overlap1D(sNmin, sNmax, nMin, nMax);
 
             double ov = Overlap1D(sUmin, sUmax, uMin, uMax) * Overlap1D(sVmin, sVmax, vMin, vMax);
-            if (ov <= 0) return 0;
+            if (ov <= 0) return;
 
             double areaS = Math.Abs((sUmax - sUmin) * (sVmax - sVmin));
             double areaC = Math.Abs((uMax - uMin) * (vMax - vMin));
             double denom = Math.Min(areaS, areaC);
-            return denom <= 1e-9 ? 0 : ov / denom;
+            inPlaneFraction = denom <= 1e-9 ? 0 : ov / denom;
         }
 
         private static double Overlap1D(double aMin, double aMax, double bMin, double bMax)
@@ -761,6 +957,11 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
         /// sheet coordinate it occupies on the source sheet. Reads the target view's crop geometry
         /// <b>live</b> so any scope-box / crop-size inheritance applied earlier this run is honoured.
         /// SetBoxCenter needs no regen.
+        ///
+        /// The anchor comes from the MODEL crop box but the viewport is positioned through
+        /// <c>SetBoxCenter</c>, which acts on the viewport's on-sheet FOOTPRINT. Those two coincide
+        /// only when a view has no annotation crop, or a symmetric one - so both sides are converted
+        /// through <see cref="FootprintCentre"/>, and each side uses its OWN scale.
         /// </summary>
         private bool TryAlign(Document doc, VpEntry src, VpEntry target)
         {
@@ -772,21 +973,128 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                 BoundingBoxXYZ cb = view.CropBox;
                 if (cb?.Transform == null) return false;
                 int scale = view.Scale;
-                if (scale <= 0) return false;
+                if (scale <= 0 || src.Scale <= 0) return false;
 
-                XYZ anchor = AnchorWorld(src);
-                XYZ local  = cb.Transform.Inverse.OfPoint(anchor);
-                double cx = (cb.Min.X + cb.Max.X) / 2.0;
-                double cy = (cb.Min.Y + cb.Max.Y) / 2.0;
-                XYZ off = new XYZ((local.X - cx) / scale, (local.Y - cy) / scale, 0);
-
-                vp.SetBoxCenter(src.BoxCenter - off);
+                vp.SetBoxCenter(TargetBoxCentre(src, target, view, cb, scale));
                 return true;
             }
             catch (Exception ex)
             {
                 DiagnosticsLog.Error($"AlignSheetViews: SetBoxCenter on viewport {target.ViewportId.Value}", ex);
                 return false;
+            }
+        }
+
+        /// <summary>
+        /// The sheet point to move the target viewport's box centre to, so the shared world anchor
+        /// registers on both sheets. Split out of <see cref="TryAlign"/> so the preview diagnostics
+        /// can report exactly what a real run would do without moving anything.
+        /// </summary>
+        private XYZ TargetBoxCentre(VpEntry src, VpEntry target, View targetView, BoundingBoxXYZ cb, int scale)
+        {
+            // Read the target's annotation crop LIVE - InheritCropSize may have just rewritten it.
+            ReadAnnotationCrop(targetView, out bool tAct, out double tTop, out double tBot, out double tLeft, out double tRight);
+
+            XYZ anchor = AnchorWorld(src);
+            XYZ local  = cb.Transform.Inverse.OfPoint(anchor);
+
+            FootprintCentre(cb.Min, cb.Max, tAct, tTop, tBot, tLeft, tRight, out double fx, out double fy);
+            XYZ off = ApplyRotation(new XYZ((local.X - fx) / scale, (local.Y - fy) / scale, 0), target.Rotation);
+
+            return SourceAnchorOnSheet(src) - off;
+        }
+
+        /// <summary>Box centre the OLD (pre-fix) formula would have produced - diagnostics only.</summary>
+        private static XYZ LegacyTargetBoxCentre(VpEntry src, BoundingBoxXYZ cb, int scale)
+        {
+            XYZ anchor = AnchorWorld(src);
+            XYZ local  = cb.Transform.Inverse.OfPoint(anchor);
+            double cx = (cb.Min.X + cb.Max.X) / 2.0;
+            double cy = (cb.Min.Y + cb.Max.Y) / 2.0;
+            return src.BoxCenter - new XYZ((local.X - cx) / scale, (local.Y - cy) / scale, 0);
+        }
+
+        /// <summary>
+        /// Sheet coordinate at which the source view's anchor (its model-crop centre) actually sits
+        /// on the source sheet. That is the source viewport's box centre only when the source has no
+        /// asymmetric annotation crop; otherwise the anchor sits off-centre by half the left/right
+        /// (and bottom/top) offset difference. Uses the SOURCE view's own scale - which the previous
+        /// formula never applied, so source/target scale mismatches were mis-scaled too.
+        /// </summary>
+        private static XYZ SourceAnchorOnSheet(VpEntry src)
+        {
+            double acx = (src.CropMin.X + src.CropMax.X) / 2.0;
+            double acy = (src.CropMin.Y + src.CropMax.Y) / 2.0;
+            FootprintCentre(src.CropMin, src.CropMax, src.AnnoCropActive,
+                            src.AnnoTop, src.AnnoBottom, src.AnnoLeft, src.AnnoRight,
+                            out double fx, out double fy);
+            XYZ d = ApplyRotation(new XYZ((acx - fx) / src.Scale, (acy - fy) / src.Scale, 0), src.Rotation);
+            return src.BoxCenter + d;
+        }
+
+        /// <summary>
+        /// Centre of the viewport's on-sheet footprint, expressed in the view's crop-local coords.
+        /// With no active annotation crop this is just the model-crop centre, so views that were
+        /// already aligning correctly do not move. With an active annotation crop the footprint is
+        /// the crop grown by the four offsets, so its centre shifts by half their difference.
+        /// </summary>
+        private static void FootprintCentre(XYZ cropMin, XYZ cropMax, bool annoActive,
+                                            double annoTop, double annoBottom, double annoLeft, double annoRight,
+                                            out double cx, out double cy)
+        {
+            cx = (cropMin.X + cropMax.X) / 2.0;
+            cy = (cropMin.Y + cropMax.Y) / 2.0;
+            if (!annoActive) return;
+            cx += (annoRight - annoLeft)   / 2.0;
+            cy += (annoTop   - annoBottom) / 2.0;
+        }
+
+        /// <summary>
+        /// Reads a view's annotation-crop state (offsets are model feet). Not every view type
+        /// carries an annotation crop, so a failure reports "inactive" rather than throwing.
+        /// </summary>
+        private void ReadAnnotationCrop(View v, out bool active,
+                                        out double top, out double bottom, out double left, out double right)
+        {
+            active = false; top = bottom = left = right = 0;
+            try
+            {
+                var p = v.get_Parameter(BuiltInParameter.VIEWER_ANNOTATION_CROP_ACTIVE);
+                if (p == null || p.AsInteger() != 1) return;
+                ViewCropRegionShapeManager sm = v.GetCropRegionShapeManager();
+                top    = sm.TopAnnotationCropOffset;
+                bottom = sm.BottomAnnotationCropOffset;
+                left   = sm.LeftAnnotationCropOffset;
+                right  = sm.RightAnnotationCropOffset;
+                active = true;
+            }
+            catch (Exception ex)
+            {
+                // Falling back to "no annotation crop" silently would reintroduce exactly the
+                // mis-placement this fix exists to remove, so the user is told, not just the log.
+                active = false; top = bottom = left = right = 0;
+                Log(AppStrings.T("testing.alignSheetViews.log.couldNotReadAnnoCrop", v.Name), "warn");
+                DiagnosticsLog.Swallowed($"AlignSheetViews: read annotation crop on view {v.Id.Value}", ex);
+            }
+        }
+
+        /// <summary>
+        /// Maps an offset expressed in crop-plane axes onto sheet axes for a rotated viewport: a
+        /// rotated viewport turns its crop X axis onto a sheet Y axis, so an uncompensated offset is
+        /// applied in the wrong direction. The tool used to warn about rotated viewports and then
+        /// move them with the raw offset anyway.
+        ///
+        /// PROVISIONAL: the sign convention is not verified against Revit. Preview-mode diagnostics
+        /// print BOTH candidate mappings for every rotated viewport so a single plot confirms it or
+        /// flips it.
+        /// </summary>
+        private static XYZ ApplyRotation(XYZ v, ViewportRotation r)
+        {
+            switch (r)
+            {
+                case ViewportRotation.Clockwise:        return new XYZ( v.Y, -v.X, 0);
+                case ViewportRotation.Counterclockwise: return new XYZ(-v.Y,  v.X, 0);
+                default:                                return v;
             }
         }
 
@@ -864,6 +1172,15 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
             public bool             CropActive     { get; set; }
             public bool             CropBoxVisible { get; set; }
             public ElementId        ScopeBoxId     { get; set; } = ElementId.InvalidElementId;
+
+            // Annotation crop (model feet). An ACTIVE, ASYMMETRIC annotation crop shifts the
+            // viewport's on-sheet footprint away from the model-crop centre, which the
+            // alignment maths has to compensate for. See FootprintCentre.
+            public bool             AnnoCropActive { get; set; }
+            public double           AnnoTop        { get; set; }
+            public double           AnnoBottom     { get; set; }
+            public double           AnnoLeft       { get; set; }
+            public double           AnnoRight      { get; set; }
         }
     }
 }

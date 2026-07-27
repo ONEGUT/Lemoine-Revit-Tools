@@ -56,6 +56,7 @@
       "openingDeleteFromProject": "Opening Delete from Project…",
       "applyUnavailable": "Apply unavailable.",
       "applyingOne": "Applying “{0}” to the active view…",
+      "applyingToTargets": "Applying {0} trade(s) to {1} targets…",
       "applyingMany": "Applying {0} trades to the active view…"
     },
 
@@ -67,6 +68,15 @@
   "log": {
     "errorGeneric": "Error: {0}",
     "viewNoOverrides": "Active view '{0}' does not support graphic overrides.",
+
+    // Apply targets (views + Revit view templates). {0} total, {1} of them templates, {2} names.
+    "applyingToTargets": "Applying to {0} target(s) ({1} view template(s)): {2}",
+    // A picked target that no longer resolves - logged, never silently dropped.
+    "targetMissing": "Target view/template id {0} no longer exists - skipped.",
+    // Per-target attach failure: {0} filter name, {1} target name, {2} exception message.
+    "errorFilterOnTarget": "Filter '{0}' could not be applied to '{1}': {2}",
+    // Multi-target runs only, so "N applied" is never misread as N filters.
+    "placementSummary": "{0} filter placement(s) across {1} target(s).",
     "scanningDocuments": "Scanning {0} document(s)…",
     "noEnabledRules": "No enabled rules with match keywords found for selected trades.",
     "stoppedOrphans": "Stopped by user — {0} orphan(s) removed; work so far preserved.",

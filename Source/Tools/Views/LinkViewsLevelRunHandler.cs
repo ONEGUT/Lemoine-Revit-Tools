@@ -116,7 +116,17 @@ namespace LemoineTools.Tools.LinkViews
                         Log(AppStrings.T("linkviews.level.log.boxMissing", id.Value), "warn");
                         continue;
                     }
-                    boxTargets.Add(new BoxTarget { Id = el.Id, Name = el.Name, Bounds = el.get_BoundingBox(null) });
+                    // Guard the bounds read per box: one scope box that won't report a bounding
+                    // box must skip-and-log like a missing box, not throw out of the run.
+                    try
+                    {
+                        boxTargets.Add(new BoxTarget { Id = el.Id, Name = el.Name, Bounds = el.get_BoundingBox(null) });
+                    }
+                    catch (Exception ex)
+                    {
+                        DiagnosticsLog.Swallowed($"LinkViewsLevel: read bounds of scope box {id.Value}", ex);
+                        Log(AppStrings.T("linkviews.level.log.boxMissing", id.Value), "warn");
+                    }
                 }
                 if (boxTargets.Count == 0)
                 {
