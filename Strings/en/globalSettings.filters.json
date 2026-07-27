@@ -26,7 +26,25 @@
     "removeFromViewLabel": "Remove from view",
     "removeFromViewTooltip": "Remove the checked trades' filters from the current view (kept in the project).",
     "applyCheckboxTooltip": "Include this trade when applying selected trades to the view",
-    "noTrades": "No trades — use ＋ Add Trade below."
+    "noTrades": "No trades — use ＋ Add Trade below.",
+
+    // Apply-target picker. "View template" here means a REVIT view template (a run
+    // destination), never a saved Auto Filters preset - those are "templatesPopup" below.
+    "applyTargetsLabel": "Apply to…",
+    "applyTargetsTooltip": "Choose which views and view templates the filters are applied to."
+  },
+
+  // Popup listing the run's apply targets: the active view plus any Revit view templates.
+  // Applying to a view template is the authoritative placement - it propagates to every
+  // view that template governs.
+  "targetsPopup": {
+    "title": "Apply to",
+    "activeView": "Active view",
+    "viewTemplatesHeader": "View templates",
+    "noViewTemplates": "No view templates in this document.",
+    "searchPlaceholder": "Search view templates…",
+    "done": "Done",
+    "clearAll": "Reset to active view"
   },
 
   "ruleList": {

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using Autodesk.Revit.DB;
 using LemoineTools.Tools.AutoFilters;
 
 namespace LemoineTools.Framework.Web
@@ -17,10 +18,11 @@ namespace LemoineTools.Framework.Web
     {
         private readonly WebAutoFilters _model;
 
-        public WebAutoFiltersWindow(List<string> fillPatterns, List<string> linePatterns)
+        public WebAutoFiltersWindow(List<string> fillPatterns, List<string> linePatterns,
+                                    List<ViewTemplateEntry>? viewTemplates = null)
             : base(AppStrings.T("autofilters.filtersWindow.window.toolbar.title"), 1500, 900, 1100, 640)
         {
-            _model = new WebAutoFilters(fillPatterns, linePatterns);
+            _model = new WebAutoFilters(fillPatterns, linePatterns, viewTemplates);
             // Reload discovered rules when focus returns from the Discover window (same
             // contract as the WPF window's Activated hook).
             Activated += OnActivatedReload;
@@ -113,6 +115,20 @@ namespace LemoineTools.Framework.Web
                     ApplyTradesToView(new List<FilterTradeConfig> { active });
                     return true;
                 case "removeFromView":   RemoveTradesFromView(_model.CheckedTrades()); return true;
+
+                // ── Apply targets (Revit view templates) ──────────────────────
+                case "setTargetActiveView":
+                    _model.SetTargetActiveView(GetBool(p, "value"));
+                    SendInit(); return true;
+                case "setTargetTemplate":
+                    _model.SetTargetTemplate(GetLong(p, "id"), GetBool(p, "value"));
+                    SendInit(); return true;
+                case "clearTargets":
+                    foreach (var id in _model.TargetTemplateIds.ToList())
+                        _model.SetTargetTemplate(id, false);
+                    _model.SetTargetActiveView(true);
+                    SendInit(); return true;
+
                 case "discover":         LaunchDiscover(); return true;
                 case "deleteFromProject": OpenDeleteFromProject(); return true;
 
@@ -141,14 +157,23 @@ namespace LemoineTools.Framework.Web
             handler.ChangedFilterNames               = null;
             handler.SelectedDisciplines              = trades.Select(t => t.Label).ToList();
             handler.SelectedLinkTitles               = new List<string>();
+            // Apply targets: the ticked view templates, plus the active view when ticked.
+            // An empty list makes the handler fall back to the active view on its own, which
+            // is exactly what an "active view only" selection should do.
+            handler.TargetViewIds                    = _model.TargetTemplateIds
+                                                          .Select(id => new ElementId(id))
+                                                          .ToList<ElementId>();
+            handler.IncludeActiveView                = _model.TargetActiveView;
             handler.PushLog                          = null;
             handler.OnProgress                       = null;
             handler.OnComplete                       = null;
 
             evt.Raise();
-            Flash(trades.Count == 1
-                ? TW("window.status.applyingOne", trades[0].Label)
-                : TW("window.status.applyingMany", trades.Count));
+            Flash(_model.TargetCount > 1
+                ? TW("window.status.applyingToTargets", trades.Count, _model.TargetCount)
+                : trades.Count == 1
+                    ? TW("window.status.applyingOne", trades[0].Label)
+                    : TW("window.status.applyingMany", trades.Count));
         }
 
         private void RemoveTradesFromView(List<FilterTradeConfig> trades)
@@ -277,6 +302,17 @@ namespace LemoineTools.Framework.Web
             if (v is long l) return (int)l;
             if (v is double d) return (int)d;
             return int.TryParse(v.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var r) ? r : 0;
+        }
+
+        // ElementId.Value is a long in Revit 2024, and JSON numbers arrive as double/long —
+        // never narrow these through GetInt or large ids would silently wrap.
+        private static long GetLong(IReadOnlyDictionary<string, object?> p, string key)
+        {
+            if (!p.TryGetValue(key, out var v) || v == null) return 0L;
+            if (v is long l)   return l;
+            if (v is int i)    return i;
+            if (v is double d) return (long)d;
+            return long.TryParse(v.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var r) ? r : 0L;
         }
     }
 }
