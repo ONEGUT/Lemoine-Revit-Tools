@@ -60,11 +60,14 @@ namespace LemoineTools.Commands
             var lineNames = new List<string> { "Solid" };
             // View templates the user can pick as apply targets (Apply to... popup). Captured
             // here on the main thread; the window threads never touch the Revit API.
-            var viewTemplates = new List<LemoineTools.Tools.AutoFilters.ViewTemplateEntry>();
+            var viewTemplates  = new List<LemoineTools.Tools.AutoFilters.ViewTemplateEntry>();
+            var activeViewName = "";
 
             var doc = commandData.Application.ActiveUIDocument?.Document;
             if (doc != null)
             {
+                activeViewName = doc.ActiveView?.Name ?? "";
+
                 // Capture the exact filterable-category list from this document so the rule
                 // editor's category picker mirrors Revit's own "Edit Filters → Categories" list.
                 LemoineTools.Tools.AutoFilters.AutoFiltersSettings.CaptureFilterableCategories(doc);
@@ -94,7 +97,10 @@ namespace LemoineTools.Commands
                         {
                             Id           = v.Id.Value,
                             Name         = v.Name,
-                            ViewTypeName = v.ViewType.ToString(),
+                            // Friendly label ("Ceiling Plan", "3D View", …) — reuses the same
+                            // mapping Replicate Dependent Views already built, rather than a
+                            // second copy of raw ViewType.ToString() → display-name pairs.
+                            ViewTypeName = LemoineTools.Tools.LinkViews.ViewsByTemplateRunHandler.ViewTypeLabel(v.ViewType),
                         })
                         .OrderBy(t => t.Name, System.StringComparer.OrdinalIgnoreCase));
 
@@ -112,7 +118,7 @@ namespace LemoineTools.Commands
             {
                 WebUiThread.Invoke(() =>
                 {
-                    var w = new WebAutoFiltersWindow(fillNames, lineNames, viewTemplates);
+                    var w = new WebAutoFiltersWindow(fillNames, lineNames, viewTemplates, activeViewName);
                     w.Closed += (s2, e2) => { _webWindow = null; };
                     w.Show();
                     _webWindow = w;
@@ -128,7 +134,7 @@ namespace LemoineTools.Commands
             {
                 win = new FiltersSettingsWindow();
                 win.SetPatternLists(fillNames, lineNames);
-                win.SetViewTemplates(viewTemplates);
+                win.SetViewTemplates(viewTemplates, activeViewName);
                 win.Closed += (s, e) =>
                 {
                     _window = null;

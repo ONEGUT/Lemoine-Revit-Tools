@@ -24,9 +24,10 @@ namespace LemoineTools.Tools.AutoFilters
         public string Name { get; set; } = string.Empty;
 
         /// <summary>
-        /// The template's ViewType name, used to group the picker. A filter whose categories
-        /// don't apply to this view type is rejected by AddFilter at run time — the run logs
-        /// and skips that one target rather than failing the whole run.
+        /// Friendly label for the template's ViewType ("Ceiling Plan", "3D View", etc. — via
+        /// <c>ViewsByTemplateRunHandler.ViewTypeLabel</c>), used to group the picker. A filter
+        /// whose categories don't apply to this view type is rejected by AddFilter at run time —
+        /// the run logs and skips that one target rather than failing the whole run.
         /// </summary>
         public string ViewTypeName { get; set; } = string.Empty;
     }

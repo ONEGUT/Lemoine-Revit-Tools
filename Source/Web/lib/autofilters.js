@@ -188,6 +188,8 @@
       acts.appendChild(add);
       side.appendChild(acts);
 
+      side.appendChild(buildTargetsRow());
+
       var foot = el('div', 'l-af-side-foot');
       var apply = el('button', 'l-btn apply', L('applyToView'));
       apply.addEventListener('click', function () { action('applyToView'); });
@@ -503,6 +505,151 @@
         body.appendChild(row);
       });
       openOverlay(L('historyHeader'), body, []);
+    }
+
+    // -- Apply targets (active view + Revit view templates) ------------------------
+    //
+    // Distinct from openTemplatesOverlay just below: THAT is saved Auto Filters presets.
+    // THIS is which Revit views/view templates the Apply footer button writes filters into.
+    //
+    // These checkboxes live INSIDE an overlay, so their change handlers deliberately do NOT
+    // call action()-then-SendInit(): SendInit() re-runs draw(), which wipes the whole app DOM
+    // and closes the overlay it just fired from (overlayEl is rebuilt hidden on every draw()).
+    // Instead they patch `payload` in place (the C# side already stores the same fire-and-
+    // forget action, so it stays in sync for the next SendInit() some other control triggers)
+    // and repaint only the sidebar row + the clicked checkbox's own row — same pattern the
+    // sidebar's own trade checkboxes (checkTrade) use for the same reason.
+    var targetsValEl = null, targetsBadgeEl = null;
+
+    function targetsTotal() {
+      var vts = payload.viewTemplates || [];
+      return (payload.targetActiveView ? 1 : 0) + vts.filter(function (t) { return t.checked; }).length;
+    }
+
+    function targetsSummary() {
+      var vts = payload.viewTemplates || [];
+      var n = vts.filter(function (t) { return t.checked; }).length;
+      var parts = [];
+      if (payload.targetActiveView) parts.push(L('targetsActiveView'));
+      if (n > 0) {
+        var noun = L('targetsVtHeader').toLowerCase();
+        if (n === 1) noun = noun.replace(/s\b/, '');
+        parts.push(n + ' ' + noun);
+      }
+      return parts.join(' + ') || L('targetsActiveView');
+    }
+
+    function refreshTargetsRow() {
+      if (targetsValEl) targetsValEl.textContent = targetsSummary();
+      if (targetsBadgeEl) targetsBadgeEl.textContent = String(targetsTotal());
+    }
+
+    function buildTargetsRow() {
+      var row = el('div', 'l-af-targets');
+      row.appendChild(el('span', 'lbl', L('targets')));
+      targetsValEl = el('span', 'val', targetsSummary());
+      row.appendChild(targetsValEl);
+      targetsBadgeEl = el('span', 'badge', String(targetsTotal()));
+      row.appendChild(targetsBadgeEl);
+      row.appendChild(el('span', 'car', '▾'));
+      row.title = L('targetsTip');
+      row.addEventListener('click', openTargetsOverlay);
+      return row;
+    }
+
+    function openTargetsOverlay() {
+      var body = el('div');
+      body.appendChild(el('div', 'l-lc-filterhint', L('targetsTip')));
+
+      var activeRow = el('div', 'l-af-tgt-active');
+      var activeCb = el('input'); activeCb.type = 'checkbox'; activeCb.checked = !!payload.targetActiveView;
+      activeCb.addEventListener('click', function (e) { e.stopPropagation(); });
+      function toggleActiveView(next) {
+        if (!next && targetsTotal() <= 1) { activeCb.checked = true; return; } // zero-targets guard
+        payload.targetActiveView = next;
+        action('setTargetActiveView', { value: next });
+        refreshTargetsRow();
+      }
+      activeCb.addEventListener('change', function () { toggleActiveView(activeCb.checked); });
+      activeRow.appendChild(activeCb);
+      activeRow.appendChild(el('span', 'nm', L('targetsActiveView')));
+      if (payload.activeViewName) activeRow.appendChild(el('span', 'sub', payload.activeViewName));
+      activeRow.addEventListener('click', function () {
+        var next = !activeCb.checked;
+        activeCb.checked = next;
+        toggleActiveView(next);
+      });
+      body.appendChild(activeRow);
+
+      body.appendChild(el('div', 'l-af-tgt-hdr', L('targetsVtHeader')));
+
+      var vts = payload.viewTemplates || [];
+      if (vts.length === 0) {
+        body.appendChild(el('div', 'l-af-tgt-empty', L('targetsVtNone')));
+      } else {
+        var search = el('input', 'l-af-tgt-search'); search.type = 'text';
+        search.placeholder = L('targetsSearch');
+        body.appendChild(search);
+
+        var listWrap = el('div');
+        body.appendChild(listWrap);
+
+        function toggleTemplate(t, r, cb, next) {
+          if (!next && targetsTotal() <= 1) { cb.checked = true; return; } // zero-targets guard
+          t.checked = next;
+          r.classList.toggle('on', next);
+          action('setTargetTemplate', { id: t.id, value: next });
+          refreshTargetsRow();
+        }
+
+        function renderList(filter) {
+          listWrap.innerHTML = '';
+          var q = (filter || '').toLowerCase();
+          var byType = {};
+          var order = [];
+          vts.forEach(function (t) {
+            if (q && t.name.toLowerCase().indexOf(q) === -1) return;
+            if (!byType[t.viewType]) { byType[t.viewType] = []; order.push(t.viewType); }
+            byType[t.viewType].push(t);
+          });
+          if (order.length === 0) {
+            listWrap.appendChild(el('div', 'l-af-tgt-empty', L('targetsVtNone')));
+            return;
+          }
+          order.forEach(function (vt) {
+            listWrap.appendChild(el('div', 'l-af-tgt-grp', vt));
+            byType[vt].forEach(function (t) {
+              var r = el('div', 'l-af-tgt-row' + (t.checked ? ' on' : ''));
+              var cb = el('input'); cb.type = 'checkbox'; cb.checked = !!t.checked;
+              cb.addEventListener('click', function (e) { e.stopPropagation(); });
+              cb.addEventListener('change', function () { toggleTemplate(t, r, cb, cb.checked); });
+              r.appendChild(cb);
+              r.appendChild(el('span', 'nm', t.name));
+              r.appendChild(el('span', 'tag', t.viewType));
+              r.addEventListener('click', function () {
+                var next = !cb.checked;
+                cb.checked = next;
+                toggleTemplate(t, r, cb, next);
+              });
+              listWrap.appendChild(r);
+            });
+          });
+        }
+        renderList('');
+        search.addEventListener('input', function () { renderList(search.value); });
+      }
+
+      // Every checkbox here applies live (same pattern as the trade checkboxes in the
+      // sidebar), so there is no pending state to confirm — just the built-in Cancel/close
+      // and the one real action, resetting back to the active-view-only default.
+      openOverlay(L('targetsTitle'), body, [
+        { label: L('targetsClear'), onClick: function () {
+          (payload.viewTemplates || []).forEach(function (t) { t.checked = false; });
+          payload.targetActiveView = true;
+          action('clearTargets');
+          refreshTargetsRow();
+        } },
+      ]);
     }
 
     function openTemplatesOverlay() {

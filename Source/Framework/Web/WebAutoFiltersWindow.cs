@@ -19,10 +19,10 @@ namespace LemoineTools.Framework.Web
         private readonly WebAutoFilters _model;
 
         public WebAutoFiltersWindow(List<string> fillPatterns, List<string> linePatterns,
-                                    List<ViewTemplateEntry>? viewTemplates = null)
+                                    List<ViewTemplateEntry>? viewTemplates = null, string activeViewName = "")
             : base(AppStrings.T("autofilters.filtersWindow.window.toolbar.title"), 1500, 900, 1100, 640)
         {
-            _model = new WebAutoFilters(fillPatterns, linePatterns, viewTemplates);
+            _model = new WebAutoFilters(fillPatterns, linePatterns, viewTemplates, activeViewName);
             // Reload discovered rules when focus returns from the Discover window (same
             // contract as the WPF window's Activated hook).
             Activated += OnActivatedReload;
@@ -117,17 +117,25 @@ namespace LemoineTools.Framework.Web
                 case "removeFromView":   RemoveTradesFromView(_model.CheckedTrades()); return true;
 
                 // ── Apply targets (Revit view templates) ──────────────────────
+                // No SendInit() here, deliberately — these checkboxes live INSIDE the "Apply
+                // to" overlay, and SendInit() re-runs draw(), which wipes the whole app DOM and
+                // (via a fresh, closed overlayEl) closes the popup on every single click. The
+                // JS side mirrors the same zero-targets guard and patches its own local payload
+                // + the sidebar row directly (same fire-and-forget pattern as "checkTrade",
+                // which lives in the sidebar rather than an overlay for the same reason). The
+                // model here still tracks the authoritative state for the eventual Apply click
+                // and for the next SendInit() triggered by an unrelated action.
                 case "setTargetActiveView":
                     _model.SetTargetActiveView(GetBool(p, "value"));
-                    SendInit(); return true;
+                    return true;
                 case "setTargetTemplate":
                     _model.SetTargetTemplate(GetLong(p, "id"), GetBool(p, "value"));
-                    SendInit(); return true;
+                    return true;
                 case "clearTargets":
                     foreach (var id in _model.TargetTemplateIds.ToList())
                         _model.SetTargetTemplate(id, false);
                     _model.SetTargetActiveView(true);
-                    SendInit(); return true;
+                    return true;
 
                 case "discover":         LaunchDiscover(); return true;
                 case "deleteFromProject": OpenDeleteFromProject(); return true;
