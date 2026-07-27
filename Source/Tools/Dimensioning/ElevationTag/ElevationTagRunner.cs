@@ -88,6 +88,13 @@ namespace LemoineTools.Tools.Dimensioning.ElevationTag
                     if (markers.Count == 0) continue;
                     log(AppStrings.T("clash.elevationFinder.log.viewMarkers", view.Name, markers.Count), "info");
 
+                    // Phase A — read every marker's geometry and build its placement up front
+                    // (pure reads, no model mutation). Interleaving NewSpotElevation (a mutation)
+                    // with the next marker's GeometryCurve read forced Revit to regenerate the
+                    // whole model before every single read — one regen per clash marker. Batching
+                    // all reads, then all creates, drops that to at most one regen for the view.
+                    var placements = new List<(Reference Ref, XYZ Anchor, XYZ Bend, XYZ End, string? Group)>();
+
                     foreach (var ce in markers)
                     {
                         try
@@ -131,8 +138,26 @@ namespace LemoineTools.Tools.Dimensioning.ElevationTag
                             XYZ bend = anchor.Add(right.Multiply(LeaderBendPaperFt * scale));
                             XYZ end  = anchor.Add(right.Multiply(LeaderEndPaperFt * scale));
 
+                            placements.Add((reference, anchor, bend, end, ClashTagSchema.ReadGroup(ce)));
+                        }
+                        catch (Exception ex)
+                        {
+                            // Per-marker guard: one bad marker line fails only its own tag, never
+                            // the whole read phase.
+                            DiagnosticsLog.Swallowed("ElevationTagRunner: read marker geometry", ex);
+                            log(AppStrings.T("clash.elevationFinder.log.spotFail", view.Name, ex.Message), "fail");
+                            result.Failures++;
+                        }
+                    }
+
+                    // Phase B — create every spot elevation from the precomputed placements (pure
+                    // mutations, no geometry reads interleaved, so no forced per-tag regeneration).
+                    foreach (var p in placements)
+                    {
+                        try
+                        {
                             var spot = doc.Create.NewSpotElevation(
-                                view, reference, anchor, bend, end, anchor, true);
+                                view, p.Ref, p.Anchor, p.Bend, p.End, p.Anchor, true);
 
                             if (spot == null) { result.Failures++; continue; }
 
@@ -142,7 +167,7 @@ namespace LemoineTools.Tools.Dimensioning.ElevationTag
                                 catch (Exception ex) { DiagnosticsLog.Swallowed("ElevationTagRunner: set spot elevation type", ex); }
                             }
 
-                            ClashTagSchema.StampTag(spot, ClashTagSchema.ReadGroup(ce));
+                            ClashTagSchema.StampTag(spot, p.Group);
                             result.Placed++;
                         }
                         catch (Exception ex)
