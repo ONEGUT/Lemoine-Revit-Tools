@@ -242,7 +242,7 @@ namespace LemoineTools.Framework
                 RunLog = RL((AppStrings.T("overviewDemos.tools.explodeViewByTrade.runLog.1"), "info"), (AppStrings.T("overviewDemos.tools.explodeViewByTrade.runLog.2"), "pass"), (AppStrings.T("overviewDemos.tools.explodeViewByTrade.runLog.3"), "pass")),
             },
 
-            ["Place Dependent Views"] = new OverviewDemoSpec
+            ["Create Sheets"] = new OverviewDemoSpec
             {
                 Title = AppStrings.T("overviewDemos.tools.placeDependentViews.title"), RunLabel = AppStrings.T("overviewDemos.tools.placeDependentViews.runLabel"),
                 Steps = new[]

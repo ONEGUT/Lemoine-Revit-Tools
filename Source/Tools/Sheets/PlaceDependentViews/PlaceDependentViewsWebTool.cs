@@ -19,6 +19,7 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
 
         private const string ModeTokenDependents = "dependents";
         private const string ModeTokenComposite  = "composite";
+        private const string ModeTokenPlaceViews = "placeViews";
         private const string LayoutTokenAccurate = "measured";
         private const string LayoutTokenGrouped  = "grouped";
         private const string LayoutTokenEstimate = "estimate";
@@ -27,11 +28,13 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
         private readonly ExternalEvent?                   _event;
         private readonly BrowserTree                      _browserTree;
 
-        private bool _compositeMode = false;
+        private PlaceViewsMode _mode = PlaceViewsMode.DependentsPerParent;
         private readonly List<ParentViewEntry> _parents;
         private List<ElementId> _selectedParentIds = new List<ElementId>();
         private readonly List<ParentViewEntry> _compositeCandidates;
         private List<ElementId> _selectedCompositeIds = new List<ElementId>();
+        private readonly List<ParentViewEntry> _placeableViews;
+        private List<ElementId> _selectedPlaceableIds = new List<ElementId>();
 
         private readonly List<string>                  _titleblockNames;
         private readonly Dictionary<string, ElementId> _titleblockMap;
@@ -61,7 +64,8 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
             List<ParentViewEntry>?           parents,
             List<ParentViewEntry>?           compositeCandidates,
             List<FamilySymbol>?              titleblocks,
-            BrowserTree?                     browserTree = null)
+            BrowserTree?                     browserTree = null,
+            List<ParentViewEntry>?           placeableViews = null)
         {
             _handler     = handler;
             _event       = externalEvent;
@@ -70,6 +74,8 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
             _parents = (parents ?? new List<ParentViewEntry>())
                 .OrderBy(p => p.TypeLabel).ThenBy(p => p.Name).ToList();
             _compositeCandidates = (compositeCandidates ?? new List<ParentViewEntry>())
+                .OrderBy(p => p.TypeLabel).ThenBy(p => p.Name).ToList();
+            _placeableViews = (placeableViews ?? new List<ParentViewEntry>())
                 .OrderBy(p => p.TypeLabel).ThenBy(p => p.Name).ToList();
 
             _titleblockMap   = new Dictionary<string, ElementId>();
@@ -89,31 +95,42 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
         public override string Title    => AppStrings.T("testing.placeDependentViews.title");
         public override string RunLabel => AppStrings.T("testing.placeDependentViews.runLabel");
 
-        private string ModeLabel(bool composite) => composite
-            ? AppStrings.T("testing.placeDependentViews.modeComposite")
+        private static string ModeLabel(PlaceViewsMode mode) =>
+              mode == PlaceViewsMode.CompositeOneSheet ? AppStrings.T("testing.placeDependentViews.modeComposite")
+            : mode == PlaceViewsMode.OneViewPerSheet   ? AppStrings.T("testing.placeDependentViews.modePlaceViews")
             : AppStrings.T("testing.placeDependentViews.modeDependents");
+
+        private static string ModeToken(PlaceViewsMode mode) =>
+              mode == PlaceViewsMode.CompositeOneSheet ? ModeTokenComposite
+            : mode == PlaceViewsMode.OneViewPerSheet   ? ModeTokenPlaceViews
+            : ModeTokenDependents;
 
         private string LayoutLabel => _layoutMode == LayoutMode.Estimate ? AppStrings.T("testing.placeDependentViews.layoutLabel.estimate")
                                     : _layoutMode == LayoutMode.Grouped  ? AppStrings.T("testing.placeDependentViews.layoutLabel.grouped")
                                     : AppStrings.T("testing.placeDependentViews.layoutLabel.accurate");
 
-        private List<ElementId> ActiveSelection => _compositeMode ? _selectedCompositeIds : _selectedParentIds;
+        private List<ElementId> ActiveSelection =>
+              _mode == PlaceViewsMode.CompositeOneSheet ? _selectedCompositeIds
+            : _mode == PlaceViewsMode.OneViewPerSheet   ? _selectedPlaceableIds
+            : _selectedParentIds;
 
         public override IReadOnlyList<WebStep> BuildSteps()
         {
             // S1 — mode + views to place (picker restricted to the active mode's candidates)
             var s1 = new WebStep("S1", AppStrings.T("testing.placeDependentViews.steps.S1"))
                 .Add(WebInput.SingleSelect("mode", AppStrings.T("testing.placeDependentViews.labels.secMode"),
-                    _compositeMode ? ModeTokenComposite : ModeTokenDependents, new[]
+                    ModeToken(_mode), new[]
                     {
-                        new WebOption(ModeTokenDependents, ModeLabel(false)),
-                        new WebOption(ModeTokenComposite,  ModeLabel(true)),
+                        new WebOption(ModeTokenDependents, ModeLabel(PlaceViewsMode.DependentsPerParent)),
+                        new WebOption(ModeTokenComposite,  ModeLabel(PlaceViewsMode.CompositeOneSheet)),
+                        new WebOption(ModeTokenPlaceViews, ModeLabel(PlaceViewsMode.OneViewPerSheet)),
                     }))
-                .Add(WebInput.Hint("modeNote", _compositeMode
-                    ? AppStrings.T("testing.placeDependentViews.labels.modeNoteComposite")
+                .Add(WebInput.Hint("modeNote",
+                      _mode == PlaceViewsMode.CompositeOneSheet ? AppStrings.T("testing.placeDependentViews.labels.modeNoteComposite")
+                    : _mode == PlaceViewsMode.OneViewPerSheet   ? AppStrings.T("testing.placeDependentViews.labels.modeNotePlaceViews")
                     : AppStrings.T("testing.placeDependentViews.labels.modeNoteDependents")));
 
-            if (_compositeMode)
+            if (_mode == PlaceViewsMode.CompositeOneSheet)
             {
                 if (_compositeCandidates.Count == 0)
                     s1.Add(WebInput.Hint("noComposite", AppStrings.T("testing.placeDependentViews.labels.hintNoComposite")));
@@ -122,6 +139,16 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
                         AppStrings.T("testing.placeDependentViews.labels.pickerCompositeName"),
                         PruneTree(_browserTree, new HashSet<long>(_compositeCandidates.Select(p => p.Id.Value))),
                         _selectedCompositeIds.Select(id => id.Value)));
+            }
+            else if (_mode == PlaceViewsMode.OneViewPerSheet)
+            {
+                if (_placeableViews.Count == 0)
+                    s1.Add(WebInput.Hint("noPlaceable", AppStrings.T("testing.placeDependentViews.labels.hintNoPlaceable")));
+                else
+                    s1.Add(WebInput.BrowserTree("placeableViews",
+                        AppStrings.T("testing.placeDependentViews.labels.pickerPlaceViewsName"),
+                        PruneTree(_browserTree, new HashSet<long>(_placeableViews.Select(p => p.Id.Value))),
+                        _selectedPlaceableIds.Select(id => id.Value)));
             }
             else
             {
@@ -144,7 +171,9 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
 
             // S3 — sheet naming
             var tokens = NamingTokenRegistry.TokensFor(TokenEntity.Sheet, hasSource: true);
-            var sample = _parents.FirstOrDefault();
+            var sample = _parents.FirstOrDefault()
+                         ?? _placeableViews.FirstOrDefault()
+                         ?? _compositeCandidates.FirstOrDefault();
             var ctx = new TokenContext();
             ctx.Computed["ParentViewName"] = sample?.Name ?? AppStrings.T("testing.placeDependentViews.labels.previewSampleName");
             ctx.Computed["ViewType"]       = sample?.TypeLabel ?? "FloorPlan";
@@ -194,7 +223,7 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
             var s5 = new WebStep("S5", AppStrings.T("testing.placeDependentViews.steps.S5"), required: false)
                 .Add(WebInput.Review("review", new[]
                 {
-                    (AppStrings.T("testing.placeDependentViews.review.itemMode"), ModeLabel(_compositeMode)),
+                    (AppStrings.T("testing.placeDependentViews.review.itemMode"), ModeLabel(_mode)),
                     (AppStrings.T("testing.placeDependentViews.review.itemViews"),
                      ActiveSelection.Count == 0
                         ? AppStrings.T("testing.placeDependentViews.review.viewsNone")
@@ -211,8 +240,9 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
                     (AppStrings.T("testing.placeDependentViews.review.itemLayout"),
                      AppStrings.T("testing.placeDependentViews.review.layoutValue", LayoutLabel, _gapInches, _marginTop, _marginBottom, _marginLeft, _marginRight)),
                 },
-                note: _compositeMode
-                    ? AppStrings.T("testing.placeDependentViews.review.noteComposite")
+                note:
+                      _mode == PlaceViewsMode.CompositeOneSheet ? AppStrings.T("testing.placeDependentViews.review.noteComposite")
+                    : _mode == PlaceViewsMode.OneViewPerSheet   ? AppStrings.T("testing.placeDependentViews.review.notePlaceViews")
                     : AppStrings.T("testing.placeDependentViews.review.noteDependents"),
                 warning: _trimBubbles ? AppStrings.T("testing.placeDependentViews.review.warning") : null));
 
@@ -225,10 +255,13 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
             {
                 case "mode":
                 {
-                    bool composite = AsString(value) == ModeTokenComposite;
-                    if (composite != _compositeMode)
+                    string token = AsString(value);
+                    var newMode = token == ModeTokenComposite  ? PlaceViewsMode.CompositeOneSheet
+                                : token == ModeTokenPlaceViews  ? PlaceViewsMode.OneViewPerSheet
+                                : PlaceViewsMode.DependentsPerParent;
+                    if (newMode != _mode)
                     {
-                        _compositeMode = composite;
+                        _mode = newMode;
                         StepInputsChanged?.Invoke("S1");
                         Fire();
                     }
@@ -236,6 +269,7 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
                 }
                 case "parentViews":    _selectedParentIds    = IdList(value).Select(id => new ElementId(id)).ToList(); Fire(); break;
                 case "compositeViews": _selectedCompositeIds = IdList(value).Select(id => new ElementId(id)).ToList(); Fire(); break;
+                case "placeableViews": _selectedPlaceableIds = IdList(value).Select(id => new ElementId(id)).ToList(); Fire(); break;
                 case "titleblock":     _selectedTitleblock   = AsString(value, _selectedTitleblock); Fire(); break;
                 case "startNumber":    { var v = (int)AsDouble(value, _startingNumber); if (v >= 1) _startingNumber = v; Fire(); break; }
                 case "numberPrefix":   _numberPrefix    = AsString(value); Fire(); break;
@@ -283,7 +317,9 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
                 case "S1": return ActiveSelection.Count == 0
                     ? "-"
                     : AppStrings.T("testing.placeDependentViews.summaries.s1Value", ActiveSelection.Count,
-                        (_compositeMode ? AppStrings.T("testing.placeDependentViews.summaries.s1Composite") : AppStrings.T("testing.placeDependentViews.summaries.s1Dependents")));
+                          _mode == PlaceViewsMode.CompositeOneSheet ? AppStrings.T("testing.placeDependentViews.summaries.s1Composite")
+                        : _mode == PlaceViewsMode.OneViewPerSheet   ? AppStrings.T("testing.placeDependentViews.summaries.s1PlaceViews")
+                        : AppStrings.T("testing.placeDependentViews.summaries.s1Dependents"));
                 case "S2": return string.IsNullOrEmpty(_selectedTitleblock) ? "-" : _selectedTitleblock;
                 case "S3": return AppStrings.T("testing.placeDependentViews.summaries.s3Value", _namingPattern, _startingNumber);
                 case "S4": return AppStrings.T("testing.placeDependentViews.summaries.s4Value", LayoutLabel,
@@ -297,9 +333,7 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
         {
             if (_handler == null || _event == null) return;
 
-            _handler.Mode             = _compositeMode
-                                        ? PlaceViewsMode.CompositeOneSheet
-                                        : PlaceViewsMode.DependentsPerParent;
+            _handler.Mode             = _mode;
             _handler.ParentViewIds    = new List<ElementId>(ActiveSelection);
             _handler.TitleBlockTypeId = _titleblockMap.TryGetValue(_selectedTitleblock, out var tbId)
                                         ? tbId : ElementId.InvalidElementId;

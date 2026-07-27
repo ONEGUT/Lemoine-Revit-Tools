@@ -16,6 +16,9 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
         /// <summary>One sheet per source view, holding the view itself (anchored top- or
         /// left-center) plus every callout/section/elevation visible in it.</summary>
         CompositeOneSheet,
+        /// <summary>One sheet per selected view, holding only that single view (one source view
+        /// per page). No dependents, no callout/section discovery.</summary>
+        OneViewPerSheet,
     }
 
     /// <summary>How placed viewports are sized for layout.</summary>
@@ -111,7 +114,7 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
 
                 int total = ParentViewIds.Count;
 
-                using (var tx = new Transaction(doc, "Lemoine — Place Dependent Views"))
+                using (var tx = new Transaction(doc, "Lemoine — Create Sheets"))
                 {
                     ConfigureFailures(tx);
                     tx.Start();
@@ -153,12 +156,17 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
                             : AppStrings.T("testing.placeDependentViews.log.announceAccurate"), "info");
 
                     bool composite = Mode == PlaceViewsMode.CompositeOneSheet;
+                    bool oneView   = Mode == PlaceViewsMode.OneViewPerSheet;
 
-                    // Composite mode lookups, built once: section/callout markers resolve
-                    // to views by their (unique) view name, and views already on a sheet
-                    // are pre-read so a placed source fails before its sheet is created.
+                    // Composite and one-view modes both need the set of views already on a sheet,
+                    // pre-read so a placed source fails before its (would-be-empty) sheet is created.
+                    // Composite additionally resolves section/callout markers to views by unique name.
                     Dictionary<string, View>? viewsByName  = null;
                     HashSet<ElementId>?       placedViewIds = null;
+                    if (composite || oneView)
+                        placedViewIds = new HashSet<ElementId>(
+                            new FilteredElementCollector(doc).OfClass(typeof(Viewport))
+                                .Cast<Viewport>().Select(vp => vp.ViewId));
                     if (composite)
                     {
                         viewsByName = new Dictionary<string, View>(StringComparer.Ordinal);
@@ -168,9 +176,6 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
                             if (!v.IsTemplate && !viewsByName.ContainsKey(v.Name))
                                 viewsByName[v.Name] = v;
                         }
-                        placedViewIds = new HashSet<ElementId>(
-                            new FilteredElementCollector(doc).OfClass(typeof(Viewport))
-                                .Cast<Viewport>().Select(vp => vp.ViewId));
                     }
 
                     // One sheet at a time: progress updates per sheet and (accurate mode) each regen
@@ -197,7 +202,19 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
                         View? sourceView = null;
                         List<ElementId> candidateIds;
 
-                        if (composite)
+                        if (oneView)
+                        {
+                            // One view per sheet: just this view, no dependents or marker discovery.
+                            if (placedViewIds!.Contains(parent.Id))
+                            {
+                                Log(AppStrings.T("testing.placeDependentViews.log.alreadyPlacedOneView", parent.Name), "fail");
+                                fail++;
+                                onProgress(Pct(i + 1, total), pass, fail, skip);
+                                continue;
+                            }
+                            candidateIds = new List<ElementId>(1) { parent.Id };
+                        }
+                        else if (composite)
                         {
                             if (placedViewIds!.Contains(parent.Id))
                             {
@@ -471,7 +488,9 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
                         pass++;
                         Log(composite
                             ? AppStrings.T("testing.placeDependentViews.log.doneComposite", sheetNumber, sheetName, Math.Max(0, placedCount - 1))
-                            : AppStrings.T("testing.placeDependentViews.log.doneDependents", sheetNumber, sheetName, placedCount), "pass");
+                            : oneView
+                                ? AppStrings.T("testing.placeDependentViews.log.doneOneView", sheetNumber, sheetName)
+                                : AppStrings.T("testing.placeDependentViews.log.doneDependents", sheetNumber, sheetName, placedCount), "pass");
                         onProgress(Pct(i + 1, total), pass, fail, skip);
                     }
 

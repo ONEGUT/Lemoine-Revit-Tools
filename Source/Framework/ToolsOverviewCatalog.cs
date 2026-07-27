@@ -217,7 +217,7 @@ namespace LemoineTools.Framework
                         Name = AppStrings.T("overview.cat.views.tools.bulkViews.name"), Glyph = G(0xE8A9),
                         Blurb = AppStrings.T("overview.cat.views.tools.bulkViews.blurb"),
                         FedBy = new[] { "Scope Box Creator" },
-                        Feeds = new[] { "Place Dependent Views", "Sheets" },
+                        Feeds = new[] { "Create Sheets", "Sheets" },
                         Example = AppStrings.T("overview.cat.views.tools.bulkViews.example"),
                     },
                     new OverviewTool
@@ -311,7 +311,7 @@ namespace LemoineTools.Framework
                     {
                         Name = AppStrings.T("overview.cat.sheets.tools.alignViews.name"), Glyph = G(0xE744),
                         Blurb = AppStrings.T("overview.cat.sheets.tools.alignViews.blurb"),
-                        FedBy = new[] { "Place Dependent Views" },
+                        FedBy = new[] { "Create Sheets" },
                         Example = AppStrings.T("overview.cat.sheets.tools.alignViews.example"),
                     },
                     new OverviewTool

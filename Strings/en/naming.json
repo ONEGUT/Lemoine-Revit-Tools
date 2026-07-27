@@ -134,7 +134,7 @@
     "readsFromTarget":      "This item (target)",
     "readsFromSource":      "Source element",
     "readsFromProject":     "Project information",
-    "readsFromCaption":     "In tools that create from a parent (Place Dependent Views, Views by Template…), \"Source element\" reads the value from that parent instead of the new element.",
+    "readsFromCaption":     "In tools that create from a parent (Create Sheets, Views by Template…), \"Source element\" reads the value from that parent instead of the new element.",
 
     "fieldParameter":              "Parameter",
     "parameterSearchPlaceholder":  "Search parameters…",

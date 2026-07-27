@@ -549,7 +549,7 @@
           "info": "Creates one sheet per view and packs its dependents."
         }
       },
-      "title": "Place Dependent Views",
+      "title": "Create Sheets",
       "runLabel": "Place on Sheets →",
       "runLog": {
         "1": "Measuring {count:S1} parent views…",
