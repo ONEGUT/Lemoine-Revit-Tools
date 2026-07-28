@@ -39,6 +39,10 @@ namespace LemoineTools.Tools.Setup
 
         private void Log(string t, string s) => PushLog?.Invoke(t, s);
 
+        // Links that were replaced but whose position could not be verified — surfaced in the
+        // run's closing lines so it survives a long scroll-back, not just at the point of failure.
+        private int _unverified;
+
         /// <summary>Where one link instance sat before the swap, in HOST internal coordinates.
         /// This is the fingerprint that makes "did it land in the same place?" answerable.</summary>
         private sealed class InstanceAnchor
@@ -52,6 +56,7 @@ namespace LemoineTools.Tools.Setup
         public void Execute(UIApplication app)
         {
             int pass = 0, fail = 0, skip = 0;
+            _unverified = 0;
             long issues0 = DiagnosticsLog.IssueCount;
             try
             {
@@ -112,6 +117,8 @@ namespace LemoineTools.Tools.Setup
 
                     Progress(done, total, pass, fail, skip);
                 }
+
+                if (_unverified > 0) Log(AppStrings.T("replaceLink.log.unverifiedSummary", _unverified), "fail");
 
                 long issues = DiagnosticsLog.IssuesSince(issues0);
                 if (issues > 0) Log(AppStrings.T("replaceLink.log.nonFatal", issues), "warn");
@@ -232,8 +239,20 @@ namespace LemoineTools.Tools.Setup
                 return Outcome.Failed;
             }
 
+            // ── Release the replacement file if it is ALSO loaded as another link ──
+            // A file already loaded as a link in this host can't be opened as a standalone
+            // document — OpenDocumentFile hands back the linked doc, whose SaveAs then throws.
+            // (Same constraint Upgrade Links works around.) Unloaded here, re-loaded below.
+            var otherLink = UnloadIfLoadedAsOtherLink(hostDoc, newPath, typeId, label);
+
             // ── Upgrade + save the replacement file ──────────────────────────────
-            if (!UpgradeAndSave(app, newPath, destPath, label))
+            bool saved = UpgradeAndSave(app, newPath, destPath, label);
+
+            // Put the other link back regardless of the outcome — it is unrelated to this
+            // replacement and must not be left unloaded as a side effect of it.
+            ReloadOtherLink(hostDoc, otherLink, label);
+
+            if (!saved)
             {
                 // The link is unloaded and nothing replaced it — restore it rather than leaving
                 // the model silently missing a link.
@@ -375,10 +394,13 @@ namespace LemoineTools.Tools.Setup
             }
             catch (Exception ex)
             {
-                // The replacement itself already succeeded — a measurement/re-seat failure is
-                // reported, not treated as a failed swap.
+                // The file swap itself already succeeded, so this is not a failed replacement —
+                // but the link's position was never verified, which is the one thing this tool
+                // exists to guarantee. Reported at "fail" severity so it can't be mistaken for a
+                // routine warning, and named as unverified rather than as a completed check.
                 DiagnosticsLog.Error($"ReplaceLink: reconcile position for '{label}'", ex);
-                Log(AppStrings.T("replaceLink.log.reconcileFail", label, ex.Message), "warn");
+                Log(AppStrings.T("replaceLink.log.reconcileFail", label, ex.Message), "fail");
+                _unverified++;
             }
         }
 
@@ -545,7 +567,14 @@ namespace LemoineTools.Tools.Setup
                 if (doc != null)
                 {
                     try { doc.Close(false); }
-                    catch (Exception ex) { DiagnosticsLog.Swallowed($"ReplaceLink: close upgraded doc for '{label}'", ex); }
+                    catch (Exception ex)
+                    {
+                        // The file was already saved, so this doesn't fail the replacement — but
+                        // the document stays open in this Revit session holding its memory for
+                        // the rest of it, which the user has to know to act on.
+                        DiagnosticsLog.Warn($"ReplaceLink: close upgraded doc for '{label}'", ex.Message);
+                        Log(AppStrings.T("replaceLink.log.closeFail", label), "warn");
+                    }
                 }
             }
         }
@@ -578,6 +607,65 @@ namespace LemoineTools.Tools.Setup
                 Log(AppStrings.T("replaceLink.log.reloadFail", label, ex.Message), "fail");
                 return false;
             }
+        }
+
+        /// <summary>Unloads any OTHER link type in this host that points at the replacement file,
+        /// so the file can be opened standalone. Returns that type (to be re-loaded afterwards),
+        /// or null when the file isn't linked here. The type being replaced is excluded — it was
+        /// already unloaded by the caller.</summary>
+        private RevitLinkType? UnloadIfLoadedAsOtherLink(Document hostDoc, string newPath, ElementId skipTypeId, string label)
+        {
+            try
+            {
+                foreach (var t in new FilteredElementCollector(hostDoc)
+                             .OfClass(typeof(RevitLinkType)).Cast<RevitLinkType>())
+                {
+                    if (t.Id == skipTypeId) continue;
+                    try
+                    {
+                        var er = t.GetExternalFileReference();
+                        if (er == null) continue;
+                        if (er.GetLinkedFileStatus() != LinkedFileStatus.Loaded) continue;
+                        string p = ModelPathUtils.ConvertModelPathToUserVisiblePath(er.GetAbsolutePath()) ?? "";
+                        if (!string.Equals(p, newPath, StringComparison.OrdinalIgnoreCase)) continue;
+
+                        // Link-management call — NO transaction may be open (CLAUDE.md).
+                        t.Unload(null);
+                        Log(AppStrings.T("replaceLink.log.unloadedOther", label, SafeTypeName(t)), "info");
+                        return t;
+                    }
+                    catch (Exception ex)
+                    { DiagnosticsLog.Swallowed($"ReplaceLink: probe link type path for '{label}'", ex); }
+                }
+            }
+            catch (Exception ex)
+            { DiagnosticsLog.Error($"ReplaceLink: scan for the replacement file as a link ('{label}')", ex); }
+            return null;
+        }
+
+        /// <summary>Re-loads the unrelated link unloaded by <see cref="UnloadIfLoadedAsOtherLink"/>.
+        /// A failure here is reported to the user — leaving someone else's link silently unloaded
+        /// is exactly the kind of side effect this tool must not have.</summary>
+        private void ReloadOtherLink(Document hostDoc, RevitLinkType? other, string label)
+        {
+            if (other == null) return;
+            string name = SafeTypeName(other);
+            try
+            {
+                other.Reload();
+                Log(AppStrings.T("replaceLink.log.reloadedOther", label, name), "info");
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Error($"ReplaceLink: reload the other link '{name}' after '{label}'", ex);
+                Log(AppStrings.T("replaceLink.log.reloadOtherFail", label, name), "fail");
+            }
+        }
+
+        private static string SafeTypeName(RevitLinkType type)
+        {
+            try { return type.Name ?? "?"; }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("ReplaceLink: read link type name", ex); return "?"; }
         }
 
         /// <summary>Last-resort restore after a failed swap: the link was unloaded but nothing

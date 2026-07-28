@@ -36,6 +36,7 @@
     "noLinks":       "This model has no Revit links to replace.",
     "noneReplaceable": "None of this model's links can be replaced in place — see the reasons listed above.",
     "blockedNote":   "{0} link(s) can't be replaced in place and are listed greyed out with the reason.",
+    "readWarning":   "{0} — some details couldn't be read ({1}); what's shown for them is a placeholder, not the real value.",
     "scanning":      "Reading file versions…",
     "scanFailed":    "Couldn't read the file versions ({0}) — you can still run, but unreadable files will fail when they're opened.",
     "verUnknown":    "?",
@@ -84,6 +85,15 @@
 
   "status": {
     "unknown": "Unknown"
+  },
+
+  // Named when a field of a link couldn't be read — accumulated into HostLinkInfo.ReadWarning.
+  "readFail": {
+    "name":      "name",
+    "status":    "load status",
+    "path":      "file path",
+    "reference": "file reference",
+    "nested":    "nested-link flag"
   },
 
   "blocked": {
@@ -144,7 +154,12 @@
     "movement":         "{0} — moved {1} ({2}). The new file doesn't share the old file's origin — check it.",
     "movementUnknown":  "{0} — couldn't measure how far the link moved; check it visually.",
     "reseatFallback":   "{0} — couldn't read the base point to re-seat against; left at the placement the reload gave it.",
-    "reconcileFail":    "{0} — the swap succeeded but the position check failed: {1}",
+    "reconcileFail":    "{0} — REPLACED, but its position could NOT be verified ({1}). Check this link's location manually.",
+    "unverifiedSummary": "{0} link(s) were replaced without their position being verified — check them manually.",
+    "closeFail":        "{0} — the upgraded file was saved but couldn't be closed; it is still open in this Revit session and holding its memory. Close it manually.",
+    "unloadedOther":    "{0} — the replacement file is also loaded as link \u201c{1}\u201d; unloading it so the file can be opened.",
+    "reloadedOther":    "{0} — link \u201c{1}\u201d re-loaded.",
+    "reloadOtherFail":  "{0} — link \u201c{1}\u201d is left UNLOADED and could not be re-loaded. Re-load it in Manage Links.",
     "progress":         "{0}% — {1}/{2} processed, {3} replaced",
     "nonFatal":         "{0} non-fatal issue(s) logged — see diagnostics.log.",
     "done":             "Done — {0} replaced, {1} skipped, {2} failed.",
