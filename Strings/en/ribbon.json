@@ -23,6 +23,10 @@
       "label": "Upgrade &\nLink Models",
       "tip":   "Pick Revit files from any folder, choose each one's link placement, then upgrade every file to the current version, save it (to a folder you choose, back over the original, or as a cloud model), and link it into the active model. Files are processed one at a time to keep memory flat."
     },
+    "replaceLink": {
+      "label": "Replace\nLink",
+      "tip":   "Swap a linked model for a new file, in place: point at the replacement, say which link it replaces, and it upgrades the file to this Revit version, writes it over the linked file's own path (or beside it under a new name), and re-points the SAME link at it — so the link's instances, view overrides, filters and phase mapping all survive. Measures and reports how far the model actually moved, and can re-seat it on the old link's Project Base Point or Survey Point."
+    },
     "linkAudit": {
       "label": "Link\nAudit",
       "tip":   "Read-only report on every linked model: load status, positioning, display mode (active view), pinned state, workset, attachment type, and last-saved time. Changes nothing."

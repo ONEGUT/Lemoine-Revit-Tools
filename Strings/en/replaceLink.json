@@ -1,0 +1,153 @@
+// replaceLink.json — Replace Link tool + run-handler logs.
+// Command: ReplaceLinkCommand. NOTE: destination/position tokens stay in code as enum
+// values; only their DISPLAY labels live here.
+{
+  "title":      "Replace Link",
+  "runLabel":   "Replace links in Revit →",
+  "resultNoun": "links",
+
+  "steps": {
+    "links":    "Links",
+    "dest":     "Destination",
+    "position": "Position",
+    "run":      "Review & Run"
+  },
+
+  "summaries": {
+    "linksEmpty":    "No replacements added",
+    "links":         "{0} replacement(s)",
+    "destOverwrite": "Overwrite the linked file",
+    "destRename":    "Save beside it under a new name",
+    "destFolder":    "Folder “{0}”",
+    "run":           "Ready to run"
+  },
+
+  "labels": {
+    // Step 1 — Links
+    "linksHint":     "Pick a link in this model and the file that replaces it. Each row keeps the existing link's identity — its instances, view overrides, filters and phase mapping stay attached, because the link is reloaded rather than deleted and re-added.",
+    "empty":         "No replacements yet. Click “Add replacement” to pick a link and its new file.",
+    "addRow":        "＋ Add replacement",
+    "clearList":     "Clear list",
+    "pickLink":      "Choose a link…",
+    "replaceWith":   "↓ replace with",
+    "browse":        "Browse…",
+    "pickFile":      "Choose a Revit file…",
+    "fileDialog":    "Pick the replacement Revit model",
+    "noLinks":       "This model has no Revit links to replace.",
+    "noneReplaceable": "None of this model's links can be replaced in place — see the reasons listed above.",
+    "blockedNote":   "{0} link(s) can't be replaced in place and are listed greyed out with the reason.",
+    "scanning":      "Reading file versions…",
+    "scanFailed":    "Couldn't read the file versions ({0}) — you can still run, but unreadable files will fail when they're opened.",
+    "verUnknown":    "?",
+    "verCurrent":    "{0} (current)",
+    "verUpgrade":    "{0} → current",
+    "verUnreadable": "unreadable",
+    "verTooNew":     "{0} — too new",
+    "verWorkshared": "workshared",
+    "unreadableNote": "{0} row(s) point at a file Revit can't read — they'll be skipped.",
+    "tooNewNote":    "{0} row(s) are saved in a newer Revit than this one and can't be opened — they'll be skipped.",
+    "futureVersionNote":        "Files saved in a Revit newer than {0} can't be opened — Revit is not backwards compatible.",
+    "futureVersionNoteGeneric": "Files saved in a newer Revit than this one can't be opened — Revit is not backwards compatible.",
+    "backupLabel":   "Back up the file being replaced",
+    "backupDesc":    "On = copy the old model into a _Superseded folder with a timestamp before it is overwritten. Off = the old file is gone for good.",
+    "auditLabel":    "Audit each file on open",
+    "auditDesc":     "On = run Revit's audit while opening (slower, repairs some corruption). Off = plain open.",
+
+    // Step 2 — Destination
+    "destQuestion":  "Where should the upgraded file be written?",
+    "destHint":      "The replacement file is opened (which upgrades it to this Revit version) and saved here before the link is re-pointed at it.",
+    "optOverwriteTitle": "Overwrite the linked file",
+    "optOverwriteDesc":  "Saves over the file the link points at now, keeping its folder, name and path type exactly as they are.",
+    "optOverwriteWarn":  "The model file the link points at is overwritten. Keep the backup toggle on unless you have your own copy.",
+    "optOverwriteCentralWarn": "One or more of these links point at a workshared central file. Overwriting a central orphans every local copy other people have made from it.",
+    "optRenameTitle":    "Save beside it under a new name",
+    "optRenameDesc":     "Writes the upgraded copy into the linked file's own folder under the name you type, then re-points the link at it. The old file is left alone.",
+    "optFolderTitle":    "Save to a folder…",
+    "optFolderDesc":     "Writes every upgraded copy into one folder you pick, then re-points each link at its copy.",
+    "saveLocationLabel": "Save location",
+    "saveLocationDialogTitle": "Pick the folder for the upgraded copies",
+    "renameNote":        "The link's displayed name follows its file name, so renaming here renames the link in Manage Links too.",
+
+    // Step 3 — Position
+    "posQuestion":   "Where should the new model sit?",
+    "posHint":       "Reloading keeps the existing link's placement. That is exact when the new file shares the old file's internal origin — re-seat only when it does not.",
+    "optKeepTitle":  "Keep the existing placement",
+    "optKeepDesc":   "The link keeps the transform it has now. Correct for a re-issue of the same model.",
+    "optPbpTitle":   "Re-seat on Project Base Point",
+    "optPbpDesc":    "Moves each instance so the new model's Project Base Point lands where the old one's sat.",
+    "optSurveyTitle": "Re-seat on Survey Point",
+    "optSurveyDesc": "As above, measured on the Survey Point instead.",
+    "movementLabel": "Report how far each link moved",
+    "movementDesc":  "On = measure the link's base point before and after and log the distance. A zero confirms the swap landed in place.",
+    "posNote":       "A re-seat translates the link instance. It does not change the link's positioning mode — use Align Coordinates or Push Coordinates for shared-coordinate work."
+  },
+
+  "status": {
+    "unknown": "Unknown"
+  },
+
+  "blocked": {
+    "cloud":       "Cloud-hosted — no local file to write over",
+    "nested":      "Nested inside another link",
+    "noReference": "No external file reference",
+    "noPath":      "Path can't be resolved",
+    "noInstance":  "Loaded but not placed in the model"
+  },
+
+  "review": {
+    "itemLinks":    "Replacements",
+    "itemDest":     "Destination",
+    "itemPosition": "Position",
+    "linksNone":    "None",
+    "linksValue":   "{0} link(s) · {1} need upgrade",
+    "chipBackup":   "Backup",
+    "chipAudit":    "Audit",
+    "chipMovement": "Report movement",
+    "warnNoLinks":  "Add at least one complete replacement — a link and the file that replaces it.",
+    "warnIncomplete": "{0} row(s) are missing a link or a file and will be skipped.",
+    "warnTooNew":   "{0} row(s) are saved in a newer Revit and will be skipped.",
+    "warnUnreadable": "{0} row(s) point at an unreadable file and will be skipped.",
+    "warnOverwrite":  "{0} model file(s) will be overwritten.",
+    "warnOverwriteNoBackup": "{0} model file(s) will be overwritten and backups are OFF — this cannot be undone."
+  },
+
+  "log": {
+    "raising":          "Starting replacement…",
+    "handlerMissing":   "Replace Link handler isn't available — restart Revit and try again.",
+    "start":            "Replacing {0} link(s) · {1}",
+    "noDoc":            "No active document.",
+    "noItems":          "Nothing to replace.",
+    "noSelectedFolder": "No save folder chosen.",
+    "folderFail":       "Couldn't create the save folder “{0}” — {1}",
+    "unnamedLink":      "(unnamed link)",
+    "typeGone":         "{0} — the link no longer exists in this model (deleted since the list was built).",
+    "noReference":      "{0} — the link has no external file reference; can't tell what it points at.",
+    "cloudUnsupported": "{0} — cloud-hosted link; there's no local file to write over. Use Upgrade & Link Models for cloud models.",
+    "newFileMissing":   "{0} — the replacement file is missing: {1}",
+    "destFail":         "{0} — couldn't work out where to save the upgraded copy: {1}",
+    "renameInvalid":    "{0} — the save-as name has no usable characters; keeping the linked file's own name.",
+    "noAnchors":        "{0} — the link isn't loaded, so its position can't be measured or corrected. Swapping anyway.",
+    "backedUp":         "{0} — backed up as {1}",
+    "backupFail":       "{0} — backup failed ({1}); the replacement was stopped so nothing is overwritten.",
+    "unloadFail":       "{0} — couldn't unload the link ({1}); the file can't be written over while Revit holds it.",
+    "openFail":         "{0} — couldn't open the replacement file {1}.",
+    "saveFail":         "{0} — couldn't save the upgraded copy ({1}: {2}).",
+    "reloadFail":       "{0} — couldn't re-point the link at the new file: {1}",
+    "reloadResult":     "{0} — Revit reported “{1}” when re-pointing the link; it is not showing the new file.",
+    "restored":         "{0} — the original file has been re-loaded, so the link is back as it was.",
+    "restoreFail":      "{0} — the link is left UNLOADED and could not be restored to {1}. Re-load it in Manage Links.",
+    "replaced":         "{0}/{1} — {2} replaced with {3}",
+    "replacedRenamed":  "{0}/{1} — {2} replaced with {3}, saved as {4}",
+    "metricBasePoint":  "base point",
+    "metricExtents":    "extents centre",
+    "movementNone":     "{0} — landed in exactly the same place ({1} unchanged).",
+    "movement":         "{0} — moved {1} ({2}). The new file doesn't share the old file's origin — check it.",
+    "movementUnknown":  "{0} — couldn't measure how far the link moved; check it visually.",
+    "reseatFallback":   "{0} — couldn't read the base point to re-seat against; left at the placement the reload gave it.",
+    "reconcileFail":    "{0} — the swap succeeded but the position check failed: {1}",
+    "progress":         "{0}% — {1}/{2} processed, {3} replaced",
+    "nonFatal":         "{0} non-fatal issue(s) logged — see diagnostics.log.",
+    "done":             "Done — {0} replaced, {1} skipped, {2} failed.",
+    "aborted":          "Run aborted: {0}"
+  }
+}

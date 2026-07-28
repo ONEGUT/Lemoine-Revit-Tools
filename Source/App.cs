@@ -163,6 +163,16 @@ namespace LemoineTools
         internal static LemoineTools.Tools.Setup.UpgradeLinksRunHandler?  UpgradeLinksRunHandler  { get; private set; }
         internal static ExternalEvent?             UpgradeLinksRunEvent  { get; private set; }
 
+        // ── Replace Link ─────────────────────────────────────────────────────────────
+        // Its own UpgradeLinksScanHandler INSTANCE (same class, separate object) for the
+        // read-only version scan: the handler parks a single OnScanned callback, so sharing one
+        // instance with an open Upgrade & Link Models window would let whichever tool scanned
+        // last silently swallow the other's result.
+        internal static LemoineTools.Tools.Setup.UpgradeLinksScanHandler? ReplaceLinkScanHandler { get; private set; }
+        internal static ExternalEvent?             ReplaceLinkScanEvent { get; private set; }
+        internal static LemoineTools.Tools.Setup.ReplaceLinkRunHandler? ReplaceLinkRunHandler { get; private set; }
+        internal static ExternalEvent?             ReplaceLinkRunEvent  { get; private set; }
+
         // ── Setup — Align Coordinates / Compare Grids / Push Coordinates to Links ───
         internal static LemoineTools.Tools.Setup.AlignCoordinatesRunHandler? AlignCoordinatesRunHandler { get; private set; }
         internal static ExternalEvent?             AlignCoordinatesRunEvent { get; private set; }
@@ -339,6 +349,11 @@ namespace LemoineTools
             UpgradeLinksRunHandler  = new LemoineTools.Tools.Setup.UpgradeLinksRunHandler();
             UpgradeLinksRunEvent    = ExternalEvent.Create(UpgradeLinksRunHandler);
 
+            ReplaceLinkScanHandler  = new LemoineTools.Tools.Setup.UpgradeLinksScanHandler();
+            ReplaceLinkScanEvent    = ExternalEvent.Create(ReplaceLinkScanHandler);
+            ReplaceLinkRunHandler   = new LemoineTools.Tools.Setup.ReplaceLinkRunHandler();
+            ReplaceLinkRunEvent     = ExternalEvent.Create(ReplaceLinkRunHandler);
+
             AlignCoordinatesRunHandler = new LemoineTools.Tools.Setup.AlignCoordinatesRunHandler();
             AlignCoordinatesRunEvent   = ExternalEvent.Create(AlignCoordinatesRunHandler);
             CompareGridsRunHandler     = new LemoineTools.Tools.Setup.CompareGridsRunHandler();
@@ -386,6 +401,11 @@ namespace LemoineTools
                 "LT_UpgradeLinks", L.T("ribbon.buttons.upgradeLinks.label"), "UpgradeLinksCommand",
                 L.T("ribbon.buttons.upgradeLinks.tip"),
                 char.ConvertFromUtf32(0xE896)));  // Download / Upgrade
+
+            setupPanel.AddItem(Btn(
+                "LT_ReplaceLink", L.T("ribbon.buttons.replaceLink.label"), "ReplaceLinkCommand",
+                L.T("ribbon.buttons.replaceLink.tip"),
+                char.ConvertFromUtf32(0xE8AB)));  // Switch / Replace
 
             // Link Audit and Compare Grids are deactivated (not deleted) — flip
             // ShowRetiredSetupTools to true to bring them back on the ribbon.
