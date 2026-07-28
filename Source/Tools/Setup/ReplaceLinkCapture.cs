@@ -47,21 +47,29 @@ namespace LemoineTools.Tools.Setup
                     // it from here is not possible.
                     if (type.IsNestedLink)
                     {
-                        info.Name          = SafeName(type);
+                        info.Name          = SafeName(type, info);
                         info.Replaceable   = false;
                         info.BlockedReason = AppStrings.T("replaceLink.blocked.nested");
                         list.Add(info);
                         continue;
                     }
                 }
-                catch (Exception ex) { DiagnosticsLog.Swallowed("ReplaceLink: read IsNestedLink", ex); }
+                catch (Exception ex)
+                {
+                    DiagnosticsLog.Swallowed("ReplaceLink: read IsNestedLink", ex);
+                    Note(info, AppStrings.T("replaceLink.readFail.nested"));
+                }
 
-                info.Name          = SafeName(type);
+                info.Name          = SafeName(type, info);
                 info.InstanceCount = instanceCounts.TryGetValue(info.TypeId, out int count) ? count : 0;
 
                 ExternalFileReference? extRef = null;
                 try { extRef = type.GetExternalFileReference(); }
-                catch (Exception ex) { DiagnosticsLog.Swallowed("ReplaceLink: read external file reference", ex); }
+                catch (Exception ex)
+                {
+                    DiagnosticsLog.Swallowed("ReplaceLink: read external file reference", ex);
+                    Note(info, AppStrings.T("replaceLink.readFail.reference"));
+                }
 
                 if (extRef == null)
                 {
@@ -82,6 +90,7 @@ namespace LemoineTools.Tools.Setup
                 {
                     DiagnosticsLog.Swallowed("ReplaceLink: read linked file status", ex);
                     info.Status = AppStrings.T("replaceLink.status.unknown");
+                    Note(info, AppStrings.T("replaceLink.readFail.status"));
                 }
 
                 try
@@ -96,6 +105,7 @@ namespace LemoineTools.Tools.Setup
                 {
                     DiagnosticsLog.Swallowed("ReplaceLink: resolve link path", ex);
                     info.Path = "";
+                    Note(info, AppStrings.T("replaceLink.readFail.path"));
                 }
 
                 if (info.IsCloud)
@@ -123,10 +133,22 @@ namespace LemoineTools.Tools.Setup
             return list.OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase).ToList();
         }
 
-        private static string SafeName(RevitLinkType type)
+        private static string SafeName(RevitLinkType type, HostLinkInfo info)
         {
             try { return type.Name ?? ""; }
-            catch (Exception ex) { DiagnosticsLog.Swallowed("ReplaceLink: read link type name", ex); return ""; }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Swallowed("ReplaceLink: read link type name", ex);
+                Note(info, AppStrings.T("replaceLink.readFail.name"));
+                return "";
+            }
+        }
+
+        /// <summary>Accumulates the names of fields that failed to read, so a row with
+        /// placeholder values says so instead of passing them off as real.</summary>
+        private static void Note(HostLinkInfo info, string field)
+        {
+            info.ReadWarning = string.IsNullOrEmpty(info.ReadWarning) ? field : info.ReadWarning + ", " + field;
         }
     }
 }

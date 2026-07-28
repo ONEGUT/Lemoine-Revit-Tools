@@ -48,6 +48,11 @@ namespace LemoineTools.Tools.Setup
         /// silently shorter list.</summary>
         public bool    Replaceable   { get; set; } = true;
         public string? BlockedReason { get; set; }
+
+        /// <summary>Set when one of this link's fields could not be read, naming which. The row
+        /// is still shown (with whatever resolved), but a placeholder value must never pass for a
+        /// real one — the picker prints this so a partial read is visible rather than silent.</summary>
+        public string? ReadWarning   { get; set; }
     }
 
     /// <summary>One queued replacement, UI-side: which link is being replaced and with what.

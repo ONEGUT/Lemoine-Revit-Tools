@@ -160,6 +160,16 @@ namespace LemoineTools.Tools.Setup
                     _linksContainer.Children.Add(Dim($"   {b.Name} — {b.BlockedReason}"));
             }
 
+            // A link whose details only partly resolved is shown WITH that fact — its
+            // placeholder values must never read as real ones.
+            var partial = _hostLinks.Where(l => !string.IsNullOrEmpty(l.ReadWarning)).ToList();
+            foreach (var pl in partial)
+            {
+                _linksContainer.Children.Add(Warn(AppStrings.T("replaceLink.labels.readWarning",
+                    string.IsNullOrEmpty(pl.Name) ? AppStrings.T("replaceLink.log.unnamedLink") : pl.Name,
+                    pl.ReadWarning)));
+            }
+
             if (replaceable.Count == 0)
             {
                 _linksContainer.Children.Add(Warn(AppStrings.T("replaceLink.labels.noneReplaceable")));
