@@ -200,8 +200,8 @@ plan/RCP-cut flag plus the detail-level flags, write back `SetVisibility()`.
 
 > ⚠ **`FamilyElementVisibility` member names have shifted across Revit versions and this repo cannot
 > be built on Linux** (`UseWPF` + net48 needs `Microsoft.NET.Sdk.WindowsDesktop`). The exact property
-> set must be confirmed against the object browser on Windows for 2024 **and** 2025/2026 before this
-> rule is written. Treat that as the first task of the implementation pass, not an assumption.
+> set is resolved by **probe 1 of the Phase 0 harness** (§10), which reflects the real member surface
+> for each Revit year. Do not write the rule body from memory.
 
 **Audit-only findings (reported, never auto-fixed):** void form; `IS_VISIBLE_PARAM` associated to a
 family parameter (writing the raw boolean is silently reverted on regeneration); host category not
@@ -213,13 +213,18 @@ view filters, plan regions — are outside family control entirely. Tool A shoul
 in the review note, because view range is the single most common cause of "the family disappeared in
 plan" and a user who fixes 40 families for nothing will not trust the tool again.
 
-**Position:** the context doc's own caution stands — forcing full 3D into plan commonly makes plans
-unreadable and overrides deliberately authored 2D symbolic geometry. **Recommend shipping Tool A
-audit-only in v1** (review + CSV export, no fix pass), and adding the fix pass only if the audit
-output shows it is actually wanted. This is open question #4 in §9.
+**Tool A ships with the fix pass in v1** — decided by the user, who has a specific need for the bulk
+modification, not just the report. The audit-first / opt-in-fix structure still stands (nothing is
+changed without an explicit checked selection), and the standing warnings apply: backup `.rfa` before
+the first `Apply`, and the irreversible-version-upgrade banner on the Run step.
 
-**Steps:** `scope` (category / family picker) → `rules` (which checks to run) → `run` (audit, review
-list, export, log).
+Because the fix pass is in scope, one extra guard is worth building: a **"forms already visible in
+plan" count** in the review, so a user can see at a glance how much of the library the run would
+actually change. A rule that reports "312 families, 4 need fixing" is very different from one that
+reports "312 families, 312 need fixing" — the second usually means the rule is wrong, not the library.
+
+**Steps:** `scope` (category / family picker) → `rules` (which checks to run) → `review` (findings,
+checkbox selection, CSV export) → `run` (backup, fix, log).
 
 ---
 
@@ -385,17 +390,18 @@ The embedded clearance `.rfa` (§7.1) does need an `EmbeddedResource` entry, per
 Numbered so they can be answered in one message.
 
 1. **Packaging** — three ribbon buttons on a new Families panel (recommended), or one "Family Doctor"?
-2. **Tool A scope** — audit-only in v1 (recommended), or build the fix pass now?
-3. **Findings cache** — in-memory + CSV export (recommended), or persisted per-document XML?
-4. **Tool C stamp** — Extensible Storage (recommended), or the shared parameter the context doc specifies?
-5. **Tool C family** — embed the `.rfa` per Revit year (recommended), or require the user to supply one?
-6. **Tool B on-disk library** — loaded families only in v1, or `.rfa` folder walk too?
-7. **Valve source categories** — which categories does the MEP team actually model valves in? (Seeds the default rule set; the rule set itself is configurable either way.)
-8. **Clearance box footprint** — fixed per valve size, per type, or read from a parameter?
-9. **Overshoot below ceiling** — one global value, or per valve type?
+2. **Findings cache** — in-memory + CSV export (recommended), or persisted per-document XML?
+3. **Tool C stamp** — Extensible Storage (recommended), or the shared parameter the context doc specifies?
+4. **Tool C family** — embed the `.rfa` per Revit year (recommended), or require the user to supply one?
+5. **Tool B on-disk library** — loaded families only in v1, or `.rfa` folder walk too?
+6. **Valve source categories** — which categories does the MEP team actually model valves in? (Seeds the default rule set; the rule set itself is configurable either way. **Probe 4 of the Phase 0 harness answers this empirically** if you run it against a real model.)
+7. **Clearance box footprint** — fixed per valve size, per type, or read from a parameter?
+8. **Overshoot below ceiling** — one global value, or per valve type?
 
-Items 7–9 are the context doc's own open questions and are the only ones that need someone outside
-this repo to answer. 1–6 I have recommendations for and can proceed on those defaults if you'd rather
+**Settled:** Tool A ships with the fix pass, not audit-only (§5).
+
+Items 6–8 are the context doc's own open questions and are the only ones that need someone outside
+this repo to answer. 1–5 I have recommendations for and can proceed on those defaults if you'd rather
 not decide each one.
 
 ---
@@ -404,13 +410,60 @@ not decide each one.
 
 | Phase | Content | Gate |
 |---|---|---|
-| 0 | **Windows verification spike** — confirm `FamilyElementVisibility` members for 2024/2025/2026, confirm `EditFamily` cost on a real air-terminal library, confirm `ReferenceIntersector` crosses into the ARCH link | Cannot be done on Linux; blocks A and C |
-| 1 | Shared engine + Tool A **audit-only** | Proves the batch walk on real families at real cost |
+| **0** | **Probe harness — BUILT, awaiting a Windows run** (see below) | Blocks A and C |
+| 1 | Shared engine + Tool A (audit + fix) | Proves the batch walk on real families at real cost |
 | 2 | Tool B (both passes) | Reuses the engine; adds the project-side transaction |
 | 3 | Tool C | Independent of 1–2; can run in parallel if preferred |
 
-Phase 1 is the risky one — if `EditFamily` on a real library is slower than 2 s/family, the whole
-audit-then-review model needs rethinking before Tools B and C are built on top of it.
+### Phase 0 — the probe harness
+
+Phase 0 was originally written as a "verification spike", which is not something that can be done
+from here: this repo cannot be built on Linux, and three of the plan's load-bearing assumptions are
+only answerable against a live Revit. So Phase 0 is delivered as a **harness you run once on
+Windows**, following the `CLAUDE.md` build-a-debugger-first discipline.
+
+| File | Role |
+|---|---|
+| `Source/Tools/Debuggers/FamilyApiProbeHandler.cs` | All four probes, on the Revit main thread |
+| `Source/Tools/Debuggers/FamilyApiProbeViewModel.cs` | `IStepFlowTool` UI — probe toggles, category scope, sample size |
+| `Source/Commands/Debuggers/FamilyApiProbeCommand.cs` | STA-thread launcher |
+| `Source/App.cs` | Handler pair + a temporary **"Phase 0 (temp)"** ribbon panel behind `ShowFamilyApiProbe` |
+
+**What each probe settles:**
+
+1. **`FamilyElementVisibility` surface** — reflects every property, method, constructor and the
+   `FamilyElementVisibilityType` enum for whichever Revit year is running, plus `GenericForm`'s
+   visibility/solid/subcategory members. This is the one hard blocker on Tool A's rule body, and
+   reflection is the correct instrument because *which members exist* is the actual question.
+2. **`Category.IsCuttable`** — dumps every model category. Bounds which categories Tool A can help
+   at all (Furniture, Lighting Fixtures, Planting, Entourage, Mass are non-cuttable and read-only).
+3. **`EditFamily` walk** — times `EditFamily` per family, counts forms / voids / nested / shared
+   instances, counts forms whose `IS_VISIBLE_PARAM` is **parameter-associated** (the silent-revert
+   case), and **tests whether `famDoc.EditFamily(nested)` recursion works at all** — the engine's
+   whole nesting story depends on that one answer. Projects the median to the full library so we
+   know up front whether a full audit is a 2-minute or a 2-hour operation.
+4. **`ReferenceIntersector` into links** — builds a dedicated non-template `View3D`, shoots down
+   from sample instances, and reports for each hit whether it came from a **linked** document, which
+   document, which category, and the `Proximity` drop. Confirms `FindReferencesInRevitLinks` works
+   on your models and shows how often soffits come back as Walls or Generic Models instead of
+   Ceilings.
+
+**Safety:** read-only on the model apart from one temporary 3D view, created and deleted within the
+run; if deletion fails the log names the view so it can be removed by hand. The `EditFamily` walk
+opens with `Close(false)` in a `finally` and never saves or loads, so no `.rfa` is touched or
+version-upgraded. Cancel is honoured per family.
+
+**Output:** a report at `%AppData%\LemoineTools\Reports\family-api-probe-<timestamp>.txt`, with
+summary lines in the run log. Attach that file and I can write Tools A and C against measured facts.
+
+**Deliberate deviation:** the harness's strings are hardcoded rather than routed through
+`AppStrings`. `CLAUDE.md` exempts developer diagnostics, and this harness is scheduled for deletion —
+adding `Strings/en/` entries for text we are about to remove is waste. Every file carries a
+delete-me header naming the other pieces to remove with it.
+
+Phase 1 remains the risky one — if `EditFamily` on a real library is much slower than 2 s/family, the
+audit-then-review model needs rethinking before Tools B and C are built on top of it. Probe 3's
+projection is what tells us that before any engine code is written.
 
 ---
 

@@ -22,6 +22,11 @@ namespace LemoineTools
         // constant and the compiler flags its guarded block as unreachable code (CS0162).
         private static readonly bool ShowRetiredSetupTools = false;
 
+        // TEMPORARY — Phase 0 of plan-family-modification-tools.md. Flip to false to hide the
+        // probe button; delete the flag, the button block, the handler pair, and
+        // Source/{Tools,Commands}/Debuggers/ once the results are captured.
+        private static readonly bool ShowFamilyApiProbe = true;
+
         // Shared main-thread reload event for StepFlowWindow's "Reload" action (re-captures a
         // tool's document-derived options). Tool-agnostic, so one instance serves every window.
         internal static Framework.ReloadHandler? ReloadHandler { get; private set; }
@@ -147,6 +152,12 @@ namespace LemoineTools
         internal static ExternalEvent?             UpgradeLinksScanEvent { get; private set; }
         internal static LemoineTools.Tools.Setup.UpgradeLinksRunHandler?  UpgradeLinksRunHandler  { get; private set; }
         internal static ExternalEvent?             UpgradeLinksRunEvent  { get; private set; }
+
+        // ── TEMPORARY — Family API Probe (Phase 0 of plan-family-modification-tools.md) ──
+        // Delete this pair, its initialisation, the ShowFamilyApiProbe button block below, and
+        // Source/{Tools,Commands}/Debuggers/ once the probe results are captured.
+        internal static LemoineTools.Tools.Debuggers.FamilyApiProbeHandler? FamilyApiProbeHandler { get; private set; }
+        internal static ExternalEvent?             FamilyApiProbeEvent { get; private set; }
 
         // ── Setup — Align Coordinates / Compare Grids / Push Coordinates to Links ───
         internal static LemoineTools.Tools.Setup.AlignCoordinatesRunHandler? AlignCoordinatesRunHandler { get; private set; }
@@ -290,6 +301,10 @@ namespace LemoineTools
             UpgradeLinksScanEvent   = ExternalEvent.Create(UpgradeLinksScanHandler);
             UpgradeLinksRunHandler  = new LemoineTools.Tools.Setup.UpgradeLinksRunHandler();
             UpgradeLinksRunEvent    = ExternalEvent.Create(UpgradeLinksRunHandler);
+
+            // TEMPORARY — Family API Probe (Phase 0). Remove with the rest of the harness.
+            FamilyApiProbeHandler   = new LemoineTools.Tools.Debuggers.FamilyApiProbeHandler();
+            FamilyApiProbeEvent     = ExternalEvent.Create(FamilyApiProbeHandler);
 
             AlignCoordinatesRunHandler = new LemoineTools.Tools.Setup.AlignCoordinatesRunHandler();
             AlignCoordinatesRunEvent   = ExternalEvent.Create(AlignCoordinatesRunHandler);
@@ -609,6 +624,20 @@ namespace LemoineTools
                 "LT_Overview", L.T("ribbon.buttons.overview.label"), "OpenOverviewCommand",
                 L.T("ribbon.buttons.overview.tip"),
                 char.ConvertFromUtf32(0xE946)));  // Info
+
+            // ── TEMPORARY — Family API Probe (Phase 0) ────────────────────────
+            // A verification harness, not a shipping tool. Labels are hardcoded on purpose:
+            // this panel is deleted once the probe results are captured, so it never earns
+            // a Strings/en entry. Remove this whole block with the rest of the harness.
+            if (ShowFamilyApiProbe)
+            {
+                var probePanel = application.CreateRibbonPanel("Lemoine Tools", "Phase 0 (temp)");
+                probePanel.AddItem(Btn(
+                    "LT_FamilyApiProbe", "Family API\nProbe", "FamilyApiProbeCommand",
+                    "Temporary Phase-0 harness: verifies the FamilyElementVisibility member surface, "
+                    + "EditFamily cost, and ReferenceIntersector link behaviour. Read-only.",
+                    char.ConvertFromUtf32(0xE9D9)));  // Diagnostic
+            }
 
             return Result.Succeeded;
         }
