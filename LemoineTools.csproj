@@ -107,8 +107,19 @@
        CS8646 duplicate definitions. LemoineNavisworks and LemoineTools.PdfGeometry each
        live on their own branch with their own .csproj; their obj\ output can linger here
        after a branch switch (untracked obj\ folders survive checkout), so every sibling's
-       exclusion is kept unconditionally — even for a sibling not present in this checkout. -->
+       exclusion is kept unconditionally — even for a sibling not present in this checkout.
+
+       LemoinePreview is DELETED from the repo (WPF-only distribution) but keeps its
+       exclusion for exactly that reason: `git rm` does not remove an untracked
+       LemoinePreview\obj\, so an existing clone still has that build output on disk and
+       the glob would sweep its AssemblyInfo.cs / AssemblyAttributes.cs into this compile
+       (CS0579 duplicate TargetFrameworkAttribute). Do not remove this block. -->
   <ItemGroup>
+    <Compile          Remove="LemoinePreview\**\*" />
+    <Page             Remove="LemoinePreview\**\*" />
+    <None             Remove="LemoinePreview\**\*" />
+    <EmbeddedResource Remove="LemoinePreview\**\*" />
+
     <Compile          Remove="LemoineNavisworks\**\*" />
     <Page             Remove="LemoineNavisworks\**\*" />
     <None             Remove="LemoineNavisworks\**\*" />
