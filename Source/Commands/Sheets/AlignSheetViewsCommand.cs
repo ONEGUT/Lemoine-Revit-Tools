@@ -7,7 +7,6 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Helpers;
 using LemoineTools.Framework;
-using LemoineTools.Framework.Web;
 using LemoineTools.Tools.Sheets.AlignSheetViews;
 
 namespace LemoineTools.Commands
@@ -57,24 +56,6 @@ namespace LemoineTools.Commands
                     sheets, BrowserTreeCapture.Capture(doc));
 
                 return vm;
-            }
-            if (WebToolLauncher.Enabled)
-            {
-                WebToolLauncher.Open("alignSheetViews", () =>
-                {
-                    var doc = uiApp.ActiveUIDocument.Document;
-                    var sheets = new FilteredElementCollector(doc)
-                        .OfClass(typeof(ViewSheet))
-                        .Cast<ViewSheet>()
-                        .Where(s => !s.IsTemplate && !s.IsPlaceholder)
-                        .OrderBy(s => s.SheetNumber)
-                        .Select(s => (Id: s.Id, Label: $"{s.SheetNumber} - {s.Name}"))
-                        .ToList();
-                    return new AlignSheetViewsWebTool(
-                        App.AlignSheetViewsHandler!, App.AlignSheetViewsEvent!,
-                        sheets, BrowserTreeCapture.Capture(doc));
-                });
-                return Result.Succeeded;
             }
             var vm = BuildTool();
             var ready = new ManualResetEventSlim(false);

@@ -4,7 +4,6 @@ using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Framework;
-using LemoineTools.Framework.Web;
 using LemoineTools.Tools.Ceilings;
 
 namespace LemoineTools.Commands
@@ -48,14 +47,6 @@ namespace LemoineTools.Commands
                 return new ProjectedCeilingGridsViewModel(
                     App.ProjectHandler!, App.ProjectEvent!,
                     av?.Name ?? "", av is ViewPlan);
-            }
-            if (WebToolLauncher.Enabled)
-            {
-                WebToolLauncher.Open("projectedCeilingGrids", () =>
-                {
-                    return new ProjectedCeilingGridsWebTool(App.ProjectHandler!, App.ProjectEvent!);
-                });
-                return Result.Succeeded;
             }
             var vm = BuildTool();
 

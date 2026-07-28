@@ -6,7 +6,6 @@ using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Framework;
-using LemoineTools.Framework.Web;
 
 namespace LemoineTools.Commands
 {
@@ -20,28 +19,11 @@ namespace LemoineTools.Commands
     public class OpenFiltersSettingsCommand : IExternalCommand
     {
         private static FiltersSettingsWindow?   _window;
-        private static WebAutoFiltersWindow?    _webWindow;
 
         public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
         {
-            bool web = WebUiSettings.Instance.Enabled;
-
-            // Bring an existing window (of the active flavour) to front.
-            if (web && _webWindow != null)
-            {
-                try
-                {
-                    WebUiThread.Invoke(() =>
-                    {
-                        var w = _webWindow;
-                        if (w != null && w.IsVisible) w.Activate();
-                        else _webWindow = null;
-                    });
-                    if (_webWindow != null) return Result.Succeeded;
-                }
-                catch (System.Exception ex) { DiagnosticsLog.Swallowed("OpenFiltersSettings: activate web window", ex); _webWindow = null; }
-            }
-            else if (!web && _window != null)
+            // Bring an existing window to front.
+            if (_window != null)
             {
                 try
                 {
@@ -110,20 +92,6 @@ namespace LemoineTools.Commands
                     viewTemplates.Count > 0
                         ? $"Captured {viewTemplates.Count} view template(s) for the apply-target picker."
                         : "No view templates found in this document — apply targets will list the active view only.");
-            }
-
-            // Web branch: open on the shared WebUiThread behind the Web UI flag; the WPF
-            // window stays as the flag-off fallback (rule R25).
-            if (web)
-            {
-                WebUiThread.Invoke(() =>
-                {
-                    var w = new WebAutoFiltersWindow(fillNames, lineNames, viewTemplates, activeViewName);
-                    w.Closed += (s2, e2) => { _webWindow = null; };
-                    w.Show();
-                    _webWindow = w;
-                });
-                return Result.Succeeded;
             }
 
             // Open window on dedicated STA thread
