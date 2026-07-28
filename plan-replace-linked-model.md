@@ -1,7 +1,8 @@
 # Plan — Replace Link (swap a linked model for a new file, in place)
 
 **Decisions taken:** base branch `main`; the tool queues several replacements per run
-(§6 step 1), not one.
+(§6 step 1), not one. Rebased onto the WPF-only `main` (PR #127) — **no web tool half**:
+this is a `StepFlowWindow` ViewModel only.
 
 ## The ask
 
