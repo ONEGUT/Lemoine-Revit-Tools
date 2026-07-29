@@ -99,7 +99,14 @@
     "couldNotMatchCropVis":"[{0}] Could not match crop visibility for '{1}'.",
     "noGrids":            "[{0}] '{1}' has no grids to trim.",
     "gridsTrimmedNone":   "[{0}] Grids on '{1}': {2} trimmed.",
-    "gridsTrimmedSome":   "[{0}] Grids on '{1}': {2} trimmed, {3} skipped (not visible / not collinear).",
+    // One line per failure cause, so a zero result always names its reason. A bare
+    // "N skipped" cannot be acted on — it was hiding grids whose source view had no
+    // 2D extents at all, reported as if they were invisible or non-collinear.
+    "gridsNotVisible":    "[{0}] Grids on '{1}': {2} cannot be shown in this view — not trimmed.",
+    "gridsNoSourceCurve": "[{0}] Grids on '{1}': {2} returned no curve from the source view — not trimmed.",
+    "gridsRejected":      "[{0}] Grids on '{1}': {2} rejected the source curve as invalid for this view — not trimmed.",
+    "gridsErrored":       "[{0}] Grids on '{1}': {2} failed with an error — see diagnostics log.",
+    "gridsMultiSegment":  "[{0}] Grids on '{1}': {2} are multi-segment — only the first segment's extents were copied.",
     "couldNotTrimGrids":  "[{0}] Could not trim grids for '{1}'.",
     "couldNotMatchTitleLine":"[{0}] Could not match title line length for '{1}'.",
     "couldNotAlignTitle": "[{0}] Could not align title for '{1}'.",

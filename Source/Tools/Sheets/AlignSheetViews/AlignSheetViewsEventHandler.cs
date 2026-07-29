@@ -476,10 +476,18 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
 
         // ── Inheritance: grid 2D (view-specific) extents ──────────────────────
         /// <summary>
-        /// Copies each source grid's displayed endpoints onto the matching target grid (same model
-        /// element, looked up by ElementId) as a per-view 2D override. Endpoints are collinear with
-        /// the target grid (it is the same grid), satisfying the SetCurveInView coincidence rule, and
-        /// ViewSpecific works even when the grid's 3D extents are locked to a scope box.
+        /// Copies each source grid's displayed endpoints onto the same grid in the target view as a
+        /// per-view 2D (ViewSpecific) override. Source and target grid are one element — only the
+        /// per-view override differs — so the curve is collinear with the target grid by
+        /// construction, and a 2D override applies even when the grid's 3D extents are locked to a
+        /// scope box.
+        ///
+        /// A datum's extent mode is per view AND per end (the 3D/2D toggle in the UI), so this is
+        /// not a plain get/set: the source curve must be read from whichever mode that view actually
+        /// uses (usually Model — 2D is only in play once someone has dragged an end there), and the
+        /// target's ends must be switched to ViewSpecific before a 2D curve can be written into it.
+        /// Reading ViewSpecific curves from a Model-extent source view yields nothing, which is what
+        /// made this silently skip every grid.
         /// </summary>
         private void TrimGrids(Document doc, MatchedPair pr, string label)
         {
@@ -493,36 +501,126 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                     .Cast<Grid>()
                     .ToList();
 
-                int trimmed = 0, skipped = 0;
+                if (srcGrids.Count == 0)
+                {
+                    Log(AppStrings.T("testing.alignSheetViews.log.noGrids", label, pr.Source.ViewName), "info");
+                    return;
+                }
+
+                // Each failure mode is counted separately — a bare "skipped" number cannot be acted on.
+                int trimmed = 0, notVisible = 0, noSourceCurve = 0, rejected = 0, errored = 0, multiSegment = 0;
+
                 foreach (var g in srcGrids)
                 {
                     try
                     {
-                        Curve? c = g.GetCurvesInView(DatumExtentType.ViewSpecific, sv)?.FirstOrDefault();
-                        if (c == null) { skipped++; continue; }
-                        if (!(doc.GetElement(g.Id) is Grid tg)) { skipped++; continue; }
-                        tg.SetCurveInView(DatumExtentType.ViewSpecific, tv, c);
+                        if (!g.CanBeVisibleInView(sv) || !g.CanBeVisibleInView(tv))
+                        {
+                            notVisible++;
+                            DiagnosticsLog.Warn("AlignSheetViews",
+                                $"Grid {g.Id.Value} ('{g.Name}') cannot be visible in view {sv.Id.Value} or {tv.Id.Value} — not trimmed.");
+                            continue;
+                        }
+
+                        IList<Curve>? curves = ReadDisplayedCurves(g, sv);
+                        if (curves == null || curves.Count == 0)
+                        {
+                            noSourceCurve++;
+                            DiagnosticsLog.Warn("AlignSheetViews",
+                                $"Grid {g.Id.Value} ('{g.Name}') returned no curve in source view {sv.Id.Value} — not trimmed.");
+                            continue;
+                        }
+                        // SetCurveInView takes a single curve, so a multi-segment grid can only carry
+                        // its first segment across. Say so rather than dropping the rest silently.
+                        if (curves.Count > 1) multiSegment++;
+                        Curve c = curves[0];
+
+                        // Validate BEFORE switching the target's extent mode, so a grid that is going
+                        // to be rejected leaves the target view exactly as it was.
+                        if (!g.IsCurveValidInView(DatumExtentType.ViewSpecific, tv, c))
+                        {
+                            rejected++;
+                            DiagnosticsLog.Warn("AlignSheetViews",
+                                $"Grid {g.Id.Value} ('{g.Name}') source curve rejected as invalid in view {tv.Id.Value} — not trimmed.");
+                            continue;
+                        }
+
+                        // A 2D curve can only be written once the target view's ends are in 2D mode.
+                        g.SetDatumExtentType(DatumEnds.End0, tv, DatumExtentType.ViewSpecific);
+                        g.SetDatumExtentType(DatumEnds.End1, tv, DatumExtentType.ViewSpecific);
+
+                        g.SetCurveInView(DatumExtentType.ViewSpecific, tv, c);
                         trimmed++;
                     }
                     catch (Exception ex)
                     {
-                        skipped++;
+                        errored++;
                         DiagnosticsLog.Swallowed($"AlignSheetViews: trim grid {g.Id.Value} in view {tv.Id.Value}", ex);
                     }
                 }
 
-                if (srcGrids.Count == 0)
-                    Log(AppStrings.T("testing.alignSheetViews.log.noGrids", label, pr.Source.ViewName), "info");
-                else
-                    Log(skipped > 0
-                        ? AppStrings.T("testing.alignSheetViews.log.gridsTrimmedSome", label, pr.Target.ViewName, trimmed, skipped)
-                        : AppStrings.T("testing.alignSheetViews.log.gridsTrimmedNone", label, pr.Target.ViewName, trimmed),
-                        skipped > 0 ? "warn" : "info");
+                Log(AppStrings.T("testing.alignSheetViews.log.gridsTrimmedNone", label, pr.Target.ViewName, trimmed),
+                    trimmed > 0 ? "info" : "warn");
+                if (notVisible > 0)
+                    Log(AppStrings.T("testing.alignSheetViews.log.gridsNotVisible", label, pr.Target.ViewName, notVisible), "warn");
+                if (noSourceCurve > 0)
+                    Log(AppStrings.T("testing.alignSheetViews.log.gridsNoSourceCurve", label, pr.Source.ViewName, noSourceCurve), "warn");
+                if (rejected > 0)
+                    Log(AppStrings.T("testing.alignSheetViews.log.gridsRejected", label, pr.Target.ViewName, rejected), "warn");
+                if (errored > 0)
+                    Log(AppStrings.T("testing.alignSheetViews.log.gridsErrored", label, pr.Target.ViewName, errored), "warn");
+                if (multiSegment > 0)
+                    Log(AppStrings.T("testing.alignSheetViews.log.gridsMultiSegment", label, pr.Target.ViewName, multiSegment), "warn");
             }
             catch (Exception ex)
             {
                 Log(AppStrings.T("testing.alignSheetViews.log.couldNotTrimGrids", label, pr.Target.ViewName), "warn");
                 DiagnosticsLog.Swallowed($"AlignSheetViews: trim grids on view {pr.Target.ViewId.Value}", ex);
+            }
+        }
+
+        /// <summary>
+        /// Returns the curves the grid actually displays in <paramref name="view"/>. The extent mode
+        /// is per end, so ViewSpecific is used when either end has been dragged in this view and
+        /// Model otherwise; the other mode is tried as a fallback because a mode that carries no
+        /// curves can return an empty list or throw depending on the view type.
+        /// </summary>
+        private static IList<Curve>? ReadDisplayedCurves(Grid g, View view)
+        {
+            bool anyViewSpecific =
+                TryGetExtentType(g, DatumEnds.End0, view) == DatumExtentType.ViewSpecific ||
+                TryGetExtentType(g, DatumEnds.End1, view) == DatumExtentType.ViewSpecific;
+
+            DatumExtentType first  = anyViewSpecific ? DatumExtentType.ViewSpecific : DatumExtentType.Model;
+            DatumExtentType second = anyViewSpecific ? DatumExtentType.Model : DatumExtentType.ViewSpecific;
+
+            return TryGetCurves(g, first, view) ?? TryGetCurves(g, second, view);
+        }
+
+        private static DatumExtentType TryGetExtentType(Grid g, DatumEnds end, View view)
+        {
+            try
+            {
+                return g.GetDatumExtentTypeInView(end, view);
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Swallowed($"AlignSheetViews: extent type of grid {g.Id.Value} in view {view.Id.Value}", ex);
+                return DatumExtentType.Model;
+            }
+        }
+
+        private static IList<Curve>? TryGetCurves(Grid g, DatumExtentType type, View view)
+        {
+            try
+            {
+                var curves = g.GetCurvesInView(type, view);
+                return curves != null && curves.Count > 0 ? curves : null;
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Swallowed($"AlignSheetViews: {type} curves of grid {g.Id.Value} in view {view.Id.Value}", ex);
+                return null;
             }
         }
 
