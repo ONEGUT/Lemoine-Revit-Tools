@@ -98,15 +98,26 @@
     "couldNotMatchAnnoCrop":"[{0}] Could not match annotation crop for '{1}' (this view type may not support one).",
     "couldNotMatchCropVis":"[{0}] Could not match crop visibility for '{1}'.",
     "noGrids":            "[{0}] '{1}' has no grids to trim.",
-    "gridsTrimmedNone":   "[{0}] Grids on '{1}': {2} trimmed.",
-    // One line per failure cause, so a zero result always names its reason. A bare
+    // Changed vs already-matching are split deliberately: a single "N trimmed" that counted
+    // no-op writes is exactly what made a broken run look like a successful one.
+    "gridsResult":        "[{0}] Grids on '{1}': {2} updated, {3} already matching.",
+    "gridsWouldResult":   "[{0}] Grids on '{1}': {2} would be updated, {3} already matching.",
+    "gridWouldMove":      "[{0}] '{1}' grid '{2}': ends would move {3}' / {4}'.",
+    // Heads/tails are a separate property from the extents — matching ends still show no head
+    // if the source has its bubble on and the target does not.
+    "gridsBubbles":       "[{0}] Grids on '{1}': {2} head/tail bubbles matched to the source.",
+    "gridsWouldBubbles":  "[{0}] Grids on '{1}': {2} head/tail bubbles would be matched to the source.",
+    // One line per remaining cause, so a zero result always names its reason. A bare
     // "N skipped" cannot be acted on — it was hiding grids whose source view had no
     // 2D extents at all, reported as if they were invisible or non-collinear.
+    "gridsModelSource":   "[{0}] Grids on '{1}': {2} use model (3D) extents in the source view — target ends reset to model to match.",
     "gridsNotVisible":    "[{0}] Grids on '{1}': {2} cannot be shown in this view — not trimmed.",
-    "gridsNoSourceCurve": "[{0}] Grids on '{1}': {2} returned no curve from the source view — not trimmed.",
-    "gridsRejected":      "[{0}] Grids on '{1}': {2} rejected the source curve as invalid for this view — not trimmed.",
+    "gridsNoSourceCurve": "[{0}] Grids on '{1}': {2} claim view-specific extents but returned no curve — not trimmed.",
+    "gridsRejected":      "[{0}] Grids on '{1}': {2} were rejected by Revit when writing the curve — extent mode restored, see diagnostics log.",
     "gridsErrored":       "[{0}] Grids on '{1}': {2} failed with an error — see diagnostics log.",
     "gridsMultiSegment":  "[{0}] Grids on '{1}': {2} are multi-segment — only the first segment's extents were copied.",
+    "gridsTargetOnly":    "[{0}] Grids on '{1}': {2} appear in the target view but not the source — left unchanged.",
+    "gridsRestoreFailed": "[{0}] '{1}' grid '{2}': write failed AND its extent mode could not be restored — that end is now 2D with no curve set.",
     "couldNotTrimGrids":  "[{0}] Could not trim grids for '{1}'.",
     "couldNotMatchTitleLine":"[{0}] Could not match title line length for '{1}'.",
     "couldNotAlignTitle": "[{0}] Could not align title for '{1}'.",

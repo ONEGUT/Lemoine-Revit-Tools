@@ -283,6 +283,9 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                     {
                         Log(AppStrings.T("testing.alignSheetViews.log.wouldAlign", label, pr.Target.ViewName, pr.Source.ViewName, (AlignTitles ? AppStrings.T("testing.alignSheetViews.log.wouldAlignTitle") : AppStrings.T("testing.alignSheetViews.log.wouldAlignEnd"))), "info");
                         DiagnosePair(doc, pr, label);
+                        // Read-only grid report: preview's job is to say whether the drawing or the
+                        // tool is at fault, and it used to be silent on grids entirely.
+                        if (InheritGridExtents) TrimGrids(doc, pr, label, apply: false);
                     }
                     foreach (var miss in bestMatch.Missing)
                         DiagnoseMissing(miss, targetEntries, label);
@@ -337,7 +340,7 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                 }
 
                 // Phase C — view-only inheritance that does not move the viewport.
-                if (InheritGridExtents)    foreach (var pr in bestMatch.Pairs) TrimGrids(doc, pr, label);
+                if (InheritGridExtents)    foreach (var pr in bestMatch.Pairs) TrimGrids(doc, pr, label, apply: true);
                 if (InheritCropVisibility) foreach (var pr in bestMatch.Pairs) SetCropVisibility(doc, pr, label);
 
                 onProgress(Pct(i + 1, total), p, f, s);
@@ -476,20 +479,35 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
 
         // ── Inheritance: grid 2D (view-specific) extents ──────────────────────
         /// <summary>
-        /// Copies each source grid's displayed endpoints onto the same grid in the target view as a
-        /// per-view 2D (ViewSpecific) override. Source and target grid are one element — only the
-        /// per-view override differs — so the curve is collinear with the target grid by
-        /// construction, and a 2D override applies even when the grid's 3D extents are locked to a
-        /// scope box.
+        /// Makes each grid's displayed endpoints — and its head/tail bubbles — in the target view
+        /// match the same grid in the source view. Source and target grid are one element; only the
+        /// per-view override differs, so the source curve is collinear with the target grid by
+        /// construction.
         ///
         /// A datum's extent mode is per view AND per end (the 3D/2D toggle in the UI), so this is
-        /// not a plain get/set: the source curve must be read from whichever mode that view actually
-        /// uses (usually Model — 2D is only in play once someone has dragged an end there), and the
-        /// target's ends must be switched to ViewSpecific before a 2D curve can be written into it.
-        /// Reading ViewSpecific curves from a Model-extent source view yields nothing, which is what
-        /// made this silently skip every grid.
+        /// not a plain get/set. Four rules the earlier versions each got wrong:
+        ///
+        /// <list type="bullet">
+        /// <item>The target's ends must be switched to ViewSpecific <b>before</b> the curve is
+        /// validated or written. <c>IsCurveValidInView</c> answers for the mode the view is actually
+        /// in, so asking it first rejected every grid that had never been dragged in the target
+        /// view — i.e. exactly the grids this feature exists to fix.</item>
+        /// <item>A 2D extent curve lies in its <b>view's</b> plane, so a curve read from one level's
+        /// plan has to be translated onto the target view's plane before it can be written there.
+        /// Cross-level alignment is this tool's headline use case.</item>
+        /// <item>A source on MODEL extents has nothing view-specific to copy — its displayed extent
+        /// IS the grid's shared 3D extent, identical in every view. Matching it means resetting the
+        /// target's ends to Model, NOT writing that shared curve in as a 2D override: that changes
+        /// nothing visible while permanently detaching the target from scope-box/model updates.</item>
+        /// <item>Matching extents still leave the head missing if the source shows a bubble and the
+        /// target does not, so bubble visibility is mirrored per end as well.</item>
+        /// </list>
+        ///
+        /// With <paramref name="apply"/> false nothing is written — every read, comparison and
+        /// verdict still runs and is reported, which is how preview mode answers "is this the
+        /// drawing or the tool?" without touching the model.
         /// </summary>
-        private void TrimGrids(Document doc, MatchedPair pr, string label)
+        private void TrimGrids(Document doc, MatchedPair pr, string label, bool apply)
         {
             try
             {
@@ -507,70 +525,125 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                     return;
                 }
 
-                // Each failure mode is counted separately — a bare "skipped" number cannot be acted on.
-                int trimmed = 0, notVisible = 0, noSourceCurve = 0, rejected = 0, errored = 0, multiSegment = 0;
+                // A grid the target shows and the source does not can never be matched. Name it
+                // rather than leaving a difference the user has to spot on the plot.
+                var srcIds = new HashSet<long>(srcGrids.Select(g => g.Id.Value));
+                int targetOnly = new FilteredElementCollector(doc, tv.Id)
+                    .OfClass(typeof(Grid))
+                    .Cast<Grid>()
+                    .Count(g => !srcIds.Contains(g.Id.Value));
 
+                // Each outcome is counted separately — a bare "skipped" number cannot be acted on.
+                var t      = new GridTally();
+                var writes = new List<GridWrite>();
+
+                // ── Pass 1 — read the source, decide, switch the target's extent mode ──
                 foreach (var g in srcGrids)
                 {
                     try
                     {
                         if (!g.CanBeVisibleInView(sv) || !g.CanBeVisibleInView(tv))
                         {
-                            notVisible++;
+                            t.NotVisible++;
                             DiagnosticsLog.Warn("AlignSheetViews",
                                 $"Grid {g.Id.Value} ('{g.Name}') cannot be visible in view {sv.Id.Value} or {tv.Id.Value} — not trimmed.");
                             continue;
                         }
 
-                        IList<Curve>? curves = ReadDisplayedCurves(g, sv);
+                        // Source on model extents: match it by putting the target back on model too.
+                        if (!UsesViewSpecific(g, sv))
+                        {
+                            t.ModelSource++;
+                            if (ResetEndsToModel(g, tv, apply)) t.Changed++;
+                            MirrorBubbles(g, sv, tv, apply, t);
+                            continue;
+                        }
+
+                        // No Model fallback here: falling back would copy the grid's shared 3D
+                        // extent and report it as a successful trim, which is a silent wrong answer.
+                        IList<Curve>? curves = TryGetCurves(g, DatumExtentType.ViewSpecific, sv);
                         if (curves == null || curves.Count == 0)
                         {
-                            noSourceCurve++;
+                            t.NoSourceCurve++;
                             DiagnosticsLog.Warn("AlignSheetViews",
-                                $"Grid {g.Id.Value} ('{g.Name}') returned no curve in source view {sv.Id.Value} — not trimmed.");
+                                $"Grid {g.Id.Value} ('{g.Name}') claims view-specific extents in source view {sv.Id.Value} but returned no curve — not trimmed.");
                             continue;
                         }
                         // SetCurveInView takes a single curve, so a multi-segment grid can only carry
                         // its first segment across. Say so rather than dropping the rest silently.
-                        if (curves.Count > 1) multiSegment++;
-                        Curve c = curves[0];
+                        if (curves.Count > 1) t.MultiSegment++;
 
-                        // Validate BEFORE switching the target's extent mode, so a grid that is going
-                        // to be rejected leaves the target view exactly as it was.
-                        if (!g.IsCurveValidInView(DatumExtentType.ViewSpecific, tv, c))
+                        Curve c = ProjectOntoViewPlane(curves[0], tv);
+
+                        // Compare against what the target already displays (projected onto the same
+                        // plane) so "wrote the identical curve again" is never reported as a change.
+                        Curve? existing = DisplayedCurve(g, tv);
+                        if (existing != null) existing = ProjectOntoViewPlane(existing, tv);
+                        if (existing != null && CurvesMatch(existing, c))
                         {
-                            rejected++;
-                            DiagnosticsLog.Warn("AlignSheetViews",
-                                $"Grid {g.Id.Value} ('{g.Name}') source curve rejected as invalid in view {tv.Id.Value} — not trimmed.");
+                            t.AlreadyMatching++;
+                            MirrorBubbles(g, sv, tv, apply, t);
                             continue;
                         }
 
-                        // A 2D curve can only be written once the target view's ends are in 2D mode.
+                        if (!apply)
+                        {
+                            t.Changed++;
+                            if (existing != null)
+                                Log(AppStrings.T("testing.alignSheetViews.log.gridWouldMove", label, pr.Target.ViewName, g.Name,
+                                        F(existing.GetEndPoint(0).DistanceTo(c.GetEndPoint(0))),
+                                        F(existing.GetEndPoint(1).DistanceTo(c.GetEndPoint(1)))), "info");
+                            MirrorBubbles(g, sv, tv, false, t);
+                            continue;
+                        }
+
+                        // Record the original modes so a rejected write can put them back.
+                        var m0 = TryGetExtentType(g, DatumEnds.End0, tv);
+                        var m1 = TryGetExtentType(g, DatumEnds.End1, tv);
+
                         g.SetDatumExtentType(DatumEnds.End0, tv, DatumExtentType.ViewSpecific);
                         g.SetDatumExtentType(DatumEnds.End1, tv, DatumExtentType.ViewSpecific);
-
-                        g.SetCurveInView(DatumExtentType.ViewSpecific, tv, c);
-                        trimmed++;
+                        writes.Add(new GridWrite(g, c, m0, m1));
                     }
                     catch (Exception ex)
                     {
-                        errored++;
-                        DiagnosticsLog.Swallowed($"AlignSheetViews: trim grid {g.Id.Value} in view {tv.Id.Value}", ex);
+                        t.Errored++;
+                        DiagnosticsLog.Swallowed($"AlignSheetViews: prepare grid {g.Id.Value} for view {tv.Id.Value}", ex);
                     }
                 }
 
-                Log(AppStrings.T("testing.alignSheetViews.log.gridsTrimmedNone", label, pr.Target.ViewName, trimmed),
-                    trimmed > 0 ? "info" : "warn");
-                if (notVisible > 0)
-                    Log(AppStrings.T("testing.alignSheetViews.log.gridsNotVisible", label, pr.Target.ViewName, notVisible), "warn");
-                if (noSourceCurve > 0)
-                    Log(AppStrings.T("testing.alignSheetViews.log.gridsNoSourceCurve", label, pr.Source.ViewName, noSourceCurve), "warn");
-                if (rejected > 0)
-                    Log(AppStrings.T("testing.alignSheetViews.log.gridsRejected", label, pr.Target.ViewName, rejected), "warn");
-                if (errored > 0)
-                    Log(AppStrings.T("testing.alignSheetViews.log.gridsErrored", label, pr.Target.ViewName, errored), "warn");
-                if (multiSegment > 0)
-                    Log(AppStrings.T("testing.alignSheetViews.log.gridsMultiSegment", label, pr.Target.ViewName, multiSegment), "warn");
+                // One regen for the whole view so the mode switches are live before any curve is
+                // written — never per grid (a regen recomputes the entire model).
+                if (writes.Count > 0) doc.Regenerate();
+
+                // ── Pass 2 — write the curves ──
+                foreach (var w in writes)
+                {
+                    try
+                    {
+                        if (!w.Grid.IsCurveValidInView(DatumExtentType.ViewSpecific, tv, w.Curve))
+                        {
+                            // Advisory, not authoritative: attempt the write anyway and let the throw
+                            // (if any) be the verdict, so a false negative can never silently skip.
+                            DiagnosticsLog.Warn("AlignSheetViews",
+                                $"Grid {w.Grid.Id.Value} ('{w.Grid.Name}') reported its source curve invalid in view {tv.Id.Value} — writing anyway.");
+                        }
+                        w.Grid.SetCurveInView(DatumExtentType.ViewSpecific, tv, w.Curve);
+                        t.Changed++;
+                        MirrorBubbles(w.Grid, sv, tv, true, t);
+                    }
+                    catch (Exception ex)
+                    {
+                        t.Rejected++;
+                        DiagnosticsLog.Swallowed($"AlignSheetViews: set curve for grid {w.Grid.Id.Value} in view {tv.Id.Value}", ex);
+                        // A failed restore leaves the end in 2D mode with no curve written — a
+                        // half-change the user has to know about, not just a diagnostics entry.
+                        if (!RestoreEnds(w, tv))
+                            Log(AppStrings.T("testing.alignSheetViews.log.gridsRestoreFailed", label, pr.Target.ViewName, w.Grid.Name), "warn");
+                    }
+                }
+
+                ReportGridTally(t, targetOnly, pr, label, apply);
             }
             catch (Exception ex)
             {
@@ -579,22 +652,168 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
             }
         }
 
-        /// <summary>
-        /// Returns the curves the grid actually displays in <paramref name="view"/>. The extent mode
-        /// is per end, so ViewSpecific is used when either end has been dragged in this view and
-        /// Model otherwise; the other mode is tried as a fallback because a mode that carries no
-        /// curves can return an empty list or throw depending on the view type.
-        /// </summary>
-        private static IList<Curve>? ReadDisplayedCurves(Grid g, View view)
+        /// <summary>Every outcome gets a line — a zero result always names its reason.</summary>
+        private void ReportGridTally(GridTally t, int targetOnly, MatchedPair pr, string label, bool apply)
         {
-            bool anyViewSpecific =
-                TryGetExtentType(g, DatumEnds.End0, view) == DatumExtentType.ViewSpecific ||
-                TryGetExtentType(g, DatumEnds.End1, view) == DatumExtentType.ViewSpecific;
+            Log(AppStrings.T(apply ? "testing.alignSheetViews.log.gridsResult"
+                                   : "testing.alignSheetViews.log.gridsWouldResult",
+                             label, pr.Target.ViewName, t.Changed, t.AlreadyMatching),
+                t.Changed > 0 || t.AlreadyMatching > 0 ? "info" : "warn");
 
-            DatumExtentType first  = anyViewSpecific ? DatumExtentType.ViewSpecific : DatumExtentType.Model;
-            DatumExtentType second = anyViewSpecific ? DatumExtentType.Model : DatumExtentType.ViewSpecific;
+            if (t.Bubbles > 0)
+                Log(AppStrings.T(apply ? "testing.alignSheetViews.log.gridsBubbles"
+                                       : "testing.alignSheetViews.log.gridsWouldBubbles",
+                                 label, pr.Target.ViewName, t.Bubbles), "info");
+            if (t.ModelSource > 0)
+                Log(AppStrings.T("testing.alignSheetViews.log.gridsModelSource", label, pr.Source.ViewName, t.ModelSource), "info");
+            if (t.NotVisible > 0)
+                Log(AppStrings.T("testing.alignSheetViews.log.gridsNotVisible", label, pr.Target.ViewName, t.NotVisible), "warn");
+            if (t.NoSourceCurve > 0)
+                Log(AppStrings.T("testing.alignSheetViews.log.gridsNoSourceCurve", label, pr.Source.ViewName, t.NoSourceCurve), "warn");
+            if (t.Rejected > 0)
+                Log(AppStrings.T("testing.alignSheetViews.log.gridsRejected", label, pr.Target.ViewName, t.Rejected), "warn");
+            if (t.Errored > 0)
+                Log(AppStrings.T("testing.alignSheetViews.log.gridsErrored", label, pr.Target.ViewName, t.Errored), "warn");
+            if (t.MultiSegment > 0)
+                Log(AppStrings.T("testing.alignSheetViews.log.gridsMultiSegment", label, pr.Target.ViewName, t.MultiSegment), "warn");
+            if (targetOnly > 0)
+                Log(AppStrings.T("testing.alignSheetViews.log.gridsTargetOnly", label, pr.Target.ViewName, targetOnly), "warn");
+        }
 
-            return TryGetCurves(g, first, view) ?? TryGetCurves(g, second, view);
+        /// <summary>Puts both of a grid's ends in the target view back on model extents.</summary>
+        private static bool ResetEndsToModel(Grid g, View tv, bool apply)
+        {
+            bool needed = TryGetExtentType(g, DatumEnds.End0, tv) != DatumExtentType.Model
+                       || TryGetExtentType(g, DatumEnds.End1, tv) != DatumExtentType.Model;
+            if (!needed) return false;
+            if (!apply)  return true;   // preview: report the change, write nothing
+            g.SetDatumExtentType(DatumEnds.End0, tv, DatumExtentType.Model);
+            g.SetDatumExtentType(DatumEnds.End1, tv, DatumExtentType.Model);
+            return true;
+        }
+
+        /// <summary>Restores the extent modes a rejected write had switched — leaves no half-change.
+        /// Returns false when the restore itself failed, so the caller can surface it.</summary>
+        private static bool RestoreEnds(GridWrite w, View tv)
+        {
+            try
+            {
+                w.Grid.SetDatumExtentType(DatumEnds.End0, tv, w.Mode0);
+                w.Grid.SetDatumExtentType(DatumEnds.End1, tv, w.Mode1);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Swallowed($"AlignSheetViews: restore extent mode of grid {w.Grid.Id.Value} in view {tv.Id.Value}", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Mirrors each end's bubble (head/tail) visibility from source view to target view. Extents
+        /// alone are not enough: a target whose bubble is off shows no head however well its ends line up.
+        /// </summary>
+        private static void MirrorBubbles(Grid g, View sv, View tv, bool apply, GridTally t)
+        {
+            foreach (var end in new[] { DatumEnds.End0, DatumEnds.End1 })
+            {
+                try
+                {
+                    if (!g.HasBubbleInView(end, tv)) continue;
+                    bool want = g.IsBubbleVisibleInView(end, sv);
+                    if (want == g.IsBubbleVisibleInView(end, tv)) continue;
+                    if (!apply) { t.Bubbles++; continue; }
+                    if (want) g.ShowBubbleInView(end, tv);
+                    else      g.HideBubbleInView(end, tv);
+                    t.Bubbles++;   // counted only once the write actually landed
+                }
+                catch (Exception ex)
+                {
+                    DiagnosticsLog.Swallowed($"AlignSheetViews: bubble {end} of grid {g.Id.Value} in view {tv.Id.Value}", ex);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Translates a curve onto <paramref name="v"/>'s plane. A datum's 2D extents live in the
+        /// view's own plane, so a curve lifted from a plan at one level sits at that level's
+        /// elevation and is not valid in a plan at another. The two planes are parallel (same datum,
+        /// same view direction), so a single translation along the shared normal lands the whole
+        /// curve — lines and arcs alike — where the target view can accept it.
+        /// </summary>
+        private static Curve ProjectOntoViewPlane(Curve c, View v)
+        {
+            try
+            {
+                if (!TryGetViewPlaneOrigin(v, out XYZ o)) return c;
+                XYZ n = v.ViewDirection;
+                if (n == null || n.IsZeroLength()) return c;
+                n = n.Normalize();
+                double d = (c.GetEndPoint(0) - o).DotProduct(n);
+                if (Math.Abs(d) < 1e-9) return c;
+                return c.CreateTransformed(Transform.CreateTranslation(n.Multiply(-d)));
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Swallowed($"AlignSheetViews: project grid curve onto view {v.Id.Value}", ex);
+                return c;
+            }
+        }
+
+        /// <summary>A point on the view's plane. View.Origin is not implemented for every view type,
+        /// so the crop box transform's origin — which lies in the same plane — is the fallback.</summary>
+        private static bool TryGetViewPlaneOrigin(View v, out XYZ o)
+        {
+            o = XYZ.Zero;
+            try
+            {
+                XYZ vo = v.Origin;
+                if (vo != null) { o = vo; return true; }
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Swallowed($"AlignSheetViews: View.Origin on view {v.Id.Value}", ex);
+            }
+            try
+            {
+                BoundingBoxXYZ cb = v.CropBox;
+                if (cb?.Transform != null) { o = cb.Transform.Origin; return true; }
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Swallowed($"AlignSheetViews: crop-box origin on view {v.Id.Value}", ex);
+            }
+            return false;
+        }
+
+        private const double CurveMatchTolFt = 1e-6;
+
+        private static bool CurvesMatch(Curve a, Curve b)
+        {
+            try
+            {
+                return a.GetEndPoint(0).DistanceTo(b.GetEndPoint(0)) < CurveMatchTolFt
+                    && a.GetEndPoint(1).DistanceTo(b.GetEndPoint(1)) < CurveMatchTolFt;
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Swallowed("AlignSheetViews: compare grid curves", ex);
+                return false;   // treat as different — a write is recoverable, a silent skip is not
+            }
+        }
+
+        /// <summary>True when either end has been dragged in this view (2D override in play).</summary>
+        private static bool UsesViewSpecific(Grid g, View view)
+            => TryGetExtentType(g, DatumEnds.End0, view) == DatumExtentType.ViewSpecific
+            || TryGetExtentType(g, DatumEnds.End1, view) == DatumExtentType.ViewSpecific;
+
+        /// <summary>The curve the grid actually displays in <paramref name="view"/>, read from
+        /// whichever extent mode that view is using.</summary>
+        private static Curve? DisplayedCurve(Grid g, View view)
+        {
+            var mode   = UsesViewSpecific(g, view) ? DatumExtentType.ViewSpecific : DatumExtentType.Model;
+            var curves = TryGetCurves(g, mode, view);
+            return curves != null && curves.Count > 0 ? curves[0] : null;
         }
 
         private static DatumExtentType TryGetExtentType(Grid g, DatumEnds end, View view)
@@ -1251,6 +1470,36 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
             public VpEntry Source { get; }
             public VpEntry Target { get; }
             public string  Label  { get; set; } = "";
+        }
+
+        // ── Per-view grid outcome counts ──────────────────────────────────────
+        // One field per outcome so a zero result always names its cause. "Changed" counts real
+        // differences only — a curve written identical to the one already there is AlreadyMatching,
+        // because "N trimmed" that included no-op writes is what hid this bug in the first place.
+        private sealed class GridTally
+        {
+            public int Changed        { get; set; }
+            public int AlreadyMatching { get; set; }
+            public int Bubbles        { get; set; }
+            public int ModelSource    { get; set; }
+            public int NotVisible     { get; set; }
+            public int NoSourceCurve  { get; set; }
+            public int Rejected       { get; set; }
+            public int Errored        { get; set; }
+            public int MultiSegment   { get; set; }
+        }
+
+        // ── A queued grid curve write, with the extent modes to restore if it is rejected ─
+        private sealed class GridWrite
+        {
+            public GridWrite(Grid grid, Curve curve, DatumExtentType mode0, DatumExtentType mode1)
+            {
+                Grid = grid; Curve = curve; Mode0 = mode0; Mode1 = mode1;
+            }
+            public Grid            Grid  { get; }
+            public Curve           Curve { get; }
+            public DatumExtentType Mode0 { get; }
+            public DatumExtentType Mode1 { get; }
         }
 
         // ── Captured per-viewport state ───────────────────────────────────────
