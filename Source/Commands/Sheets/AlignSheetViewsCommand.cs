@@ -47,7 +47,7 @@ namespace LemoineTools.Commands
                     .OfClass(typeof(ViewSheet))
                     .Cast<ViewSheet>()
                     .Where(s => !s.IsTemplate && !s.IsPlaceholder)
-                    .OrderBy(s => s.SheetNumber)
+                    .OrderBy(s => s.SheetNumber, NaturalOrderComparer.OrdinalIgnoreCase)
                     .Select(s => (Id: s.Id, Label: $"{s.SheetNumber} - {s.Name}"))
                     .ToList();
 

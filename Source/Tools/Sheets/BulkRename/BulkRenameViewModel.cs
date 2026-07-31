@@ -419,7 +419,7 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
 
             if (_target == RenameTarget.Sheets)
             {
-                foreach (var s in _sheets.OrderBy(s => s.Number, StringComparer.OrdinalIgnoreCase))
+                foreach (var s in _sheets.OrderBy(s => s.Number, NaturalOrderComparer.OrdinalIgnoreCase))
                 {
                     if (!sel.Contains(s.Id.Value)) continue;
                     string oldValue = _field == RenameField.Number ? s.Number : s.Name;
@@ -429,7 +429,7 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
             }
             else
             {
-                foreach (var v in _views.OrderBy(v => v.TypeLabel).ThenBy(v => v.Name))
+                foreach (var v in _views.OrderBy(v => v.TypeLabel).ThenBy(v => v.Name, NaturalOrderComparer.OrdinalIgnoreCase))
                 {
                     if (!sel.Contains(v.Id.Value)) continue;
                     var tokens = new Dictionary<string, string> { ["ViewName"] = v.Name, ["ViewType"] = v.TypeLabel };

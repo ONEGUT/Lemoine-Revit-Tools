@@ -104,7 +104,7 @@ namespace LemoineTools.Helpers
                 .OfClass(typeof(View))
                 .Cast<View>()
                 .Where(v => !v.IsTemplate && v.ViewType == ViewType.Legend)
-                .OrderBy(v => v.Name, StringComparer.OrdinalIgnoreCase);
+                .OrderBy(v => v.Name, NaturalOrderComparer.OrdinalIgnoreCase);
             foreach (var v in legends)
                 root.Children.Add(new BrowserNode { Title = v.Name, Id = v.Id.Value });
             return root;
@@ -118,7 +118,7 @@ namespace LemoineTools.Helpers
                 .OfClass(typeof(ViewSchedule))
                 .Cast<ViewSchedule>()
                 .Where(s => !s.IsTemplate && !s.IsTitleblockRevisionSchedule)
-                .OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase);
+                .OrderBy(s => s.Name, NaturalOrderComparer.OrdinalIgnoreCase);
             foreach (var s in schedules)
                 root.Children.Add(new BrowserNode { Title = s.Name, Id = s.Id.Value });
             return root;
@@ -200,17 +200,18 @@ namespace LemoineTools.Helpers
             target.Children.Add(leaf);
         }
 
-        /// <summary>Folders before leaves, each alphabetical, honouring the org's sort direction.</summary>
+        /// <summary>Folders before leaves, each in natural (number-aware) order so C.2 precedes
+        /// C.17, honouring the org's sort direction.</summary>
         private static void SortRecursive(BrowserNode node, bool descending)
         {
             var folders = node.Children.Where(c => !c.IsLeaf);
             var leaves  = node.Children.Where(c => c.IsLeaf);
             var sorted  = (descending
-                    ? folders.OrderByDescending(c => c.Title, StringComparer.OrdinalIgnoreCase)
-                    : folders.OrderBy(c => c.Title, StringComparer.OrdinalIgnoreCase))
+                    ? folders.OrderByDescending(c => c.Title, NaturalOrderComparer.OrdinalIgnoreCase)
+                    : folders.OrderBy(c => c.Title, NaturalOrderComparer.OrdinalIgnoreCase))
                 .Concat(descending
-                    ? leaves.OrderByDescending(c => c.Title, StringComparer.OrdinalIgnoreCase)
-                    : leaves.OrderBy(c => c.Title, StringComparer.OrdinalIgnoreCase))
+                    ? leaves.OrderByDescending(c => c.Title, NaturalOrderComparer.OrdinalIgnoreCase)
+                    : leaves.OrderBy(c => c.Title, NaturalOrderComparer.OrdinalIgnoreCase))
                 .ToList();
             node.Children.Clear();
             node.Children.AddRange(sorted);

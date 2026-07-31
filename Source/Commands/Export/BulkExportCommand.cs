@@ -47,7 +47,7 @@ namespace LemoineTools.Commands
                     .OfClass(typeof(ViewSheet))
                     .Cast<ViewSheet>()
                     .Where(s => !s.IsTemplate)
-                    .OrderBy(s => s.SheetNumber)
+                    .OrderBy(s => s.SheetNumber, NaturalOrderComparer.OrdinalIgnoreCase)
                     .ToList();
 
                 // Collect non-template views including 3D views (required for NWC/IFC export).
