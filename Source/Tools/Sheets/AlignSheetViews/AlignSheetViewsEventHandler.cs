@@ -176,18 +176,18 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
 
                         if (pairs.Count > 0 && !RunState.CancelRequested)
                         {
-                            // Title LINE LENGTH is written first, because writing it moves the
-                            // viewport box — measured at up to 0.14 sheet feet on a real sheet. Doing
-                            // it after the placement check left the drawing off its aligned centre,
-                            // which is exactly what "title alignment shifted the box" was reporting.
+                            // Title LINE LENGTH is written before the placement is settled: it
+                            // changes the title's extent, so getting it out of the way first means
+                            // the correction below measures a viewport that is not about to change.
                             if (AlignTitles) MatchTitleLineLengths(doc, pairs);
 
-                            // Everything up to here — grid extents, crop visibility, annotation-crop
-                            // writes, the title line length — can change a view's footprint, and the
-                            // footprint is what SetBoxCenter positioned. Regenerate so the boxes
-                            // report where they really are, then put any that shifted back.
+                            // Regenerate so every box reports where it actually landed, then drive
+                            // each one onto its aligned centre. This is a measured correction, not a
+                            // re-issue of the original value: SetBoxCenter's input and GetBoxCenter's
+                            // output are not the same point, so writing the goal a second time
+                            // reproduces the same offset rather than removing it.
                             doc.Regenerate();
-                            VerifyPlacement(doc, pairs, correct: true);
+                            CorrectPlacement(doc, pairs);
 
                             if (AlignTitles)
                             {
@@ -196,7 +196,7 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                                 // aligned to a position that is about to move.
                                 doc.Regenerate();
                                 AlignTitleOffsets(doc, pairs);
-                                VerifyPlacement(doc, pairs, correct: false);
+                                VerifyPlacement(doc, pairs);
                             }
                         }
 
@@ -1216,10 +1216,92 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
         /// A clean report is just as useful — it rules the align phase's own arithmetic in as the
         /// remaining suspect instead of leaving both possibilities open.
         /// </summary>
-        private void VerifyPlacement(Document doc, List<MatchedPair> pairs, bool correct)
+        private void CorrectPlacement(Document doc, List<MatchedPair> pairs)
         {
-            int drifted = 0, failed = 0;
-            double worst = 0; string worstName = "";
+            const int MaxRounds = 3;
+            int adjusted = 0, failed = 0;
+
+            for (int round = 0; round < MaxRounds; round++)
+            {
+                int movedThisRound = 0;
+
+                foreach (var pr in pairs)
+                {
+                    try
+                    {
+                        if (pr.IntendedCentre == null || pr.LastSetCentre == null) continue;
+                        if (!(doc.GetElement(pr.Target.ViewportId) is Viewport vp)) continue;
+
+                        XYZ now = vp.GetBoxCenter();
+                        if (now == null) { if (round == 0) failed++; continue; }
+
+                        XYZ error = now - pr.IntendedCentre;
+                        if (error.GetLength() <= PlacementTolFt) continue;
+
+                        // Subtract the measured error from what was WRITTEN last. Re-writing
+                        // IntendedCentre instead is a no-op: it is the value that produced this
+                        // offset in the first place, which is why the drift was reported identically
+                        // on every run and never converged.
+                        XYZ next = pr.LastSetCentre - error;
+                        vp.SetBoxCenter(next);
+                        pr.LastSetCentre = next;
+                        movedThisRound++;
+
+                        if (round == 0)
+                            DiagnosticsLog.Warn("AlignSheetViews",
+                                $"Viewport {pr.Target.ViewportId.Value} ('{pr.Target.ViewName}') landed {error.GetLength():0.######}' from its aligned centre; compensating.");
+                    }
+                    catch (Exception ex)
+                    {
+                        failed++;
+                        DiagnosticsLog.Swallowed($"AlignSheetViews: correct placement of viewport {pr.Target.ViewportId.Value}", ex);
+                    }
+                }
+
+                if (round == 0) adjusted = movedThisRound;
+                if (movedThisRound == 0) break;
+                doc.Regenerate();   // so the next round measures where the viewport actually landed
+            }
+
+            // Residual after the last round — the honest answer on whether this converged.
+            int residual = 0; double worst = 0; string worstName = "";
+            foreach (var pr in pairs)
+            {
+                try
+                {
+                    if (pr.IntendedCentre == null) continue;
+                    if (!(doc.GetElement(pr.Target.ViewportId) is Viewport vp)) continue;
+                    XYZ now = vp.GetBoxCenter();
+                    if (now == null) continue;
+                    double d = now.DistanceTo(pr.IntendedCentre);
+                    if (d <= PlacementTolFt) continue;
+                    residual++;
+                    if (d > worst) { worst = d; worstName = pr.Target.ViewName; }
+                }
+                catch (Exception ex)
+                {
+                    DiagnosticsLog.Swallowed($"AlignSheetViews: placement residual on viewport {pr.Target.ViewportId.Value}", ex);
+                }
+            }
+
+            if (residual > 0)
+                Log(AppStrings.T("testing.alignSheetViews.log.placementResidual", residual, worstName, F(worst)), "warn");
+            else if (adjusted > 0)
+                Log(AppStrings.T("testing.alignSheetViews.log.placementCorrected", adjusted), "info");
+            else
+                Log(AppStrings.T("testing.alignSheetViews.log.placementOk", pairs.Count), "info");
+
+            if (failed > 0)
+                Log(AppStrings.T("testing.alignSheetViews.log.placementUnchecked", failed), "warn");
+        }
+
+        /// <summary>
+        /// Report-only check, run after the titles. Nothing is moved here: correcting a box at this
+        /// point would drag its freshly-aligned title back off the source it was just matched to.
+        /// </summary>
+        private void VerifyPlacement(Document doc, List<MatchedPair> pairs)
+        {
+            int drifted = 0; double worst = 0; string worstName = "";
 
             foreach (var pr in pairs)
             {
@@ -1229,7 +1311,7 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                     if (!(doc.GetElement(pr.Target.ViewportId) is Viewport vp)) continue;
 
                     XYZ now = vp.GetBoxCenter();
-                    if (now == null) { failed++; continue; }
+                    if (now == null) continue;
 
                     double d = now.DistanceTo(pr.IntendedCentre);
                     if (d <= PlacementTolFt) continue;
@@ -1237,36 +1319,22 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                     drifted++;
                     if (d > worst) { worst = d; worstName = pr.Target.ViewName; }
 
-                    // GetBoxCenter is the handle SetBoxCenter writes; GetBoxOutline is the drawing's
-                    // true footprint and EXCLUDES the view title. If the outline centre is still on
-                    // the aligned point while GetBoxCenter is not, then nothing moved on paper and
-                    // the reported drift is the title changing size — in which case correcting it
-                    // would push the drawing off by that much rather than fixing anything.
                     string footprint = TryOutlineCentre(vp, out XYZ oc)
                         ? $"footprint centre is {oc.DistanceTo(pr.IntendedCentre):0.######}' away"
                         : "footprint centre unreadable";
                     DiagnosticsLog.Warn("AlignSheetViews",
-                        $"Viewport {pr.Target.ViewportId.Value} ('{pr.Target.ViewName}') sits {d:0.######}' from its aligned centre; {footprint}.");
-
-                    if (correct) vp.SetBoxCenter(pr.IntendedCentre);
+                        $"Viewport {pr.Target.ViewportId.Value} ('{pr.Target.ViewName}') sits {d:0.######}' from its aligned centre after titles; {footprint}.");
                 }
                 catch (Exception ex)
                 {
-                    failed++;
                     DiagnosticsLog.Swallowed($"AlignSheetViews: placement check on viewport {pr.Target.ViewportId.Value}", ex);
                 }
             }
 
-            if (drifted == 0)
-                Log(AppStrings.T(correct ? "testing.alignSheetViews.log.placementOk"
-                                         : "testing.alignSheetViews.log.placementOkTitles", pairs.Count), "info");
-            else
-                Log(AppStrings.T(correct ? "testing.alignSheetViews.log.placementCorrected"
-                                         : "testing.alignSheetViews.log.placementDriftTitles",
-                                 drifted, worstName, F(worst)), "warn");
-
-            if (failed > 0)
-                Log(AppStrings.T("testing.alignSheetViews.log.placementUnchecked", failed), "warn");
+            Log(drifted == 0
+                    ? AppStrings.T("testing.alignSheetViews.log.placementOkTitles", pairs.Count)
+                    : AppStrings.T("testing.alignSheetViews.log.placementDriftTitles", drifted, worstName, F(worst)),
+                drifted == 0 ? "info" : "warn");
         }
 
         /// <summary>Centre of the viewport's true on-sheet footprint (the box outline, which excludes
@@ -1742,8 +1810,10 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
 
                 XYZ centre = TargetBoxCentre(src, target, view, cb, scale);
                 vp.SetBoxCenter(centre);
-                // Kept so a later phase that shifts this viewport can be detected and undone.
+                // Both start equal; CorrectPlacement drives LastSetCentre away from IntendedCentre
+                // by however much SetBoxCenter and GetBoxCenter disagree for this viewport.
                 pr.IntendedCentre = centre;
+                pr.LastSetCentre  = centre;
                 return true;
             }
             catch (Exception ex)
@@ -1922,9 +1992,15 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
             public VpEntry Target { get; }
             public string  Label  { get; set; } = "";
 
-            /// <summary>Sheet centre the alignment computed for this viewport, or null if it never
-            /// placed. The yardstick the post-placement drift check measures against.</summary>
+            /// <summary>Where this viewport's footprint should END UP — the yardstick the placement
+            /// check measures against. Null if it never placed.</summary>
             public XYZ?    IntendedCentre { get; set; }
+
+            /// <summary>The value last PASSED to SetBoxCenter. Not the same point as IntendedCentre:
+            /// SetBoxCenter's input and GetBoxCenter's output differ by a fixed per-viewport offset,
+            /// so reaching a target centre means writing a compensated value, and the compensation
+            /// has to be applied to what was written last, not to the goal.</summary>
+            public XYZ?    LastSetCentre  { get; set; }
         }
 
         // ── Per-view grid outcome counts ──────────────────────────────────────
