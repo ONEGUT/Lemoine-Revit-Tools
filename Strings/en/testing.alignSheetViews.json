@@ -91,6 +91,10 @@
     "wouldAlignEnd":      ".",
     "scopeBoxApplied":    "[{0}] {1} scope box assignment(s) applied.",
     "aligned":            "[{0}] Aligned '{1}' → source '{2}'.",
+    // The condensed run log: one line per target sheet. Routine "info" lines are dropped from a
+    // real run and these stand in for them; preview mode still prints everything.
+    "sheetOk":            "[{0}] {1} matching view(s) found and aligned.",
+    "sheetWithIssues":    "[{0}] {1} matching view(s) aligned \u2014 {2} issue(s) reported above.",
     "failedMove":         "[{0}] Failed to move '{1}' — see diagnostics log.",
     "couldNotAssignScope":"[{0}] Could not assign scope box to '{1}'.",
     "cropScopeGoverned":  "[{0}] '{1}' crop is scope-box governed — crop-size inheritance skipped (annotation crop still applied).",

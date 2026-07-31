@@ -62,7 +62,25 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
 
         public string GetName() => "LemoineTools.Tools.Sheets.AlignSheetViews";
 
-        private void Log(string t, string s) => PushLog?.Invoke(t, s);
+        // Issues raised for the target sheet currently being processed. Reset per sheet; drives
+        // whether that sheet's roll-up line reads clean or points at the detail above it.
+        private int _sheetIssues;
+
+        /// <summary>
+        /// Routine "info" progress is dropped from a real run — the per-sheet roll-up stands in for
+        /// it, so the log shows one line per sheet plus anything that actually went wrong. Warnings,
+        /// failures and pass lines always print.
+        ///
+        /// PREVIEW keeps every line: diagnosing a bad run is the entire purpose of that mode, and the
+        /// per-grid and per-viewport diagnostics are the only way to tell a drawing problem from a
+        /// tool problem.
+        /// </summary>
+        private void Log(string t, string s)
+        {
+            if (s == "warn" || s == "fail") _sheetIssues++;
+            if (s == "info" && !PreviewOnly) return;
+            PushLog?.Invoke(t, s);
+        }
 
         // Bases are treated as parallel / matching above these cosine thresholds.
         private const double ParallelDot    = 0.999;
@@ -228,6 +246,8 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
 
                 var sheet = targets[i];
                 var label = $"{sheet.SheetNumber} - {sheet.Name}";
+                _sheetIssues = 0;
+                int alignedHere = 0;
                 var targetEntries = CaptureSheet(doc, sheet);
                 if (targetEntries.Count == 0)
                 {
@@ -352,6 +372,7 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                     {
                         Log(AppStrings.T("testing.alignSheetViews.log.aligned", label, pr.Target.ViewName, pr.Source.ViewName), "info");
                         allPairs.Add(pr);
+                        alignedHere++;
                         p++;
                     }
                     else
@@ -364,6 +385,13 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                 // Phase C — view-only inheritance that does not move the viewport.
                 if (InheritGridExtents)    foreach (var pr in bestMatch.Pairs) TrimGrids(doc, pr, label, apply: true);
                 if (InheritCropVisibility) foreach (var pr in bestMatch.Pairs) SetCropVisibility(doc, pr, label);
+
+                // One line per sheet. A clean sheet says so and nothing else; a sheet with problems
+                // points at the detail already printed above it rather than repeating it.
+                Log(_sheetIssues == 0
+                        ? AppStrings.T("testing.alignSheetViews.log.sheetOk", label, alignedHere)
+                        : AppStrings.T("testing.alignSheetViews.log.sheetWithIssues", label, alignedHere, _sheetIssues),
+                    _sheetIssues == 0 ? "pass" : "warn");
 
                 onProgress(Pct(i + 1, total), p, f, s);
             }
