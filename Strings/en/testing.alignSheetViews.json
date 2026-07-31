@@ -19,7 +19,7 @@
     "secOverlap": "FALLBACK MATCH — MINIMUM OVERLAP (%)",
     "noteOverlap": "Views are matched by shared scope box first (exact). This overlap threshold is the fallback for views with no scope box: how much of a target view's drawn area must overlap a source view to be treated as counterparts. Lower it if counterparts are cropped to different sizes; raise it if unrelated views match.",
     "optAlignTitles": "Also align view titles (location + line length)",
-    "noteAlignTitles": "After the viewports are aligned, each view title is moved to overlay its source title and its title line length is matched. Done last, since moving a viewport moves its title.",
+    "noteAlignTitles": "Each view title is moved to overlay its source title, and its title line length matched. The line length is applied before the viewports settle (writing it shifts the viewport), and the title position last, since a title is positioned relative to its viewport.",
     "secInherit": "INHERIT FROM SOURCE VIEW",
     "optScopeBox": "Scope box assignment",
     "noteScopeBox": "Assign the source view's scope box to each matched target view. Applied FIRST — before alignment — because a scope box rewrites the crop the alignment reads.",
@@ -112,6 +112,7 @@
     "gridsElbows":        "[{0}] Grids on '{1}': {2} head elbows matched to the source.",
     "gridsWouldElbows":   "[{0}] Grids on '{1}': {2} head elbows would be matched to the source.",
     "gridElbowStuck":     "[{0}] '{1}' grid '{2}': has a head elbow the source does not, and Revit would not clear it \u2014 left in place.",
+    "gridElbowRejected":  "[{0}] '{1}' grid '{2}': Revit rejected the source head elbow \u2014 the leader was created but not repositioned.",
     // One line per remaining cause, so a zero result always names its reason. A bare
     // "N skipped" cannot be acted on — it was hiding grids whose source view had no
     // 2D extents at all, reported as if they were invisible or non-collinear.

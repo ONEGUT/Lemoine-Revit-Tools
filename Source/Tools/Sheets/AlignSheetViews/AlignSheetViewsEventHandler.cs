@@ -158,20 +158,26 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
 
                         if (pairs.Count > 0 && !RunState.CancelRequested)
                         {
-                            // Everything after the align phase — grid extents, crop visibility, the
-                            // annotation-crop writes — can change a view's footprint, and the footprint
-                            // is what SetBoxCenter positioned. Regenerate so the boxes report where
-                            // they actually ended up, then put any that shifted back.
+                            // Title LINE LENGTH is written first, because writing it moves the
+                            // viewport box — measured at up to 0.14 sheet feet on a real sheet. Doing
+                            // it after the placement check left the drawing off its aligned centre,
+                            // which is exactly what "title alignment shifted the box" was reporting.
+                            if (AlignTitles) MatchTitleLineLengths(doc, pairs);
+
+                            // Everything up to here — grid extents, crop visibility, annotation-crop
+                            // writes, the title line length — can change a view's footprint, and the
+                            // footprint is what SetBoxCenter positioned. Regenerate so the boxes
+                            // report where they really are, then put any that shifted back.
                             doc.Regenerate();
                             VerifyPlacement(doc, pairs, correct: true);
 
-                            // Titles last: moving a viewport drags its title, so titles can only be
-                            // placed once every box is in its final spot.
                             if (AlignTitles)
                             {
-                                AlignAllTitles(doc, pairs);
-                                // Report-only: correcting a box here would drag the title straight
-                                // back off the source it was just aligned to.
+                                // Label POSITION last, measured against the final box: LabelOffset is
+                                // relative to the box, so a label placed before the box settles is
+                                // aligned to a position that is about to move.
+                                doc.Regenerate();
+                                AlignTitleOffsets(doc, pairs);
                                 VerifyPlacement(doc, pairs, correct: false);
                             }
                         }
@@ -674,7 +680,7 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
 
                 // ── Pass 3 — leader elbows, once the extents are final ──
                 // An elbow hangs off the grid end, so it can only be placed after the curve write.
-                foreach (var g in visible) MirrorElbows(g, sv, tv, apply, t, label, pr);
+                MirrorElbows(doc, visible, sv, tv, apply, t, label, pr);
 
                 ReportGridTally(t, targetOnly, pr, label, apply);
             }
@@ -970,66 +976,107 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
         /// its neighbours — from the source view to the target.
         ///
         /// Matched in BOTH directions: a source end with no elbow has any elbow on the target
-        /// removed, so the two views genuinely agree instead of the target keeping jogs the source
-        /// does not have. Elbow and End are absolute model points, so they are shifted onto the
-        /// target view's plane exactly as the extent curve is — a leader copied across levels
-        /// otherwise lands at the source's elevation.
+        /// cleared, so the two views agree instead of the target keeping jogs the source does not
+        /// have. Elbow and End are absolute model points, so they are shifted onto the target view's
+        /// plane exactly as the extent curve is.
+        ///
+        /// Split into create-then-position around a single regenerate, for two reasons. A leader that
+        /// has just been added reports its DEFAULT geometry until the document is regenerated, so
+        /// positioning it in the same breath writes onto stale state and the elbow snaps back to
+        /// where Revit first put it. And mutating a <see cref="Leader"/> is not enough on its own —
+        /// <c>SetLeader</c> is what commits it back onto the datum, which is why
+        /// <c>IsLeaderValid</c> takes a Leader as well.
         /// </summary>
-        private void MirrorElbows(Grid g, View sv, View tv, bool apply, GridTally t, string label, MatchedPair pr)
+        private void MirrorElbows(Document doc, List<Grid> visible, View sv, View tv, bool apply,
+                                  GridTally t, string label, MatchedPair pr)
         {
-            XYZ delta = LeaderPlaneDelta(g, sv, tv);
+            var pending = new List<(Grid G, DatumEnds End, XYZ Elbow, XYZ Tip)>();
+            bool created = false;
 
-            foreach (var end in new[] { DatumEnds.End0, DatumEnds.End1 })
+            foreach (var g in visible)
+            {
+                XYZ delta = LeaderPlaneDelta(g, sv, tv);
+
+                foreach (var end in new[] { DatumEnds.End0, DatumEnds.End1 })
+                {
+                    try
+                    {
+                        Leader? srcLeader = TryGetLeader(g, end, sv);
+                        Leader? tgtLeader = TryGetLeader(g, end, tv);
+
+                        if (srcLeader == null)
+                        {
+                            if (tgtLeader == null) continue;
+                            if (!apply) { t.Elbows++; continue; }
+                            try
+                            {
+                                // DatumPlane has no RemoveLeader in the 2024 API — clearing an elbow
+                                // is a null SetLeader. A rejection leaves a visible difference, so it
+                                // is said out loud rather than swallowed.
+                                g.SetLeader(end, tv, null);
+                                t.Elbows++;
+                            }
+                            catch (Exception rex)
+                            {
+                                Log(AppStrings.T("testing.alignSheetViews.log.gridElbowStuck",
+                                                 label, pr.Target.ViewName, g.Name), "warn");
+                                DiagnosticsLog.Swallowed($"AlignSheetViews: clear leader {end} of grid {g.Id.Value} in view {tv.Id.Value}", rex);
+                            }
+                            continue;
+                        }
+
+                        // Only an end that carries a bubble here can carry a leader.
+                        if (!g.HasBubbleInView(end, tv)) continue;
+
+                        XYZ elbow = srcLeader.Elbow + delta;
+                        XYZ tip   = srcLeader.End   + delta;
+
+                        if (tgtLeader != null
+                            && tgtLeader.Elbow.DistanceTo(elbow) < CurveMatchTolFt
+                            && tgtLeader.End.DistanceTo(tip)     < CurveMatchTolFt)
+                            continue;   // already matching — a no-op is not a change
+
+                        t.Elbows++;
+                        if (!apply) continue;
+
+                        if (tgtLeader == null) { g.AddLeader(end, tv); created = true; }
+                        pending.Add((g, end, elbow, tip));
+                    }
+                    catch (Exception ex)
+                    {
+                        DiagnosticsLog.Swallowed($"AlignSheetViews: elbow {end} of grid {g.Id.Value} in view {tv.Id.Value}", ex);
+                    }
+                }
+            }
+
+            if (pending.Count == 0) return;
+
+            // One regen for the whole view, never per elbow.
+            if (created) doc.Regenerate();
+
+            foreach (var (g, end, elbow, tip) in pending)
             {
                 try
                 {
-                    Leader? srcLeader = TryGetLeader(g, end, sv);
-                    Leader? tgtLeader = TryGetLeader(g, end, tv);
+                    Leader? lead = TryGetLeader(g, end, tv);
+                    if (lead == null) continue;
 
-                    if (srcLeader == null)
-                    {
-                        if (tgtLeader == null) continue;
-                        if (!apply) { t.Elbows++; continue; }
-                        try
-                        {
-                            // DatumPlane has no RemoveLeader in the 2024 API — clearing an elbow is a
-                            // null SetLeader. If that is rejected the target keeps a jog the source
-                            // does not have, which is a visible difference and must be said out loud.
-                            g.SetLeader(end, tv, null);
-                            t.Elbows++;
-                        }
-                        catch (Exception rex)
-                        {
-                            Log(AppStrings.T("testing.alignSheetViews.log.gridElbowStuck",
-                                             label, pr.Target.ViewName, g.Name), "warn");
-                            DiagnosticsLog.Swallowed($"AlignSheetViews: clear leader {end} of grid {g.Id.Value} in view {tv.Id.Value}", rex);
-                        }
-                        continue;
-                    }
+                    lead.Elbow = elbow;
+                    lead.End   = tip;
 
-                    // Only an end that carries a bubble here can carry a leader.
-                    if (!g.HasBubbleInView(end, tv)) continue;
+                    // Advisory only — attempt the write and let a throw be the verdict, the same way
+                    // IsCurveValidInView is treated.
+                    if (!g.IsLeaderValid(end, tv, lead))
+                        DiagnosticsLog.Warn("AlignSheetViews",
+                            $"Grid {g.Id.Value} ('{g.Name}') reported its source elbow invalid at {end} in view {tv.Id.Value} — writing anyway.");
 
-                    XYZ elbow = srcLeader.Elbow + delta;
-                    XYZ tip   = srcLeader.End   + delta;
-
-                    if (tgtLeader != null
-                        && tgtLeader.Elbow.DistanceTo(elbow) < CurveMatchTolFt
-                        && tgtLeader.End.DistanceTo(tip)     < CurveMatchTolFt)
-                        continue;   // already matching — do not count a no-op as a change
-
-                    t.Elbows++;
-                    if (!apply) continue;
-
-                    // AddLeader returns the new leader — no need to read it back.
-                    if (tgtLeader == null) tgtLeader = g.AddLeader(end, tv);
-                    if (tgtLeader == null) continue;
-                    tgtLeader.Elbow = elbow;
-                    tgtLeader.End   = tip;
+                    g.SetLeader(end, tv, lead);
                 }
                 catch (Exception ex)
                 {
-                    DiagnosticsLog.Swallowed($"AlignSheetViews: elbow {end} of grid {g.Id.Value} in view {tv.Id.Value}", ex);
+                    Log(AppStrings.T("testing.alignSheetViews.log.gridElbowRejected",
+                                     label, pr.Target.ViewName, g.Name), "warn");
+                    DiagnosticsLog.Swallowed($"AlignSheetViews: position elbow {end} of grid {g.Id.Value} in view {tv.Id.Value}", ex);
                 }
             }
         }
@@ -1180,9 +1227,8 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
         /// on-sheet outlines, then shifts each target's LabelOffset so its title outline overlays
         /// the source title's. A title that can't be read or set is reported and skipped.
         /// </summary>
-        private void AlignAllTitles(Document doc, List<MatchedPair> pairs)
+        private void MatchTitleLineLengths(Document doc, List<MatchedPair> pairs)
         {
-            // Pass 1 — match line length (independent of position) before the regen.
             foreach (var pr in pairs)
             {
                 try
@@ -1197,11 +1243,14 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                     DiagnosticsLog.Swallowed($"AlignSheetViews: LabelLineLength on viewport {pr.Target.ViewportId.Value}", ex);
                 }
             }
+        }
 
-            // Regen so GetLabelOutline reflects both the moved box and the new line length.
-            doc.Regenerate();
-
-            // Pass 2 — shift each target label so its outline overlays the source label's.
+        /// <summary>
+        /// Shifts each target label so its outline overlays its source label's. Runs after the boxes
+        /// are final and after a regenerate, so GetLabelOutline reports the real on-sheet position.
+        /// </summary>
+        private void AlignTitleOffsets(Document doc, List<MatchedPair> pairs)
+        {
             int titled = 0, titleFail = 0;
             foreach (var pr in pairs)
             {
