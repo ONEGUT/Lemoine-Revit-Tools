@@ -674,7 +674,7 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
 
                 // ── Pass 3 — leader elbows, once the extents are final ──
                 // An elbow hangs off the grid end, so it can only be placed after the curve write.
-                foreach (var g in visible) MirrorElbows(g, sv, tv, apply, t);
+                foreach (var g in visible) MirrorElbows(g, sv, tv, apply, t, label, pr);
 
                 ReportGridTally(t, targetOnly, pr, label, apply);
             }
@@ -975,7 +975,7 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
         /// target view's plane exactly as the extent curve is — a leader copied across levels
         /// otherwise lands at the source's elevation.
         /// </summary>
-        private static void MirrorElbows(Grid g, View sv, View tv, bool apply, GridTally t)
+        private void MirrorElbows(Grid g, View sv, View tv, bool apply, GridTally t, string label, MatchedPair pr)
         {
             XYZ delta = LeaderPlaneDelta(g, sv, tv);
 
@@ -989,8 +989,21 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                     if (srcLeader == null)
                     {
                         if (tgtLeader == null) continue;
-                        t.Elbows++;
-                        if (apply) g.RemoveLeader(end, tv);
+                        if (!apply) { t.Elbows++; continue; }
+                        try
+                        {
+                            // DatumPlane has no RemoveLeader in the 2024 API — clearing an elbow is a
+                            // null SetLeader. If that is rejected the target keeps a jog the source
+                            // does not have, which is a visible difference and must be said out loud.
+                            g.SetLeader(end, tv, null);
+                            t.Elbows++;
+                        }
+                        catch (Exception rex)
+                        {
+                            Log(AppStrings.T("testing.alignSheetViews.log.gridElbowStuck",
+                                             label, pr.Target.ViewName, g.Name), "warn");
+                            DiagnosticsLog.Swallowed($"AlignSheetViews: clear leader {end} of grid {g.Id.Value} in view {tv.Id.Value}", rex);
+                        }
                         continue;
                     }
 
@@ -1008,12 +1021,9 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                     t.Elbows++;
                     if (!apply) continue;
 
-                    if (tgtLeader == null)
-                    {
-                        g.AddLeader(end, tv);
-                        tgtLeader = TryGetLeader(g, end, tv);
-                        if (tgtLeader == null) continue;
-                    }
+                    // AddLeader returns the new leader — no need to read it back.
+                    if (tgtLeader == null) tgtLeader = g.AddLeader(end, tv);
+                    if (tgtLeader == null) continue;
                     tgtLeader.Elbow = elbow;
                     tgtLeader.End   = tip;
                 }

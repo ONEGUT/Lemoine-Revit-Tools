@@ -111,6 +111,7 @@
     // Matched in both directions: an end the source has no elbow on has the target's removed.
     "gridsElbows":        "[{0}] Grids on '{1}': {2} head elbows matched to the source.",
     "gridsWouldElbows":   "[{0}] Grids on '{1}': {2} head elbows would be matched to the source.",
+    "gridElbowStuck":     "[{0}] '{1}' grid '{2}': has a head elbow the source does not, and Revit would not clear it \u2014 left in place.",
     // One line per remaining cause, so a zero result always names its reason. A bare
     // "N skipped" cannot be acted on — it was hiding grids whose source view had no
     // 2D extents at all, reported as if they were invisible or non-collinear.
