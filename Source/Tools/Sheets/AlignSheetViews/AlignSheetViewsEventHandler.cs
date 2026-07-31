@@ -550,8 +550,9 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                     .Count(g => !srcIds.Contains(g.Id.Value));
 
                 // Each outcome is counted separately — a bare "skipped" number cannot be acted on.
-                var t      = new GridTally();
-                var writes = new List<GridWrite>();
+                var t       = new GridTally();
+                var writes  = new List<GridWrite>();
+                var visible = new List<Grid>();   // fed to the elbow pass once extents are final
 
                 // ── Pass 1 — read the source, decide, switch the target's extent mode ──
                 foreach (var g in srcGrids)
@@ -564,6 +565,7 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                         // the two views, then do the work regardless and let Revit's own exception be
                         // the verdict if it really cannot be done.
                         ReconcileVisibility(doc, g, sv, tv, apply, t, label, pr);
+                        visible.Add(g);
 
                         // Bubbles are a property of their own, independent of the extents, so they
                         // are matched for EVERY visible grid — before the curve work and regardless
@@ -670,6 +672,10 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                     }
                 }
 
+                // ── Pass 3 — leader elbows, once the extents are final ──
+                // An elbow hangs off the grid end, so it can only be placed after the curve write.
+                foreach (var g in visible) MirrorElbows(g, sv, tv, apply, t);
+
                 ReportGridTally(t, targetOnly, pr, label, apply);
             }
             catch (Exception ex)
@@ -691,6 +697,10 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                 Log(AppStrings.T(apply ? "testing.alignSheetViews.log.gridsBubbles"
                                        : "testing.alignSheetViews.log.gridsWouldBubbles",
                                  label, pr.Target.ViewName, t.Bubbles), "info");
+            if (t.Elbows > 0)
+                Log(AppStrings.T(apply ? "testing.alignSheetViews.log.gridsElbows"
+                                       : "testing.alignSheetViews.log.gridsWouldElbows",
+                                 label, pr.Target.ViewName, t.Elbows), "info");
             if (t.ModelSource > 0)
                 Log(AppStrings.T("testing.alignSheetViews.log.gridsModelSource", label, pr.Source.ViewName, t.ModelSource), "info");
             if (t.Restored > 0)
@@ -926,18 +936,111 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
             try
             {
                 if (reference == null) return src;
-                XYZ n = v.ViewDirection;
-                if (n == null || n.IsZeroLength()) return src;
-                n = n.Normalize();
-                double d = (reference.GetEndPoint(0) - src.GetEndPoint(0)).DotProduct(n);
-                if (Math.Abs(d) < 1e-9) return src;
-                return src.CreateTransformed(Transform.CreateTranslation(n.Multiply(d)));
+                XYZ delta = PlaneDelta(src.GetEndPoint(0), reference.GetEndPoint(0), v);
+                return delta.IsZeroLength() ? src : src.CreateTransformed(Transform.CreateTranslation(delta));
             }
             catch (Exception ex)
             {
                 DiagnosticsLog.Swallowed($"AlignSheetViews: coincide grid curve with view {v.Id.Value}", ex);
                 return src;
             }
+        }
+
+        /// <summary>Translation that carries a point from one view's plane onto another's, along the
+        /// shared view normal. The one place the plane offset between two views is computed.</summary>
+        private static XYZ PlaneDelta(XYZ from, XYZ toPlanePoint, View v)
+        {
+            try
+            {
+                XYZ n = v.ViewDirection;
+                if (n == null || n.IsZeroLength()) return XYZ.Zero;
+                n = n.Normalize();
+                double d = (toPlanePoint - from).DotProduct(n);
+                return Math.Abs(d) < 1e-9 ? XYZ.Zero : n.Multiply(d);
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Swallowed($"AlignSheetViews: plane delta for view {v.Id.Value}", ex);
+                return XYZ.Zero;
+            }
+        }
+
+        /// <summary>
+        /// Copies each end's leader "elbow" — the jog dragged onto a grid head so it steps aside from
+        /// its neighbours — from the source view to the target.
+        ///
+        /// Matched in BOTH directions: a source end with no elbow has any elbow on the target
+        /// removed, so the two views genuinely agree instead of the target keeping jogs the source
+        /// does not have. Elbow and End are absolute model points, so they are shifted onto the
+        /// target view's plane exactly as the extent curve is — a leader copied across levels
+        /// otherwise lands at the source's elevation.
+        /// </summary>
+        private static void MirrorElbows(Grid g, View sv, View tv, bool apply, GridTally t)
+        {
+            XYZ delta = LeaderPlaneDelta(g, sv, tv);
+
+            foreach (var end in new[] { DatumEnds.End0, DatumEnds.End1 })
+            {
+                try
+                {
+                    Leader? srcLeader = TryGetLeader(g, end, sv);
+                    Leader? tgtLeader = TryGetLeader(g, end, tv);
+
+                    if (srcLeader == null)
+                    {
+                        if (tgtLeader == null) continue;
+                        t.Elbows++;
+                        if (apply) g.RemoveLeader(end, tv);
+                        continue;
+                    }
+
+                    // Only an end that carries a bubble here can carry a leader.
+                    if (!g.HasBubbleInView(end, tv)) continue;
+
+                    XYZ elbow = srcLeader.Elbow + delta;
+                    XYZ tip   = srcLeader.End   + delta;
+
+                    if (tgtLeader != null
+                        && tgtLeader.Elbow.DistanceTo(elbow) < CurveMatchTolFt
+                        && tgtLeader.End.DistanceTo(tip)     < CurveMatchTolFt)
+                        continue;   // already matching — do not count a no-op as a change
+
+                    t.Elbows++;
+                    if (!apply) continue;
+
+                    if (tgtLeader == null)
+                    {
+                        g.AddLeader(end, tv);
+                        tgtLeader = TryGetLeader(g, end, tv);
+                        if (tgtLeader == null) continue;
+                    }
+                    tgtLeader.Elbow = elbow;
+                    tgtLeader.End   = tip;
+                }
+                catch (Exception ex)
+                {
+                    DiagnosticsLog.Swallowed($"AlignSheetViews: elbow {end} of grid {g.Id.Value} in view {tv.Id.Value}", ex);
+                }
+            }
+        }
+
+        private static Leader? TryGetLeader(Grid g, DatumEnds end, View v)
+        {
+            try { return g.GetLeader(end, v); }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Swallowed($"AlignSheetViews: read leader {end} of grid {g.Id.Value} in view {v.Id.Value}", ex);
+                return null;
+            }
+        }
+
+        /// <summary>Plane offset between the grid's own displayed curve in each view.</summary>
+        private static XYZ LeaderPlaneDelta(Grid g, View sv, View tv)
+        {
+            Curve? sc = DisplayedCurve(g, sv);
+            Curve? tc = DisplayedCurve(g, tv);
+            if (sc == null || tc == null) return XYZ.Zero;
+            return PlaneDelta(sc.GetEndPoint(0), tc.GetEndPoint(0), tv);
         }
 
         private const double CurveMatchTolFt = 1e-6;
@@ -1706,6 +1809,7 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
             public int Changed        { get; set; }
             public int AlreadyMatching { get; set; }
             public int Bubbles        { get; set; }
+            public int Elbows         { get; set; }
             public int ModelSource    { get; set; }
             public int NoSourceCurve  { get; set; }
             public int Rejected       { get; set; }

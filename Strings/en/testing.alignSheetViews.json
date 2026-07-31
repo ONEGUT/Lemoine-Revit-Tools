@@ -23,8 +23,8 @@
     "secInherit": "INHERIT FROM SOURCE VIEW",
     "optScopeBox": "Scope box assignment",
     "noteScopeBox": "Assign the source view's scope box to each matched target view. Applied FIRST — before alignment — because a scope box rewrites the crop the alignment reads.",
-    "optGrids": "Grid 2D extents (trim gridlines to match)",
-    "noteGrids": "Trim each target grid's per-view (2D) extents so its gridlines start and stop exactly where they do in the source view.",
+    "optGrids": "Grid extents, heads and elbows",
+    "noteGrids": "Match each target grid to the source view: per-view (2D) extents so gridlines start and stop in the same place, plus head/tail bubble visibility and any elbows dragged onto the heads.",
     "optCropVis": "Crop region visibility",
     "noteCropVis": "Match whether the crop-region boundary is shown or hidden, to the source view.",
     "optCropSize": "Crop size + annotation crop",
@@ -51,7 +51,7 @@
   "inherit": {
     "nothing": "Nothing",
     "scopeBox": "scope box",
-    "gridExtents": "grid extents",
+    "gridExtents": "grid extents, heads and elbows",
     "cropVisibility": "crop visibility",
     "cropSize": "crop size"
   },
@@ -107,6 +107,10 @@
     // if the source has its bubble on and the target does not.
     "gridsBubbles":       "[{0}] Grids on '{1}': {2} head/tail bubbles matched to the source.",
     "gridsWouldBubbles":  "[{0}] Grids on '{1}': {2} head/tail bubbles would be matched to the source.",
+    // The elbow is the jog dragged onto a grid head so it steps aside from its neighbours.
+    // Matched in both directions: an end the source has no elbow on has the target's removed.
+    "gridsElbows":        "[{0}] Grids on '{1}': {2} head elbows matched to the source.",
+    "gridsWouldElbows":   "[{0}] Grids on '{1}': {2} head elbows would be matched to the source.",
     // One line per remaining cause, so a zero result always names its reason. A bare
     // "N skipped" cannot be acted on — it was hiding grids whose source view had no
     // 2D extents at all, reported as if they were invisible or non-collinear.
