@@ -14,8 +14,12 @@
     "noSheets": "No sheets were found in this project.",
     "pickerSource": "Source reference sheets",
     "secTargets": "SHEETS TO ALIGN",
-    "noteTargets": "Each target sheet's views are moved to overlay their counterparts on the best-matching reference sheet. Any reference sheet ticked here is ignored.",
+    // Reference sheets picked in S1 are filtered out of this picker entirely, so the note
+    // no longer has to explain that ticking one here would be ignored.
+    "noteTargets": "Each target sheet's views are moved to overlay their counterparts on the best-matching reference sheet. The reference sheets picked in the previous step are not listed here.",
     "pickerTarget": "Target sheets to align",
+    // Shown instead of the picker when every sheet in the project is already a reference sheet.
+    "noTargetsLeft": "Every sheet in this project is selected as a reference sheet, so there is nothing left to align. Go back and untick the sheets you want to move.",
     "secOverlap": "FALLBACK MATCH — MINIMUM OVERLAP (%)",
     "noteOverlap": "Views are matched by shared scope box first (exact). This overlap threshold is the fallback for views with no scope box: how much of a target view's drawn area must overlap a source view to be treated as counterparts. Lower it if counterparts are cropped to different sizes; raise it if unrelated views match.",
     "optAlignTitles": "Also align view titles (location + line length)",
