@@ -68,6 +68,7 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
         private const double ParallelDot    = 0.999;
         private const double OrientationDot  = 0.9999;
         private const double MinCropOffsetFt = 1e-4;   // Revit rejects 0 / negative annotation-crop offsets.
+        private const double PlacementTolFt  = 1e-6;   // sheet feet — below this a box has not moved.
 
         public void Execute(UIApplication app)
         {
@@ -155,10 +156,25 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                         List<MatchedPair> pairs;
                         (pass, fail, skip, pairs) = DriveTargets(doc, sources, targets, applyMoves: true, onProgress);
 
-                        // Titles last: moving a viewport drags its title, so titles can only be placed
-                        // once every box is in its final spot. Regen so moved titles report real outlines.
-                        if (AlignTitles && pairs.Count > 0 && !RunState.CancelRequested)
-                            AlignAllTitles(doc, pairs);
+                        if (pairs.Count > 0 && !RunState.CancelRequested)
+                        {
+                            // Everything after the align phase — grid extents, crop visibility, the
+                            // annotation-crop writes — can change a view's footprint, and the footprint
+                            // is what SetBoxCenter positioned. Regenerate so the boxes report where
+                            // they actually ended up, then put any that shifted back.
+                            doc.Regenerate();
+                            VerifyPlacement(doc, pairs, correct: true);
+
+                            // Titles last: moving a viewport drags its title, so titles can only be
+                            // placed once every box is in its final spot.
+                            if (AlignTitles)
+                            {
+                                AlignAllTitles(doc, pairs);
+                                // Report-only: correcting a box here would drag the title straight
+                                // back off the source it was just aligned to.
+                                VerifyPlacement(doc, pairs, correct: false);
+                            }
+                        }
 
                         tx.Commit();
                     }
@@ -326,7 +342,7 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                 // Phase B — align off the (now live) crop geometry.
                 foreach (var pr in bestMatch.Pairs)
                 {
-                    if (TryAlign(doc, pr.Source, pr.Target))
+                    if (TryAlign(doc, pr))
                     {
                         Log(AppStrings.T("testing.alignSheetViews.log.aligned", label, pr.Target.ViewName, pr.Source.ViewName), "info");
                         allPairs.Add(pr);
@@ -542,11 +558,20 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                 {
                     try
                     {
-                        if (!g.CanBeVisibleInView(sv) || !g.CanBeVisibleInView(tv))
+                        // Split deliberately. Absent from the SOURCE means there is nothing to copy,
+                        // which is benign. Visible in the source but not the target is a target-side
+                        // visibility setting the user expects the tool to deal with — the two used to
+                        // share one message that named neither view.
+                        if (!CanBeVisible(g, sv))
+                        {
+                            t.NotInSource++;
+                            DiagnosticsLog.Warn("AlignSheetViews",
+                                $"Grid {g.Id.Value} ('{g.Name}') cannot be visible in source view {sv.Id.Value} — nothing to copy.");
+                            continue;
+                        }
+                        if (!CanBeVisible(g, tv) && !TryRestoreVisibility(doc, g, tv, apply, t, label, pr))
                         {
                             t.NotVisible++;
-                            DiagnosticsLog.Warn("AlignSheetViews",
-                                $"Grid {g.Id.Value} ('{g.Name}') cannot be visible in view {sv.Id.Value} or {tv.Id.Value} — not trimmed.");
                             continue;
                         }
 
@@ -678,6 +703,10 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                                  label, pr.Target.ViewName, t.Bubbles), "info");
             if (t.ModelSource > 0)
                 Log(AppStrings.T("testing.alignSheetViews.log.gridsModelSource", label, pr.Source.ViewName, t.ModelSource), "info");
+            if (t.Restored > 0)
+                Log(AppStrings.T("testing.alignSheetViews.log.gridsRestored", label, pr.Target.ViewName, t.Restored), "info");
+            if (t.NotInSource > 0)
+                Log(AppStrings.T("testing.alignSheetViews.log.gridsNotInSource", label, pr.Source.ViewName, t.NotInSource), "info");
             if (t.NotVisible > 0)
                 Log(AppStrings.T("testing.alignSheetViews.log.gridsNotVisible", label, pr.Target.ViewName, t.NotVisible), "warn");
             if (t.NoSourceCurve > 0)
@@ -692,6 +721,111 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                 Log(AppStrings.T("testing.alignSheetViews.log.gridsUnbound", label, pr.Source.ViewName, t.Unbound), "warn");
             if (targetOnly > 0)
                 Log(AppStrings.T("testing.alignSheetViews.log.gridsTargetOnly", label, pr.Target.ViewName, targetOnly), "warn");
+        }
+
+        private static bool CanBeVisible(Grid g, View v)
+        {
+            try { return g.CanBeVisibleInView(v); }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Swallowed($"AlignSheetViews: visibility test for grid {g.Id.Value} in view {v.Id.Value}", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// The grid is visible in the source view but not the target. Revit has many ways to hide a
+        /// datum, so this walks the target-side ones a tool may safely clear — element hidden in
+        /// view, the Grids category switched off, the grid's workset hidden — clears them, and
+        /// re-tests. Every cause found is named in the run log, including the ones deliberately left
+        /// alone, because "not trimmed" without a reason cannot be acted on.
+        ///
+        /// A view filter is reported but NEVER flipped: a filter's visibility governs every category
+        /// it names, so clearing it to rescue one grid would silently reveal everything else it
+        /// hides. Same for a view template governing V/G — the writes throw, and that rejection IS
+        /// the answer, so the template is named rather than fought.
+        ///
+        /// With <paramref name="apply"/> false nothing is written; the cause is still identified and
+        /// reported, which is what makes the preview worth running.
+        /// </summary>
+        private bool TryRestoreVisibility(Document doc, Grid g, View tv, bool apply,
+                                          GridTally t, string label, MatchedPair pr)
+        {
+            var causes = new List<string>();
+            try
+            {
+                // 1 — hidden element ("Hide in view → Elements").
+                if (g.IsHidden(tv))
+                {
+                    causes.Add(AppStrings.T("testing.alignSheetViews.log.gridCauseHidden"));
+                    if (apply) tv.UnhideElements(new List<ElementId> { g.Id });
+                }
+
+                // 2 — the Grids category switched off in Visibility/Graphics.
+                var cat = Category.GetCategory(doc, BuiltInCategory.OST_Grids);
+                if (cat != null && tv.GetCategoryHidden(cat.Id))
+                {
+                    causes.Add(AppStrings.T("testing.alignSheetViews.log.gridCauseCategory"));
+                    if (apply && tv.CanCategoryBeHidden(cat.Id)) tv.SetCategoryHidden(cat.Id, false);
+                }
+
+                // 3 — the grid's own workset hidden in this view.
+                if (doc.IsWorkshared)
+                {
+                    WorksetId ws = g.WorksetId;
+                    if (ws != null && tv.GetWorksetVisibility(ws) == WorksetVisibility.Hidden)
+                    {
+                        causes.Add(AppStrings.T("testing.alignSheetViews.log.gridCauseWorkset"));
+                        if (apply) tv.SetWorksetVisibility(ws, WorksetVisibility.Visible);
+                    }
+                }
+
+                // 4 — a view filter covering Grids with visibility off. Reported, never changed.
+                foreach (var fid in tv.GetFilters())
+                {
+                    if (tv.GetFilterVisibility(fid)) continue;
+                    if (!(doc.GetElement(fid) is ParameterFilterElement pf)) continue;
+                    if (!pf.GetCategories().Any(c => c.Value == (long)BuiltInCategory.OST_Grids)) continue;
+                    causes.Add(AppStrings.T("testing.alignSheetViews.log.gridCauseFilter", pf.Name));
+                }
+            }
+            catch (Exception ex)
+            {
+                // A view template owning V/G rejects these writes — name it, that IS the diagnosis.
+                causes.Add(AppStrings.T("testing.alignSheetViews.log.gridCauseTemplate", TemplateName(doc, tv)));
+                DiagnosticsLog.Swallowed($"AlignSheetViews: restore visibility of grid {g.Id.Value} in view {tv.Id.Value}", ex);
+            }
+
+            string why = causes.Count > 0
+                ? string.Join(", ", causes)
+                : AppStrings.T("testing.alignSheetViews.log.gridCauseUnknown");
+
+            if (!apply)
+            {
+                Log(AppStrings.T("testing.alignSheetViews.log.gridWouldRestore", label, pr.Target.ViewName, g.Name, why), "warn");
+                return false;
+            }
+
+            bool ok = CanBeVisible(g, tv);
+            Log(AppStrings.T(ok ? "testing.alignSheetViews.log.gridRestored"
+                                : "testing.alignSheetViews.log.gridStillHidden",
+                             label, pr.Target.ViewName, g.Name, why), ok ? "info" : "warn");
+            if (ok) t.Restored++;
+            return ok;
+        }
+
+        private static string TemplateName(Document doc, View v)
+        {
+            try
+            {
+                if (v.ViewTemplateId == ElementId.InvalidElementId) return "—";
+                return (doc.GetElement(v.ViewTemplateId) as View)?.Name ?? "—";
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Swallowed($"AlignSheetViews: template name of view {v.Id.Value}", ex);
+                return "—";
+            }
         }
 
         /// <summary>Puts both of a grid's ends in the target view back on model extents.</summary>
@@ -844,6 +978,64 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                 DiagnosticsLog.Swallowed($"AlignSheetViews: {type} curves of grid {g.Id.Value} in view {view.Id.Value}", ex);
                 return null;
             }
+        }
+
+        // ── Post-placement drift check ────────────────────────────────────────
+        /// <summary>
+        /// Confirms every aligned viewport is still on the centre the alignment computed, and — when
+        /// <paramref name="correct"/> is set — puts back any that moved.
+        ///
+        /// SetBoxCenter positions the viewport's on-sheet FOOTPRINT, and the footprint is derived
+        /// from the view's crop plus annotation crop. So anything that touches those after the align
+        /// phase shifts the drawing on the sheet even though nothing asked the viewport to move. This
+        /// pass makes that class of bug impossible to ship silently: a drifted viewport is named,
+        /// with its distance, rather than showing up as "the views are slightly off".
+        ///
+        /// A clean report is just as useful — it rules the align phase's own arithmetic in as the
+        /// remaining suspect instead of leaving both possibilities open.
+        /// </summary>
+        private void VerifyPlacement(Document doc, List<MatchedPair> pairs, bool correct)
+        {
+            int drifted = 0, failed = 0;
+            double worst = 0; string worstName = "";
+
+            foreach (var pr in pairs)
+            {
+                try
+                {
+                    if (pr.IntendedCentre == null) continue;
+                    if (!(doc.GetElement(pr.Target.ViewportId) is Viewport vp)) continue;
+
+                    XYZ now = vp.GetBoxCenter();
+                    if (now == null) { failed++; continue; }
+
+                    double d = now.DistanceTo(pr.IntendedCentre);
+                    if (d <= PlacementTolFt) continue;
+
+                    drifted++;
+                    if (d > worst) { worst = d; worstName = pr.Target.ViewName; }
+                    DiagnosticsLog.Warn("AlignSheetViews",
+                        $"Viewport {pr.Target.ViewportId.Value} ('{pr.Target.ViewName}') sits {d:0.######}' from its aligned centre.");
+
+                    if (correct) vp.SetBoxCenter(pr.IntendedCentre);
+                }
+                catch (Exception ex)
+                {
+                    failed++;
+                    DiagnosticsLog.Swallowed($"AlignSheetViews: placement check on viewport {pr.Target.ViewportId.Value}", ex);
+                }
+            }
+
+            if (drifted == 0)
+                Log(AppStrings.T(correct ? "testing.alignSheetViews.log.placementOk"
+                                         : "testing.alignSheetViews.log.placementOkTitles", pairs.Count), "info");
+            else
+                Log(AppStrings.T(correct ? "testing.alignSheetViews.log.placementCorrected"
+                                         : "testing.alignSheetViews.log.placementDriftTitles",
+                                 drifted, worstName, F(worst)), "warn");
+
+            if (failed > 0)
+                Log(AppStrings.T("testing.alignSheetViews.log.placementUnchecked", failed), "warn");
         }
 
         // ── View-title (label) alignment ──────────────────────────────────────
@@ -1283,8 +1475,9 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
         /// only when a view has no annotation crop, or a symmetric one - so both sides are converted
         /// through <see cref="FootprintCentre"/>, and each side uses its OWN scale.
         /// </summary>
-        private bool TryAlign(Document doc, VpEntry src, VpEntry target)
+        private bool TryAlign(Document doc, MatchedPair pr)
         {
+            VpEntry src = pr.Source, target = pr.Target;
             try
             {
                 if (!(doc.GetElement(target.ViewportId) is Viewport vp)) return false;
@@ -1295,7 +1488,10 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                 int scale = view.Scale;
                 if (scale <= 0 || src.Scale <= 0) return false;
 
-                vp.SetBoxCenter(TargetBoxCentre(src, target, view, cb, scale));
+                XYZ centre = TargetBoxCentre(src, target, view, cb, scale);
+                vp.SetBoxCenter(centre);
+                // Kept so a later phase that shifts this viewport can be detected and undone.
+                pr.IntendedCentre = centre;
                 return true;
             }
             catch (Exception ex)
@@ -1473,6 +1669,10 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
             public VpEntry Source { get; }
             public VpEntry Target { get; }
             public string  Label  { get; set; } = "";
+
+            /// <summary>Sheet centre the alignment computed for this viewport, or null if it never
+            /// placed. The yardstick the post-placement drift check measures against.</summary>
+            public XYZ?    IntendedCentre { get; set; }
         }
 
         // ── Per-view grid outcome counts ──────────────────────────────────────
@@ -1491,6 +1691,8 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
             public int Errored        { get; set; }
             public int MultiSegment   { get; set; }
             public int Unbound        { get; set; }
+            public int NotInSource    { get; set; }
+            public int Restored       { get; set; }
         }
 
         // ── A queued grid curve write, with the extent modes to restore if it is rejected ─
