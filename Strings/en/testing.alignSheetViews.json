@@ -116,6 +116,7 @@
     "gridsRejected":      "[{0}] Grids on '{1}': {2} were rejected by Revit when writing the curve — extent mode restored, see diagnostics log.",
     "gridsErrored":       "[{0}] Grids on '{1}': {2} failed with an error — see diagnostics log.",
     "gridsMultiSegment":  "[{0}] Grids on '{1}': {2} are multi-segment — only the first segment's extents were copied.",
+    "gridsUnbound":       "[{0}] Grids on '{1}': {2} returned an unbound (infinite) line — Revit cannot use one as an extent, not trimmed.",
     "gridsTargetOnly":    "[{0}] Grids on '{1}': {2} appear in the target view but not the source — left unchanged.",
     "gridsRestoreFailed": "[{0}] '{1}' grid '{2}': write failed AND its extent mode could not be restored — that end is now 2D with no curve set.",
     "couldNotTrimGrids":  "[{0}] Could not trim grids for '{1}'.",

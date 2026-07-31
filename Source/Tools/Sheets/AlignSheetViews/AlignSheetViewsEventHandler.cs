@@ -550,12 +550,17 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                             continue;
                         }
 
+                        // Bubbles are a property of their own, independent of the extents, so they
+                        // are matched for EVERY visible grid — before the curve work and regardless
+                        // of how it turns out. Doing this only on the success paths is what made
+                        // heads move on some grids and not others in the same view.
+                        MirrorBubbles(g, sv, tv, apply, t);
+
                         // Source on model extents: match it by putting the target back on model too.
                         if (!UsesViewSpecific(g, sv))
                         {
                             t.ModelSource++;
                             if (ResetEndsToModel(g, tv, apply)) t.Changed++;
-                            MirrorBubbles(g, sv, tv, apply, t);
                             continue;
                         }
 
@@ -573,16 +578,25 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                         // its first segment across. Say so rather than dropping the rest silently.
                         if (curves.Count > 1) t.MultiSegment++;
 
-                        Curve c = ProjectOntoViewPlane(curves[0], tv);
+                        // Revit rejects an unbound curve outright ("the curve is unbound or not
+                        // coincident"), so catch it here where it can be named.
+                        if (curves[0] is Line sl && !sl.IsBound)
+                        {
+                            t.Unbound++;
+                            DiagnosticsLog.Warn("AlignSheetViews",
+                                $"Grid {g.Id.Value} ('{g.Name}') returned an unbound line from source view {sv.Id.Value} — not trimmed.");
+                            continue;
+                        }
 
-                        // Compare against what the target already displays (projected onto the same
-                        // plane) so "wrote the identical curve again" is never reported as a change.
+                        // The target's OWN current curve is the reference plane: whatever Revit
+                        // reports for this datum in this view is by definition coincident with the
+                        // datum's line there, which is the exact test SetCurveInView applies.
                         Curve? existing = DisplayedCurve(g, tv);
-                        if (existing != null) existing = ProjectOntoViewPlane(existing, tv);
+                        Curve  c        = CoincideWith(curves[0], existing, tv);
+
                         if (existing != null && CurvesMatch(existing, c))
                         {
                             t.AlreadyMatching++;
-                            MirrorBubbles(g, sv, tv, apply, t);
                             continue;
                         }
 
@@ -593,7 +607,6 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                                 Log(AppStrings.T("testing.alignSheetViews.log.gridWouldMove", label, pr.Target.ViewName, g.Name,
                                         F(existing.GetEndPoint(0).DistanceTo(c.GetEndPoint(0))),
                                         F(existing.GetEndPoint(1).DistanceTo(c.GetEndPoint(1)))), "info");
-                            MirrorBubbles(g, sv, tv, false, t);
                             continue;
                         }
 
@@ -630,7 +643,6 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                         }
                         w.Grid.SetCurveInView(DatumExtentType.ViewSpecific, tv, w.Curve);
                         t.Changed++;
-                        MirrorBubbles(w.Grid, sv, tv, true, t);
                     }
                     catch (Exception ex)
                     {
@@ -676,6 +688,8 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                 Log(AppStrings.T("testing.alignSheetViews.log.gridsErrored", label, pr.Target.ViewName, t.Errored), "warn");
             if (t.MultiSegment > 0)
                 Log(AppStrings.T("testing.alignSheetViews.log.gridsMultiSegment", label, pr.Target.ViewName, t.MultiSegment), "warn");
+            if (t.Unbound > 0)
+                Log(AppStrings.T("testing.alignSheetViews.log.gridsUnbound", label, pr.Source.ViewName, t.Unbound), "warn");
             if (targetOnly > 0)
                 Log(AppStrings.T("testing.alignSheetViews.log.gridsTargetOnly", label, pr.Target.ViewName, targetOnly), "warn");
         }
@@ -735,65 +749,54 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
         }
 
         /// <summary>
-        /// Translates a curve onto <paramref name="v"/>'s plane. A datum's 2D extents live in the
-        /// view's own plane, so a curve lifted from a plan at one level sits at that level's
-        /// elevation and is not valid in a plan at another. The two planes are parallel (same datum,
-        /// same view direction), so a single translation along the shared normal lands the whole
-        /// curve — lines and arcs alike — where the target view can accept it.
+        /// Slides <paramref name="src"/> along the view's normal until it lies in the same plane as
+        /// <paramref name="reference"/> — the curve Revit itself currently reports for this datum in
+        /// this view.
+        ///
+        /// SetCurveInView demands the curve be "coincident with the original one of the datum
+        /// plane": a curve lifted from a plan at one level sits at that level's elevation and is off
+        /// the datum's line in a plan at another, which is the ArgumentException this exists to
+        /// prevent. The reference curve is the authoritative plane because Revit produced it for
+        /// this datum in this view; the view's own origin is NOT (using it moved the curve off the
+        /// datum line and made every write throw). Only the component along the view normal is
+        /// taken, so the in-plane geometry — the part actually being copied — is untouched, and a
+        /// pure translation carries lines and arcs alike.
+        ///
+        /// With no reference curve the source is returned unchanged: attempting the write and
+        /// reporting Revit's verdict beats guessing at a plane.
         /// </summary>
-        private static Curve ProjectOntoViewPlane(Curve c, View v)
+        private static Curve CoincideWith(Curve src, Curve? reference, View v)
         {
             try
             {
-                if (!TryGetViewPlaneOrigin(v, out XYZ o)) return c;
+                if (reference == null) return src;
                 XYZ n = v.ViewDirection;
-                if (n == null || n.IsZeroLength()) return c;
+                if (n == null || n.IsZeroLength()) return src;
                 n = n.Normalize();
-                double d = (c.GetEndPoint(0) - o).DotProduct(n);
-                if (Math.Abs(d) < 1e-9) return c;
-                return c.CreateTransformed(Transform.CreateTranslation(n.Multiply(-d)));
+                double d = (reference.GetEndPoint(0) - src.GetEndPoint(0)).DotProduct(n);
+                if (Math.Abs(d) < 1e-9) return src;
+                return src.CreateTransformed(Transform.CreateTranslation(n.Multiply(d)));
             }
             catch (Exception ex)
             {
-                DiagnosticsLog.Swallowed($"AlignSheetViews: project grid curve onto view {v.Id.Value}", ex);
-                return c;
+                DiagnosticsLog.Swallowed($"AlignSheetViews: coincide grid curve with view {v.Id.Value}", ex);
+                return src;
             }
-        }
-
-        /// <summary>A point on the view's plane. View.Origin is not implemented for every view type,
-        /// so the crop box transform's origin — which lies in the same plane — is the fallback.</summary>
-        private static bool TryGetViewPlaneOrigin(View v, out XYZ o)
-        {
-            o = XYZ.Zero;
-            try
-            {
-                XYZ vo = v.Origin;
-                if (vo != null) { o = vo; return true; }
-            }
-            catch (Exception ex)
-            {
-                DiagnosticsLog.Swallowed($"AlignSheetViews: View.Origin on view {v.Id.Value}", ex);
-            }
-            try
-            {
-                BoundingBoxXYZ cb = v.CropBox;
-                if (cb?.Transform != null) { o = cb.Transform.Origin; return true; }
-            }
-            catch (Exception ex)
-            {
-                DiagnosticsLog.Swallowed($"AlignSheetViews: crop-box origin on view {v.Id.Value}", ex);
-            }
-            return false;
         }
 
         private const double CurveMatchTolFt = 1e-6;
 
+        /// <summary>Endpoint match in either direction — Revit does not guarantee the two views
+        /// report a datum's curve with the same start/end, and a reversed copy of the same segment
+        /// is the same extents, not a change worth writing.</summary>
         private static bool CurvesMatch(Curve a, Curve b)
         {
             try
             {
-                return a.GetEndPoint(0).DistanceTo(b.GetEndPoint(0)) < CurveMatchTolFt
-                    && a.GetEndPoint(1).DistanceTo(b.GetEndPoint(1)) < CurveMatchTolFt;
+                XYZ a0 = a.GetEndPoint(0), a1 = a.GetEndPoint(1);
+                XYZ b0 = b.GetEndPoint(0), b1 = b.GetEndPoint(1);
+                return (a0.DistanceTo(b0) < CurveMatchTolFt && a1.DistanceTo(b1) < CurveMatchTolFt)
+                    || (a0.DistanceTo(b1) < CurveMatchTolFt && a1.DistanceTo(b0) < CurveMatchTolFt);
             }
             catch (Exception ex)
             {
@@ -1487,6 +1490,7 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
             public int Rejected       { get; set; }
             public int Errored        { get; set; }
             public int MultiSegment   { get; set; }
+            public int Unbound        { get; set; }
         }
 
         // ── A queued grid curve write, with the extent modes to restore if it is rejected ─
