@@ -15,15 +15,21 @@ namespace LemoineTools.Tools.LinkViews
     /// <see cref="View.SetLinkOverrides"/> / <see cref="RevitLinkGraphicsSettings"/>, which are
     /// present from Revit 2024 onward (verified against the checked-in RevitAPI.dll).
     ///
-    /// The per-view sequence is show-all → switch link to Custom → hide host, and that order is
-    /// load-bearing: a link moved to <see cref="LinkVisibility.Custom"/> inherits the host view's
-    /// category visibility AT THAT MOMENT as its own independent set. Hiding the host's
-    /// categories first therefore gives the link an all-unchecked set and it renders nothing.
-    /// <see cref="RevitLinkGraphicsSettings"/> carries only LinkVisibilityType and LinkedViewId,
-    /// so that inherited snapshot is the only way to reach the link's model categories at all.
+    /// Each link is displayed with <see cref="LinkVisibility.ByLinkView"/> aimed at a 3D view in
+    /// the link's own document. <see cref="LinkVisibility.Custom"/> does NOT work here: a Custom
+    /// link's "Model categories" dropdown always defaults to &lt;By host view&gt; and no API can
+    /// change it (<see cref="RevitLinkGraphicsSettings"/> carries only LinkVisibilityType and
+    /// LinkedViewId, and nothing else in RevitAPI.dll reaches a link's per-category visibility),
+    /// so a Custom link inherits the host category hides this tool applies and renders nothing.
+    /// ByLinkView is the only mode the host view's category hides cannot reach.
     /// </summary>
     public sealed class ViewsByLinkRunHandler : IExternalEventHandler
     {
+        // Internal mode tokens compared with ==; not user-facing text.
+        private const string LinkModeByLinkView = "ByLinkView";
+        private const string LinkModeCustom     = "Custom";
+        private const string LinkModeNone       = "None";
+
         public List<ElementId> LinkInstanceIds { get; set; } = new List<ElementId>();
         public string           NamePattern     { get; set; } = "{LinkName}";
         public ElementId        TemplateId      { get; set; } = ElementId.InvalidElementId;
@@ -124,30 +130,25 @@ namespace LemoineTools.Tools.LinkViews
                             catch (Exception ex) { DiagnosticsLog.Swallowed($"ViewsByLink: apply template to '{viewName}'", ex); }
                         }
 
-                        // ---- Ordering matters, and it is the whole fix -------------------
-                        // A link switched to LinkVisibility.Custom takes the host view's CURRENT
-                        // category visibility as the starting state for its own (thereafter
-                        // independent) category set. RevitLinkGraphicsSettings exposes only
-                        // LinkVisibilityType and LinkedViewId — the "Model categories: <Custom>"
-                        // checkbox grid inside RVT Link Display Settings has no API surface at
-                        // all — so that inherited snapshot is the only lever available.
+                        // ---- Why ByLinkView and not Custom --------------------------------
+                        // A link on LinkVisibility.Custom keeps its "Model categories" dropdown on
+                        // <By host view>, and that dropdown ALWAYS defaults there no matter what
+                        // the host view looks like when the switch happens. It has no API surface
+                        // whatsoever — RevitLinkGraphicsSettings carries only LinkVisibilityType
+                        // and LinkedViewId, and nothing anywhere else in RevitAPI.dll reaches a
+                        // link's per-category visibility (verified against the assembly metadata).
+                        // So a Custom link still inherits the host's category hides applied below,
+                        // and the view renders nothing.
                         //
-                        // Hiding the host's categories BEFORE the switch therefore hands the link
-                        // an all-unchecked category set and the link renders nothing, which is
-                        // exactly the bug this order fixes. So: show everything, flip the link to
-                        // Custom while it is all visible, and only then black out the host.
+                        // ByLinkView is the one mode that genuinely detaches the link: it renders
+                        // using a view from the link's OWN document, whose visibility settings the
+                        // host view's category hides cannot reach.
 
-                        // 1. Show every category (and sub-category) in the view.
-                        int notShown = ShowAllCategories(doc, view, viewName);
+                        // 1. Point the link at one of its own 3D views.
+                        string linkMode = ApplyLinkDisplay(view, linkId, linkDoc, viewName, out string linkedViewName);
 
-                        // 2. Flip the link to Custom while the view is still all-visible, so the
-                        //    link's own category set is captured fully checked.
-                        bool customOverrideApplied = false;
-                        if (link != null)
-                            customOverrideApplied = ApplyCustomLinkDisplay(view, linkId, viewName);
-
-                        // 3. Hide every OTHER link instance. Element-level hiding, so it does not
-                        //    disturb the category state captured above.
+                        // 2. Hide every OTHER link instance. Element-level hiding, so it does not
+                        //    disturb the link display settings applied above.
                         var othersToHide = allLinkInstances
                             .Where(li => li.Id.Value != linkId.Value && li.CanBeHidden(view))
                             .Select(li => li.Id).ToList();
@@ -157,20 +158,22 @@ namespace LemoineTools.Tools.LinkViews
                             catch (Exception ex) { DiagnosticsLog.Swallowed($"ViewsByLink: hide other links in '{viewName}'", ex); }
                         }
 
-                        // 4. Now black out the host's own categories. The target link keeps its
-                        //    own (all-checked) set from step 2.
+                        // 3. Now black out the host's own categories. A ByLinkView link is
+                        //    unaffected; RVT Links itself is deliberately left visible.
                         int lockedOut = HideHostCategories(doc, view, rvtLinksCatId, viewName, out int hideAttempted);
 
-                        if (notShown > 0)
-                            Log(AppStrings.T("linkviews.bulkViews.log.byLinkShowAllFailed", viewName, notShown), "warn");
-                        if (!customOverrideApplied)
+                        if (linkMode == LinkModeNone)
                             Log(AppStrings.T("linkviews.bulkViews.log.byLinkNoOverride", viewName), "warn");
+                        else if (linkMode == LinkModeCustom)
+                            Log(AppStrings.T("linkviews.bulkViews.log.byLinkFellBackToCustom", viewName), "warn");
                         if (lockedOut > 0)
                             Log(AppStrings.T("linkviews.bulkViews.log.byLinkCategoriesLocked",
                                              viewName, lockedOut, hideAttempted), "warn");
 
                         pass++;
-                        Log(AppStrings.T("linkviews.bulkViews.log.byLinkCreated", viewName, linkName), "pass");
+                        Log(linkMode == LinkModeByLinkView
+                                ? AppStrings.T("linkviews.bulkViews.log.byLinkCreatedByLinkView", viewName, linkName, linkedViewName)
+                                : AppStrings.T("linkviews.bulkViews.log.byLinkCreated", viewName, linkName), "pass");
                     }
                     catch (Exception ex)
                     {
@@ -189,55 +192,6 @@ namespace LemoineTools.Tools.LinkViews
             Log(AppStrings.T("linkviews.bulkViews.log.byLinkDone", pass, fail), pass > 0 ? "pass" : "warn");
         }
 
-        /// <summary>
-        /// Checks every category (and sub-category) on in the view, so a link switched to
-        /// <see cref="LinkVisibility.Custom"/> straight afterwards inherits a fully-checked
-        /// category set of its own. Returns the number of MODEL categories that were still
-        /// hidden afterwards — non-zero means the capture in step 2 cannot be trusted, because
-        /// the link will inherit an incomplete set (normally a template-governed view).
-        /// </summary>
-        private static int ShowAllCategories(Document doc, View view, string viewName)
-        {
-            // Group master switches first — an individual category cannot be un-hidden while
-            // its whole group is switched off.
-            try
-            {
-                view.AreModelCategoriesHidden           = false;
-                view.AreAnnotationCategoriesHidden      = false;
-                view.AreAnalyticalModelCategoriesHidden = false;
-                view.AreImportCategoriesHidden          = false;
-            }
-            catch (Exception ex) { DiagnosticsLog.Swallowed($"ViewsByLink: show category groups in '{viewName}'", ex); }
-
-            foreach (Category cat in doc.Settings.Categories)
-            {
-                if (cat == null) continue;
-                TrySetCategoryHidden(view, cat, false, viewName);
-
-                CategoryNameMap? subs = null;
-                try { subs = cat.SubCategories; }
-                catch (Exception ex) { DiagnosticsLog.Swallowed($"ViewsByLink: read sub-categories of {cat.Id.Value} in '{viewName}'", ex); }
-                if (subs == null) continue;
-
-                foreach (Category sub in subs)
-                    TrySetCategoryHidden(view, sub, false, viewName);
-            }
-
-            // Read back the model categories — this pass is the precondition for the whole
-            // isolate-a-link approach, so a silently-refused un-hide must reach the run log.
-            int stillHidden = 0;
-            foreach (Category cat in doc.Settings.Categories)
-            {
-                if (cat == null || cat.CategoryType != CategoryType.Model) continue;
-                try
-                {
-                    if (!cat.get_AllowsVisibilityControl(view)) continue;
-                    if (view.GetCategoryHidden(cat.Id)) stillHidden++;
-                }
-                catch (Exception ex) { DiagnosticsLog.Swallowed($"ViewsByLink: verify show of {cat.Id.Value} in '{viewName}'", ex); }
-            }
-            return stillHidden;
-        }
 
         /// <summary>
         /// Hides every host MODEL category except RVT Links, plus the annotation, analytical and
@@ -306,11 +260,45 @@ namespace LemoineTools.Tools.LinkViews
         }
 
         /// <summary>
-        /// Switches the link to <see cref="LinkVisibility.Custom"/> and reads the setting back to
-        /// confirm it stuck — <c>SetLinkOverrides</c> can be refused without throwing.
+        /// Puts the link on <see cref="LinkVisibility.ByLinkView"/> pointed at one of its own 3D
+        /// views, so the host view's category hides cannot reach it. Falls back to
+        /// <see cref="LinkVisibility.Custom"/> when the link has no usable 3D view of its own —
+        /// which leaves its "Model categories" dropdown on &lt;By host view&gt; (there is no API
+        /// for that dropdown), so the caller warns that the view needs a manual fix.
+        /// Returns <see cref="LinkModeByLinkView"/>, <see cref="LinkModeCustom"/> or
+        /// <see cref="LinkModeNone"/>.
         /// </summary>
-        private static bool ApplyCustomLinkDisplay(View view, ElementId linkId, string viewName)
+        private static string ApplyLinkDisplay(View view, ElementId linkId, Document? linkDoc, string viewName, out string linkedViewName)
         {
+            linkedViewName = "";
+
+            View3D? linkedView = linkDoc != null ? PickLinkedView3D(linkDoc, viewName) : null;
+            if (linkedView != null)
+            {
+                try
+                {
+                    // LinkedViewId is assigned FIRST — setting the mode to ByLinkView while the
+                    // view id is still invalid is rejected.
+                    var settings = new RevitLinkGraphicsSettings
+                    {
+                        LinkedViewId       = linkedView.Id,
+                        LinkVisibilityType = LinkVisibility.ByLinkView,
+                    };
+                    view.SetLinkOverrides(linkId, settings);
+
+                    if (LinkModeIs(view, linkId, LinkVisibility.ByLinkView, viewName))
+                    {
+                        try { linkedViewName = linkedView.Name; }
+                        catch (Exception ex) { DiagnosticsLog.Swallowed($"ViewsByLink: read linked view name for '{viewName}'", ex); }
+                        return LinkModeByLinkView;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    DiagnosticsLog.Swallowed($"ViewsByLink: set ByLinkView overrides for '{viewName}'", ex);
+                }
+            }
+
             try
             {
                 var settings = new RevitLinkGraphicsSettings
@@ -318,17 +306,76 @@ namespace LemoineTools.Tools.LinkViews
                     LinkVisibilityType = LinkVisibility.Custom,
                 };
                 view.SetLinkOverrides(linkId, settings);
+                if (LinkModeIs(view, linkId, LinkVisibility.Custom, viewName))
+                    return LinkModeCustom;
             }
             catch (Exception ex)
             {
-                DiagnosticsLog.Swallowed($"ViewsByLink: set link overrides for '{viewName}'", ex);
-                return false;
+                DiagnosticsLog.Swallowed($"ViewsByLink: set Custom overrides for '{viewName}'", ex);
             }
 
+            return LinkModeNone;
+        }
+
+        /// <summary>
+        /// Picks the 3D view inside a linked document that is most likely to show the whole model:
+        /// orthographic over perspective, no section box over cropped, and Revit's default
+        /// <c>{3D}</c> view ahead of the rest.
+        /// </summary>
+        private static View3D? PickLinkedView3D(Document linkDoc, string viewName)
+        {
+            List<View3D> candidates;
+            try
+            {
+                candidates = new FilteredElementCollector(linkDoc)
+                    .OfClass(typeof(View3D)).Cast<View3D>()
+                    .Where(v => v != null && !v.IsTemplate)
+                    .ToList();
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Swallowed($"ViewsByLink: collect 3D views in the link document for '{viewName}'", ex);
+                return null;
+            }
+
+            if (candidates.Count == 0) return null;
+
+            return candidates
+                .OrderBy(v => SafeIsPerspective(v) ? 1 : 0)
+                .ThenBy(v => SafeIsSectionBoxActive(v) ? 1 : 0)
+                .ThenBy(v => SafeName(v).StartsWith("{3D", StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+                .ThenBy(v => SafeName(v), NaturalOrderComparer.OrdinalIgnoreCase)
+                .FirstOrDefault();
+        }
+
+        private static bool SafeIsPerspective(View3D v)
+        {
+            try { return v.IsPerspective; }
+            catch (Exception ex) { DiagnosticsLog.Swallowed($"ViewsByLink: read IsPerspective of linked view {v.Id.Value}", ex); return false; }
+        }
+
+        private static bool SafeIsSectionBoxActive(View3D v)
+        {
+            try { return v.IsSectionBoxActive; }
+            catch (Exception ex) { DiagnosticsLog.Swallowed($"ViewsByLink: read IsSectionBoxActive of linked view {v.Id.Value}", ex); return false; }
+        }
+
+        private static string SafeName(View3D v)
+        {
+            try { return v.Name ?? ""; }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("ViewsByLink: read linked view name", ex); return ""; }
+        }
+
+        /// <summary>
+        /// Reads the link's display settings back — <c>SetLinkOverrides</c> can be refused without
+        /// throwing, and a silently-ignored write would look identical to a working one.
+        /// </summary>
+        private static bool LinkModeIs(View view, ElementId linkId, LinkVisibility expected, string viewName)
+        {
             try
             {
                 RevitLinkGraphicsSettings? readBack = view.GetLinkOverrides(linkId);
-                return readBack != null && readBack.LinkVisibilityType == LinkVisibility.Custom;
+                return readBack != null && readBack.LinkVisibilityType == expected;
             }
             catch (Exception ex)
             {

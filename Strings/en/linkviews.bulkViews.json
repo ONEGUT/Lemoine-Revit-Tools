@@ -52,7 +52,7 @@
       "itemLinks":   "Links",
       "itemPattern": "Name pattern",
       "linksValue":  "{0} link(s) — one view each",
-      "note":        "Each view shows all categories, switches the chosen link to Custom display settings so it keeps a fully-checked category set of its own, then hides every other loaded link and every host model/annotation/analytical/imported category. Only the chosen link's own geometry remains visible."
+      "note":        "Each view displays the chosen link through a 3D view from the link's own file, then hides every other loaded link and every host model/annotation/analytical/imported category. Only the chosen link's own geometry remains visible."
     },
 
     "summaries": {
@@ -71,9 +71,10 @@
     "byLinkNoLinks":   "No links selected.",
     "byLinkNo3dType":  "No 3D view family type found in this document.",
     "byLinkNoOverride":"'{0}': could not isolate the link's graphics from the host view — the host category hides may also blank the link's own geometry.",
-    "byLinkShowAllFailed":"'{0}': {1} model category/categories could not be switched on before the link was set to Custom, so the link may inherit an incomplete category set and show less than expected — a view template most likely controls Visibility/Graphics for this view.",
     "byLinkCategoriesLocked":"'{0}': {1} of {2} host model categories could not be hidden — a view template most likely controls Visibility/Graphics for this view, so host geometry may still show.",
     "byLinkCreated":   "Created '{0}' isolating link '{1}'.",
+    "byLinkCreatedByLinkView":"Created '{0}' isolating link '{1}' — displayed using the link's own 3D view '{2}'.",
+    "byLinkFellBackToCustom":"'{0}': the link has no 3D view of its own to display through, so it was left on Custom display settings. Revit's API cannot set a link's 'Model categories' dropdown to <Custom>, so this view will stay empty until that dropdown is switched by hand in Visibility/Graphics -> Revit Links -> Display Settings.",
     "byLinkFailed":    "Failed to create a view for link '{0}': {1}",
     "byLinkDone":      "Done — {0} view(s) created, {1} failed."
   }
