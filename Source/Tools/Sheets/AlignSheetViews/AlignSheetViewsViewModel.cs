@@ -15,7 +15,7 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
     /// sheet's viewports so its views overlay their counterparts on the source sheet. The
     /// source sheet's viewports are ground truth and are never moved.
     /// </summary>
-    public sealed class AlignSheetViewsViewModel : IStepFlowTool, IReviewableTool, IToolCleanup
+    public sealed class AlignSheetViewsViewModel : IStepFlowTool, IReviewableTool, IStepAware, IToolCleanup
     {
         // ── IStepFlowTool ──────────────────────────────────────────────────────
         public string Title    => AppStrings.T("testing.alignSheetViews.title");
@@ -87,6 +87,19 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
         /// <summary>Settings-only constructor (no document open).</summary>
         public AlignSheetViewsViewModel() : this(null, null, null, null) { }
 
+        // ── IStepAware ────────────────────────────────────────────────────────
+        // S2's eligible sheets depend on S1's selection (reference sheets are excluded
+        // from the target picker), so S2 must be rebuilt every time it is activated —
+        // step content is built once at window construction and would otherwise keep
+        // listing whatever was eligible before the source sheets were picked.
+        private Action<string>? _refreshStep;
+        public void SetContentRefreshCallback(Action<string> rebuildStepContent) => _refreshStep = rebuildStepContent;
+
+        public void OnStepActivated(string stepId)
+        {
+            if (stepId == "S2") _refreshStep?.Invoke(stepId);
+        }
+
         // ── Content ───────────────────────────────────────────────────────────
         public FrameworkElement? GetStepContent(string stepId)
         {
@@ -144,6 +157,19 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                 return outer;
             }
 
+            // Reference sheets are ground truth and are never moved, so they are not
+            // offered as targets at all — a sheet picked in S1 is dropped from the
+            // eligible set here (and from any selection carried over from an earlier
+            // visit to this step) rather than being listed and silently skipped.
+            var srcKeys      = new HashSet<long>(SourceKeys);
+            var eligibleKeys = _sheetIds.Where(k => !srcKeys.Contains(k)).ToList();
+
+            if (eligibleKeys.Count == 0)
+            {
+                outer.Children.Add(Hint(AppStrings.T("testing.alignSheetViews.labels.noTargetsLeft")));
+                return outer;
+            }
+
             var picker = new BrowserTreePicker
             {
                 Height         = 320,
@@ -155,8 +181,8 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                 _targetSheetIds = ids.Select(id => new ElementId(id)).ToList();
                 OnValidationChanged();
             };
-            picker.SetTree(_browserTree, _sheetIds,
-                _targetSheetIds.Select(id => id.Value).ToList());
+            picker.SetTree(_browserTree, eligibleKeys,
+                _targetSheetIds.Select(id => id.Value).Where(k => !srcKeys.Contains(k)).ToList());
             outer.Children.Add(picker);
             return outer;
         }
