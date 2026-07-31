@@ -558,22 +558,12 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                 {
                     try
                     {
-                        // Split deliberately. Absent from the SOURCE means there is nothing to copy,
-                        // which is benign. Visible in the source but not the target is a target-side
-                        // visibility setting the user expects the tool to deal with — the two used to
-                        // share one message that named neither view.
-                        if (!CanBeVisible(g, sv))
-                        {
-                            t.NotInSource++;
-                            DiagnosticsLog.Warn("AlignSheetViews",
-                                $"Grid {g.Id.Value} ('{g.Name}') cannot be visible in source view {sv.Id.Value} — nothing to copy.");
-                            continue;
-                        }
-                        if (!CanBeVisible(g, tv) && !TryRestoreVisibility(doc, g, tv, apply, t, label, pr))
-                        {
-                            t.NotVisible++;
-                            continue;
-                        }
+                        // Visibility is a HINT, never a veto. CanBeVisibleInView rejects grids the
+                        // user can plainly see, and gating on it skipped the trim outright — the same
+                        // mistake as trusting IsCurveValidInView. Reconcile whatever DIFFERS between
+                        // the two views, then do the work regardless and let Revit's own exception be
+                        // the verdict if it really cannot be done.
+                        ReconcileVisibility(doc, g, sv, tv, apply, t, label, pr);
 
                         // Bubbles are a property of their own, independent of the extents, so they
                         // are matched for EVERY visible grid — before the curve work and regardless
@@ -705,10 +695,10 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                 Log(AppStrings.T("testing.alignSheetViews.log.gridsModelSource", label, pr.Source.ViewName, t.ModelSource), "info");
             if (t.Restored > 0)
                 Log(AppStrings.T("testing.alignSheetViews.log.gridsRestored", label, pr.Target.ViewName, t.Restored), "info");
-            if (t.NotInSource > 0)
-                Log(AppStrings.T("testing.alignSheetViews.log.gridsNotInSource", label, pr.Source.ViewName, t.NotInSource), "info");
-            if (t.NotVisible > 0)
-                Log(AppStrings.T("testing.alignSheetViews.log.gridsNotVisible", label, pr.Target.ViewName, t.NotVisible), "warn");
+            if (t.Blocked > 0)
+                Log(AppStrings.T("testing.alignSheetViews.log.gridsBlocked", label, pr.Target.ViewName, t.Blocked), "warn");
+            if (t.VisibilityUnexplained > 0)
+                Log(AppStrings.T("testing.alignSheetViews.log.gridsVisibilityUnexplained", label, pr.Target.ViewName, t.VisibilityUnexplained), "warn");
             if (t.NoSourceCurve > 0)
                 Log(AppStrings.T("testing.alignSheetViews.log.gridsNoSourceCurve", label, pr.Source.ViewName, t.NoSourceCurve), "warn");
             if (t.Rejected > 0)
@@ -734,84 +724,116 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
         }
 
         /// <summary>
-        /// The grid is visible in the source view but not the target. Revit has many ways to hide a
-        /// datum, so this walks the target-side ones a tool may safely clear — element hidden in
-        /// view, the Grids category switched off, the grid's workset hidden — clears them, and
-        /// re-tests. Every cause found is named in the run log, including the ones deliberately left
-        /// alone, because "not trimmed" without a reason cannot be acted on.
+        /// Brings the target view's grid-visibility settings into line with the source view's, and
+        /// names what it could not change.
         ///
-        /// A view filter is reported but NEVER flipped: a filter's visibility governs every category
-        /// it names, so clearing it to rescue one grid would silently reveal everything else it
-        /// hides. Same for a view template governing V/G — the writes throw, and that rejection IS
-        /// the answer, so the template is named rather than fought.
+        /// Only settings that DIFFER between the two views are touched or reported. A filter, hidden
+        /// category or hidden workset that is identical on both views cannot explain why a grid shows
+        /// in one and not the other, so naming it is a false lead — which is exactly what the first
+        /// version of this did, blaming a filter that was present on the source view too.
         ///
-        /// With <paramref name="apply"/> false nothing is written; the cause is still identified and
-        /// reported, which is what makes the preview worth running.
+        /// A filter is matched against the grid through the filter's OWN rules
+        /// (<see cref="ElementFilter.PassesFilter(Element)"/>), so a filter that merely covers the
+        /// Grids category but whose rules this grid does not satisfy is never blamed. One that
+        /// genuinely differs is reported but not flipped: its visibility governs every category it
+        /// names, so clearing it would silently reveal everything else it hides.
         /// </summary>
-        private bool TryRestoreVisibility(Document doc, Grid g, View tv, bool apply,
-                                          GridTally t, string label, MatchedPair pr)
+        private void ReconcileVisibility(Document doc, Grid g, View sv, View tv, bool apply,
+                                         GridTally t, string label, MatchedPair pr)
         {
-            var causes = new List<string>();
+            var cleared  = new List<string>();
+            var blockers = new List<string>();
             try
             {
-                // 1 — hidden element ("Hide in view → Elements").
-                if (g.IsHidden(tv))
+                // 1 — element hidden in the target but not the source.
+                if (g.IsHidden(tv) && !g.IsHidden(sv))
                 {
-                    causes.Add(AppStrings.T("testing.alignSheetViews.log.gridCauseHidden"));
+                    cleared.Add(AppStrings.T("testing.alignSheetViews.log.gridCauseHidden"));
                     if (apply) tv.UnhideElements(new List<ElementId> { g.Id });
                 }
 
-                // 2 — the Grids category switched off in Visibility/Graphics.
+                // 2 — Grids category switched off in the target but not the source.
                 var cat = Category.GetCategory(doc, BuiltInCategory.OST_Grids);
-                if (cat != null && tv.GetCategoryHidden(cat.Id))
+                if (cat != null && tv.GetCategoryHidden(cat.Id) && !sv.GetCategoryHidden(cat.Id))
                 {
-                    causes.Add(AppStrings.T("testing.alignSheetViews.log.gridCauseCategory"));
+                    cleared.Add(AppStrings.T("testing.alignSheetViews.log.gridCauseCategory"));
                     if (apply && tv.CanCategoryBeHidden(cat.Id)) tv.SetCategoryHidden(cat.Id, false);
                 }
 
-                // 3 — the grid's own workset hidden in this view.
+                // 3 — the grid's workset hidden in the target but not the source.
                 if (doc.IsWorkshared)
                 {
                     WorksetId ws = g.WorksetId;
-                    if (ws != null && tv.GetWorksetVisibility(ws) == WorksetVisibility.Hidden)
+                    if (ws != null
+                        && tv.GetWorksetVisibility(ws) == WorksetVisibility.Hidden
+                        && sv.GetWorksetVisibility(ws) != WorksetVisibility.Hidden)
                     {
-                        causes.Add(AppStrings.T("testing.alignSheetViews.log.gridCauseWorkset"));
+                        cleared.Add(AppStrings.T("testing.alignSheetViews.log.gridCauseWorkset"));
                         if (apply) tv.SetWorksetVisibility(ws, WorksetVisibility.Visible);
                     }
                 }
 
-                // 4 — a view filter covering Grids with visibility off. Reported, never changed.
+                // 4 — a filter that hides THIS grid in the target and does not do so in the source.
                 foreach (var fid in tv.GetFilters())
                 {
                     if (tv.GetFilterVisibility(fid)) continue;
                     if (!(doc.GetElement(fid) is ParameterFilterElement pf)) continue;
-                    if (!pf.GetCategories().Any(c => c.Value == (long)BuiltInCategory.OST_Grids)) continue;
-                    causes.Add(AppStrings.T("testing.alignSheetViews.log.gridCauseFilter", pf.Name));
+                    if (!FilterCatches(pf, g)) continue;
+                    if (SourceHidesToo(sv, fid)) continue;   // identical on both — cannot be the cause
+                    blockers.Add(AppStrings.T("testing.alignSheetViews.log.gridCauseFilter", pf.Name));
                 }
             }
             catch (Exception ex)
             {
-                // A view template owning V/G rejects these writes — name it, that IS the diagnosis.
-                causes.Add(AppStrings.T("testing.alignSheetViews.log.gridCauseTemplate", TemplateName(doc, tv)));
-                DiagnosticsLog.Swallowed($"AlignSheetViews: restore visibility of grid {g.Id.Value} in view {tv.Id.Value}", ex);
+                blockers.Add(AppStrings.T("testing.alignSheetViews.log.gridCauseTemplate", TemplateName(doc, tv)));
+                DiagnosticsLog.Swallowed($"AlignSheetViews: reconcile visibility of grid {g.Id.Value} in view {tv.Id.Value}", ex);
             }
 
-            string why = causes.Count > 0
-                ? string.Join(", ", causes)
-                : AppStrings.T("testing.alignSheetViews.log.gridCauseUnknown");
-
-            if (!apply)
+            if (cleared.Count > 0)
             {
-                Log(AppStrings.T("testing.alignSheetViews.log.gridWouldRestore", label, pr.Target.ViewName, g.Name, why), "warn");
+                t.Restored++;
+                Log(AppStrings.T(apply ? "testing.alignSheetViews.log.gridRestored"
+                                       : "testing.alignSheetViews.log.gridWouldRestore",
+                                 label, pr.Target.ViewName, g.Name, string.Join(", ", cleared)), "info");
+            }
+            if (blockers.Count > 0)
+            {
+                t.Blocked++;
+                Log(AppStrings.T("testing.alignSheetViews.log.gridBlocked",
+                                 label, pr.Target.ViewName, g.Name, string.Join(", ", blockers)), "warn");
+            }
+            // Revit says it cannot show here and nothing in the two views' settings differs. Worth a
+            // count — the trim is still attempted, so this is context, not a skip.
+            if (cleared.Count == 0 && blockers.Count == 0 && !CanBeVisible(g, tv) && CanBeVisible(g, sv))
+                t.VisibilityUnexplained++;
+        }
+
+        /// <summary>True when the filter's own rules actually select this grid. A filter that names
+        /// the Grids category but whose rules the grid fails is not what is hiding it.</summary>
+        private static bool FilterCatches(ParameterFilterElement pf, Grid g)
+        {
+            try
+            {
+                if (!pf.GetCategories().Any(c => c.Value == (long)BuiltInCategory.OST_Grids)) return false;
+                ElementFilter ef = pf.GetElementFilter();
+                return ef == null || ef.PassesFilter(g);   // a rule-less filter catches the whole category
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Swallowed($"AlignSheetViews: evaluate filter {pf.Id.Value} against grid {g.Id.Value}", ex);
+                return false;   // cannot prove it applies — do not blame it
+            }
+        }
+
+        /// <summary>True when the source view carries the same filter and also hides it.</summary>
+        private static bool SourceHidesToo(View sv, ElementId filterId)
+        {
+            try { return sv.GetFilters().Contains(filterId) && !sv.GetFilterVisibility(filterId); }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Swallowed($"AlignSheetViews: filter {filterId.Value} on source view {sv.Id.Value}", ex);
                 return false;
             }
-
-            bool ok = CanBeVisible(g, tv);
-            Log(AppStrings.T(ok ? "testing.alignSheetViews.log.gridRestored"
-                                : "testing.alignSheetViews.log.gridStillHidden",
-                             label, pr.Target.ViewName, g.Name, why), ok ? "info" : "warn");
-            if (ok) t.Restored++;
-            return ok;
         }
 
         private static string TemplateName(Document doc, View v)
@@ -1685,14 +1707,14 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
             public int AlreadyMatching { get; set; }
             public int Bubbles        { get; set; }
             public int ModelSource    { get; set; }
-            public int NotVisible     { get; set; }
             public int NoSourceCurve  { get; set; }
             public int Rejected       { get; set; }
             public int Errored        { get; set; }
             public int MultiSegment   { get; set; }
             public int Unbound        { get; set; }
-            public int NotInSource    { get; set; }
-            public int Restored       { get; set; }
+            public int Restored             { get; set; }
+            public int Blocked              { get; set; }
+            public int VisibilityUnexplained { get; set; }
         }
 
         // ── A queued grid curve write, with the extent modes to restore if it is rejected ─

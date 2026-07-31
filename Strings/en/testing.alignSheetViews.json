@@ -111,7 +111,8 @@
     // "N skipped" cannot be acted on — it was hiding grids whose source view had no
     // 2D extents at all, reported as if they were invisible or non-collinear.
     "gridsModelSource":   "[{0}] Grids on '{1}': {2} use model (3D) extents in the source view — target ends reset to model to match.",
-    "gridsNotVisible":    "[{0}] Grids on '{1}': {2} cannot be shown in this view — not trimmed.",
+    "gridsBlocked":       "[{0}] Grids on '{1}': {2} blocked by a setting this tool will not change \u2014 see the lines above.",
+    "gridsVisibilityUnexplained": "[{0}] Grids on '{1}': Revit reports {2} cannot be shown here, but nothing differs from the source view \u2014 trim attempted regardless.",
     "gridsNoSourceCurve": "[{0}] Grids on '{1}': {2} claim view-specific extents but returned no curve — not trimmed.",
     "gridsRejected":      "[{0}] Grids on '{1}': {2} were rejected by Revit when writing the curve — extent mode restored, see diagnostics log.",
     "gridsErrored":       "[{0}] Grids on '{1}': {2} failed with an error — see diagnostics log.",
@@ -126,12 +127,10 @@
     "gridCauseWorkset":   "its workset is hidden here",
     "gridCauseFilter":    "view filter '{0}' hides it (left unchanged \u2014 it governs other categories too)",
     "gridCauseTemplate":  "a visibility write was rejected — view template '{0}' most likely controls it; see diagnostics log for the exact error",
-    "gridCauseUnknown":   "cause not identifiable through the API",
     "gridRestored":       "[{0}] '{1}' grid '{2}': made visible ({3}).",
-    "gridStillHidden":    "[{0}] '{1}' grid '{2}': still not visible ({3}) \u2014 not trimmed.",
-    "gridWouldRestore":   "[{0}] '{1}' grid '{2}': not visible ({3}) \u2014 a real run would try to restore it.",
+    "gridBlocked":        "[{0}] '{1}' grid '{2}': {3}. Trim attempted anyway.",
+    "gridWouldRestore":   "[{0}] '{1}' grid '{2}': a real run would clear {3} on this view.",
     "gridsRestored":      "[{0}] Grids on '{1}': {2} made visible to match the source view.",
-    "gridsNotInSource":   "[{0}] Grids on '{1}': {2} are not visible in the source view \u2014 nothing to copy.",
     // Placement drift: anything touching the crop or annotation crop after SetBoxCenter moves the
     // drawing on the sheet, so the result is verified rather than assumed.
     "placementOk":        "Placement verified: all {0} viewports still on their aligned centre.",
