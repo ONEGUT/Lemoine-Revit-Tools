@@ -139,7 +139,7 @@ namespace LemoineTools.Tools.LinkViews
             _templateKeyToId.Clear();
 
             var groups = new Dictionary<string, List<string>>();
-            foreach (var t in _templates.OrderBy(t => t.TypeLabel).ThenBy(t => t.Name))
+            foreach (var t in _templates.OrderBy(t => t.TypeLabel).ThenBy(t => t.Name, NaturalOrderComparer.OrdinalIgnoreCase))
             {
                 string key = t.Name;                     // template names are unique
                 if (_templateKeyToId.ContainsKey(key))

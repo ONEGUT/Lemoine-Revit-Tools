@@ -109,13 +109,13 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
             _browserTree = browserTree ?? new BrowserTree();
 
             _parents = (parents ?? new List<ParentViewEntry>())
-                .OrderBy(p => p.TypeLabel).ThenBy(p => p.Name).ToList();
+                .OrderBy(p => p.TypeLabel).ThenBy(p => p.Name, NaturalOrderComparer.OrdinalIgnoreCase).ToList();
 
             _compositeCandidates = (compositeCandidates ?? new List<ParentViewEntry>())
-                .OrderBy(p => p.TypeLabel).ThenBy(p => p.Name).ToList();
+                .OrderBy(p => p.TypeLabel).ThenBy(p => p.Name, NaturalOrderComparer.OrdinalIgnoreCase).ToList();
 
             _placeableViews = (placeableViews ?? new List<ParentViewEntry>())
-                .OrderBy(p => p.TypeLabel).ThenBy(p => p.Name).ToList();
+                .OrderBy(p => p.TypeLabel).ThenBy(p => p.Name, NaturalOrderComparer.OrdinalIgnoreCase).ToList();
 
             _titleblockMap   = new Dictionary<string, ElementId>();
             _titleblockNames = new List<string>();

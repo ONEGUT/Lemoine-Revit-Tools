@@ -75,7 +75,7 @@ namespace LemoineTools.Commands
                     .OfCategory(BuiltInCategory.OST_Views)
                     .Cast<View>()
                     .Where(v => v.ViewType == ViewType.Legend)
-                    .OrderBy(v => v.Name, System.StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(v => v.Name, NaturalOrderComparer.OrdinalIgnoreCase)
                     .Select(v => (v.Id, v.Name))
                     .ToList();
 

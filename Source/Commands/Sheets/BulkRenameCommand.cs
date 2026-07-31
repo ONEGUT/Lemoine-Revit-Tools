@@ -49,7 +49,7 @@ namespace LemoineTools.Commands
                     .OfClass(typeof(ViewSheet))
                     .Cast<ViewSheet>()
                     .Where(s => !s.IsTemplate)
-                    .OrderBy(s => s.SheetNumber)
+                    .OrderBy(s => s.SheetNumber, NaturalOrderComparer.OrdinalIgnoreCase)
                     .Select(s => new BulkRenameViewModel.SheetEntry
                     {
                         Id     = s.Id,
@@ -74,7 +74,7 @@ namespace LemoineTools.Commands
                         Name      = v.Name,
                         TypeLabel = ViewsByTemplateRunHandler.ViewTypeLabel(v.ViewType),
                     })
-                    .OrderBy(v => v.TypeLabel).ThenBy(v => v.Name)
+                    .OrderBy(v => v.TypeLabel).ThenBy(v => v.Name, NaturalOrderComparer.OrdinalIgnoreCase)
                     .ToList();
 
                 var vm = new BulkRenameViewModel(

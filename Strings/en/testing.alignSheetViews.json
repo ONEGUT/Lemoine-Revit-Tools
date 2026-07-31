@@ -19,12 +19,12 @@
     "secOverlap": "FALLBACK MATCH — MINIMUM OVERLAP (%)",
     "noteOverlap": "Views are matched by shared scope box first (exact). This overlap threshold is the fallback for views with no scope box: how much of a target view's drawn area must overlap a source view to be treated as counterparts. Lower it if counterparts are cropped to different sizes; raise it if unrelated views match.",
     "optAlignTitles": "Also align view titles (location + line length)",
-    "noteAlignTitles": "After the viewports are aligned, each view title is moved to overlay its source title and its title line length is matched. Done last, since moving a viewport moves its title.",
+    "noteAlignTitles": "Each view title is moved to overlay its source title, and its title line length matched. The line length is applied before the viewports settle (writing it shifts the viewport), and the title position last, since a title is positioned relative to its viewport.",
     "secInherit": "INHERIT FROM SOURCE VIEW",
     "optScopeBox": "Scope box assignment",
     "noteScopeBox": "Assign the source view's scope box to each matched target view. Applied FIRST — before alignment — because a scope box rewrites the crop the alignment reads.",
-    "optGrids": "Grid 2D extents (trim gridlines to match)",
-    "noteGrids": "Trim each target grid's per-view (2D) extents so its gridlines start and stop exactly where they do in the source view.",
+    "optGrids": "Grid extents, heads and elbows",
+    "noteGrids": "Match each target grid to the source view: per-view (2D) extents so gridlines start and stop in the same place, plus head/tail bubble visibility and any elbows dragged onto the heads.",
     "optCropVis": "Crop region visibility",
     "noteCropVis": "Match whether the crop-region boundary is shown or hidden, to the source view.",
     "optCropSize": "Crop size + annotation crop",
@@ -51,7 +51,7 @@
   "inherit": {
     "nothing": "Nothing",
     "scopeBox": "scope box",
-    "gridExtents": "grid extents",
+    "gridExtents": "grid extents, heads and elbows",
     "cropVisibility": "crop visibility",
     "cropSize": "crop size"
   },
@@ -91,6 +91,10 @@
     "wouldAlignEnd":      ".",
     "scopeBoxApplied":    "[{0}] {1} scope box assignment(s) applied.",
     "aligned":            "[{0}] Aligned '{1}' → source '{2}'.",
+    // The condensed run log: one line per target sheet. Routine "info" lines are dropped from a
+    // real run and these stand in for them; preview mode still prints everything.
+    "sheetOk":            "[{0}] {1} matching view(s) found and aligned.",
+    "sheetWithIssues":    "[{0}] {1} matching view(s) aligned \u2014 {2} issue(s) reported above.",
     "failedMove":         "[{0}] Failed to move '{1}' — see diagnostics log.",
     "couldNotAssignScope":"[{0}] Could not assign scope box to '{1}'.",
     "cropScopeGoverned":  "[{0}] '{1}' crop is scope-box governed — crop-size inheritance skipped (annotation crop still applied).",
@@ -98,18 +102,57 @@
     "couldNotMatchAnnoCrop":"[{0}] Could not match annotation crop for '{1}' (this view type may not support one).",
     "couldNotMatchCropVis":"[{0}] Could not match crop visibility for '{1}'.",
     "noGrids":            "[{0}] '{1}' has no grids to trim.",
-    "gridsTrimmedNone":   "[{0}] Grids on '{1}': {2} trimmed.",
-    // One line per failure cause, so a zero result always names its reason. A bare
+    // Changed vs already-matching are split deliberately: a single "N trimmed" that counted
+    // no-op writes is exactly what made a broken run look like a successful one.
+    "gridsResult":        "[{0}] Grids on '{1}': {2} updated, {3} already matching.",
+    "gridsWouldResult":   "[{0}] Grids on '{1}': {2} would be updated, {3} already matching.",
+    "gridWouldMove":      "[{0}] '{1}' grid '{2}': ends would move {3}' / {4}'.",
+    // Heads/tails are a separate property from the extents — matching ends still show no head
+    // if the source has its bubble on and the target does not.
+    "gridsBubbles":       "[{0}] Grids on '{1}': {2} head/tail bubbles matched to the source.",
+    "gridsWouldBubbles":  "[{0}] Grids on '{1}': {2} head/tail bubbles would be matched to the source.",
+    // The elbow is the jog dragged onto a grid head so it steps aside from its neighbours.
+    // Matched in both directions: an end the source has no elbow on has the target's removed.
+    "gridsElbows":        "[{0}] Grids on '{1}': {2} head elbows matched to the source.",
+    "gridsWouldElbows":   "[{0}] Grids on '{1}': {2} head elbows would be matched to the source.",
+    "gridElbowStuck":     "[{0}] '{1}' grid '{2}': has a head elbow the source does not, and Revit would not clear it \u2014 left in place.",
+    "gridElbowRejected":  "[{0}] '{1}' grid '{2}': Revit rejected the source head elbow \u2014 the leader was created but not repositioned.",
+    // One line per remaining cause, so a zero result always names its reason. A bare
     // "N skipped" cannot be acted on — it was hiding grids whose source view had no
     // 2D extents at all, reported as if they were invisible or non-collinear.
-    "gridsNotVisible":    "[{0}] Grids on '{1}': {2} cannot be shown in this view — not trimmed.",
-    "gridsNoSourceCurve": "[{0}] Grids on '{1}': {2} returned no curve from the source view — not trimmed.",
-    "gridsRejected":      "[{0}] Grids on '{1}': {2} rejected the source curve as invalid for this view — not trimmed.",
+    "gridsModelSource":   "[{0}] Grids on '{1}': {2} use model (3D) extents in the source view — target ends reset to model to match.",
+    "gridsBlocked":       "[{0}] Grids on '{1}': {2} blocked by a setting this tool will not change \u2014 see the lines above.",
+    "gridsNotShowable":   "[{0}] Grids on '{1}': Revit will not display {2} in this view \u2014 skipped (its settings already match the source view).",
+    "gridsNoSourceCurve": "[{0}] Grids on '{1}': {2} claim view-specific extents but returned no curve — not trimmed.",
+    "gridsRejected":      "[{0}] Grids on '{1}': {2} were rejected by Revit when writing the curve — extent mode restored, see diagnostics log.",
     "gridsErrored":       "[{0}] Grids on '{1}': {2} failed with an error — see diagnostics log.",
     "gridsMultiSegment":  "[{0}] Grids on '{1}': {2} are multi-segment — only the first segment's extents were copied.",
+    "gridsUnbound":       "[{0}] Grids on '{1}': {2} returned an unbound (infinite) line — Revit cannot use one as an extent, not trimmed.",
+    "gridsTargetOnly":    "[{0}] Grids on '{1}': {2} appear in the target view but not the source — left unchanged.",
+    "gridsRestoreFailed": "[{0}] '{1}' grid '{2}': write failed AND its extent mode could not be restored — that end is now 2D with no curve set.",
     "couldNotTrimGrids":  "[{0}] Could not trim grids for '{1}'.",
+    // Revit has many ways to hide a grid; the cause is named so "not trimmed" can be acted on.
+    "gridCauseHidden":    "hidden in this view",
+    "gridCauseCategory":  "Grids category switched off",
+    "gridCauseWorkset":   "its workset is hidden here",
+    "gridCauseFilter":    "view filter '{0}' hides it (left unchanged \u2014 it governs other categories too)",
+    "gridCauseTemplate":  "a visibility write was rejected — view template '{0}' most likely controls it; see diagnostics log for the exact error",
+    "gridRestored":       "[{0}] '{1}' grid '{2}': made visible ({3}).",
+    "gridBlocked":        "[{0}] '{1}' grid '{2}': {3}. Trim attempted anyway.",
+    "gridWouldRestore":   "[{0}] '{1}' grid '{2}': a real run would clear {3} on this view.",
+    "gridsRestored":      "[{0}] Grids on '{1}': {2} made visible to match the source view.",
+    // Placement drift: anything touching the crop or annotation crop after SetBoxCenter moves the
+    // drawing on the sheet, so the result is verified rather than assumed.
     "couldNotMatchTitleLine":"[{0}] Could not match title line length for '{1}'.",
     "couldNotAlignTitle": "[{0}] Could not align title for '{1}'.",
+    // Placement is REPORTED, never corrected. GetBoxCenter tracks the view title, so a centre
+    // that moves while the outline changes size is the box growing around a stationary drawing —
+    // correcting that displaces the drawing by the size of its own title.
+    "placementPhaseLineLength":    "title line length",
+    "placementPhaseTitlePosition": "title position",
+    "placementStable":    "Placement after {0}: all {1} viewport(s) unmoved.",
+    "placementTitleOnly": "Placement after {0}: {1} viewport(s) report a moved box, but their outlines changed size \u2014 the title grew, the drawing did not move.",
+    "placementMoved":     "Placement after {0}: {1} viewport(s) genuinely repositioned (worst '{2}' by {3}') \u2014 see diagnostics log.",
     "viewTitlesOk":       "View titles: {0} aligned.",
     "viewTitlesSome":     "View titles: {0} aligned, {1} could not be adjusted.",
     "noteNoCrop":         "[note] View '{0}' has no active crop — region matched from its default crop box.",

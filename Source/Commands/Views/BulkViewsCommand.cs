@@ -86,13 +86,13 @@ namespace LemoineTools.Commands
                              && v.CanViewBeDuplicated(ViewDuplicateOption.WithDetailing))
                     .Select(v => new ViewsByTemplateViewModel.ViewEntry
                         { Id = v.Id, Name = v.Name, TypeLabel = ViewsByTemplateRunHandler.ViewTypeLabel(v.ViewType) })
-                    .OrderBy(v => v.TypeLabel).ThenBy(v => v.Name).ToList();
+                    .OrderBy(v => v.TypeLabel).ThenBy(v => v.Name, NaturalOrderComparer.OrdinalIgnoreCase).ToList();
                 var viewTemplates = new FilteredElementCollector(doc)
                     .OfClass(typeof(View)).Cast<View>()
                     .Where(v => v.IsTemplate)
                     .Select(v => new ViewsByTemplateViewModel.TemplateEntry
                         { Id = v.Id, Name = v.Name, TypeLabel = ViewsByTemplateRunHandler.ViewTypeLabel(v.ViewType) })
-                    .OrderBy(t => t.TypeLabel).ThenBy(t => t.Name).ToList();
+                    .OrderBy(t => t.TypeLabel).ThenBy(t => t.Name, NaturalOrderComparer.OrdinalIgnoreCase).ToList();
                 var byTemplate = new ViewsByTemplateViewModel(
                     App.ViewsByTemplateRunHandler!, App.ViewsByTemplateRunEvent!,
                     eligibleForTemplate, viewTemplates, browserTree);
@@ -114,7 +114,7 @@ namespace LemoineTools.Commands
                             ? System.IO.Path.GetFileNameWithoutExtension(li.GetLinkDocument().Title)
                             : li.Name,
                     })
-                    .OrderBy(l => l.Name, StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(l => l.Name, NaturalOrderComparer.OrdinalIgnoreCase)
                     .ToList();
                 var byLinkTemplates = templates3D
                     .Select(t => new ViewsByLinkViewModel.TemplateEntry { Id = t.Id, Name = t.Name })
@@ -162,7 +162,7 @@ namespace LemoineTools.Commands
                           || v.CanViewBeDuplicated(ViewDuplicateOption.AsDependent)))
                 .Select(v => new ViewsBulkDuplicateViewModel.ViewEntry
                     { Id = v.Id, Name = v.Name, TypeLabel = ViewsByTemplateRunHandler.ViewTypeLabel(v.ViewType) })
-                .OrderBy(v => v.TypeLabel).ThenBy(v => v.Name)
+                .OrderBy(v => v.TypeLabel).ThenBy(v => v.Name, NaturalOrderComparer.OrdinalIgnoreCase)
                 .ToList();
 
         private static List<LinkViewsLevelViewModel.ViewTemplateEntry> CollectViewTemplates(Document doc, ViewType vt) =>
