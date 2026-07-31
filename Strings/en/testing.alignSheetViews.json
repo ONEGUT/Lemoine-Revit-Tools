@@ -122,7 +122,7 @@
     // 2D extents at all, reported as if they were invisible or non-collinear.
     "gridsModelSource":   "[{0}] Grids on '{1}': {2} use model (3D) extents in the source view — target ends reset to model to match.",
     "gridsBlocked":       "[{0}] Grids on '{1}': {2} blocked by a setting this tool will not change \u2014 see the lines above.",
-    "gridsVisibilityUnexplained": "[{0}] Grids on '{1}': Revit reports {2} cannot be shown here, but nothing differs from the source view \u2014 trim attempted regardless.",
+    "gridsNotShowable":   "[{0}] Grids on '{1}': Revit will not display {2} in this view \u2014 skipped (its settings already match the source view).",
     "gridsNoSourceCurve": "[{0}] Grids on '{1}': {2} claim view-specific extents but returned no curve — not trimmed.",
     "gridsRejected":      "[{0}] Grids on '{1}': {2} were rejected by Revit when writing the curve — extent mode restored, see diagnostics log.",
     "gridsErrored":       "[{0}] Grids on '{1}': {2} failed with an error — see diagnostics log.",

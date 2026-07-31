@@ -599,6 +599,22 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                         // the two views, then do the work regardless and let Revit's own exception be
                         // the verdict if it really cannot be done.
                         ReconcileVisibility(doc, g, sv, tv, apply, t, label, pr);
+
+                        // Revit refuses EVERY datum call for a grid it will not display here —
+                        // extent type, curves, leaders, the lot — so carrying on raised the same
+                        // exception from a dozen call sites for one root cause. Now the reconcile
+                        // gets its chance to fix whatever differs from the source, and if Revit
+                        // still says no after that, one refusal settles the whole grid.
+                        // This is not the old CanBeVisibleInView veto: that ran BEFORE any repair
+                        // and skipped grids the user could plainly see.
+                        if (!CanBeVisible(g, tv))
+                        {
+                            t.NotShowable++;
+                            DiagnosticsLog.Warn("AlignSheetViews",
+                                $"Grid {g.Id.Value} ('{g.Name}') — Revit will not display it in view {tv.Id.Value}; skipped after the visibility reconcile.");
+                            continue;
+                        }
+
                         visible.Add(g);
 
                         // Bubbles are a property of their own, independent of the extents, so they
@@ -741,8 +757,8 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                 Log(AppStrings.T("testing.alignSheetViews.log.gridsRestored", label, pr.Target.ViewName, t.Restored), "info");
             if (t.Blocked > 0)
                 Log(AppStrings.T("testing.alignSheetViews.log.gridsBlocked", label, pr.Target.ViewName, t.Blocked), "warn");
-            if (t.VisibilityUnexplained > 0)
-                Log(AppStrings.T("testing.alignSheetViews.log.gridsVisibilityUnexplained", label, pr.Target.ViewName, t.VisibilityUnexplained), "warn");
+            if (t.NotShowable > 0)
+                Log(AppStrings.T("testing.alignSheetViews.log.gridsNotShowable", label, pr.Target.ViewName, t.NotShowable), "warn");
             if (t.NoSourceCurve > 0)
                 Log(AppStrings.T("testing.alignSheetViews.log.gridsNoSourceCurve", label, pr.Source.ViewName, t.NoSourceCurve), "warn");
             if (t.Rejected > 0)
@@ -846,10 +862,6 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                 Log(AppStrings.T("testing.alignSheetViews.log.gridBlocked",
                                  label, pr.Target.ViewName, g.Name, string.Join(", ", blockers)), "warn");
             }
-            // Revit says it cannot show here and nothing in the two views' settings differs. Worth a
-            // count — the trim is still attempted, so this is context, not a skip.
-            if (cleared.Count == 0 && blockers.Count == 0 && !CanBeVisible(g, tv) && CanBeVisible(g, sv))
-                t.VisibilityUnexplained++;
         }
 
         /// <summary>True when the filter's own rules actually select this grid. A filter that names
@@ -1224,8 +1236,17 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
 
                     drifted++;
                     if (d > worst) { worst = d; worstName = pr.Target.ViewName; }
+
+                    // GetBoxCenter is the handle SetBoxCenter writes; GetBoxOutline is the drawing's
+                    // true footprint and EXCLUDES the view title. If the outline centre is still on
+                    // the aligned point while GetBoxCenter is not, then nothing moved on paper and
+                    // the reported drift is the title changing size — in which case correcting it
+                    // would push the drawing off by that much rather than fixing anything.
+                    string footprint = TryOutlineCentre(vp, out XYZ oc)
+                        ? $"footprint centre is {oc.DistanceTo(pr.IntendedCentre):0.######}' away"
+                        : "footprint centre unreadable";
                     DiagnosticsLog.Warn("AlignSheetViews",
-                        $"Viewport {pr.Target.ViewportId.Value} ('{pr.Target.ViewName}') sits {d:0.######}' from its aligned centre.");
+                        $"Viewport {pr.Target.ViewportId.Value} ('{pr.Target.ViewName}') sits {d:0.######}' from its aligned centre; {footprint}.");
 
                     if (correct) vp.SetBoxCenter(pr.IntendedCentre);
                 }
@@ -1246,6 +1267,25 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
 
             if (failed > 0)
                 Log(AppStrings.T("testing.alignSheetViews.log.placementUnchecked", failed), "warn");
+        }
+
+        /// <summary>Centre of the viewport's true on-sheet footprint (the box outline, which excludes
+        /// the view title). Valid only after a regenerate, which both callers do first.</summary>
+        private static bool TryOutlineCentre(Viewport vp, out XYZ centre)
+        {
+            centre = XYZ.Zero;
+            try
+            {
+                Outline o = vp.GetBoxOutline();
+                if (o == null) return false;
+                centre = (o.MinimumPoint + o.MaximumPoint) / 2.0;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Swallowed($"AlignSheetViews: box outline of viewport {vp.Id.Value}", ex);
+                return false;
+            }
         }
 
         // ── View-title (label) alignment ──────────────────────────────────────
@@ -1905,7 +1945,7 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
             public int Unbound        { get; set; }
             public int Restored             { get; set; }
             public int Blocked              { get; set; }
-            public int VisibilityUnexplained { get; set; }
+            public int NotShowable          { get; set; }
         }
 
         // ── A queued grid curve write, with the extent modes to restore if it is rejected ─
