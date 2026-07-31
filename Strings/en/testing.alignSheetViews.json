@@ -143,14 +143,16 @@
     "gridsRestored":      "[{0}] Grids on '{1}': {2} made visible to match the source view.",
     // Placement drift: anything touching the crop or annotation crop after SetBoxCenter moves the
     // drawing on the sheet, so the result is verified rather than assumed.
-    "placementOk":        "Placement verified: all {0} viewports still on their aligned centre.",
-    "placementCorrected": "Placement: {0} viewport(s) compensated onto their aligned centre.",
-    "placementResidual":  "Placement: {0} viewport(s) would not settle on their aligned centre \u2014 worst '{1}' still {2}' off.",
-    "placementOkTitles":  "Placement after titles: all {0} viewports unmoved.",
-    "placementDriftTitles":"Placement after titles: {0} viewport(s) moved (worst '{1}' by {2}') \u2014 title alignment shifted the box, not corrected.",
-    "placementUnchecked": "Placement: {0} viewport(s) could not be checked \u2014 see diagnostics log.",
     "couldNotMatchTitleLine":"[{0}] Could not match title line length for '{1}'.",
     "couldNotAlignTitle": "[{0}] Could not align title for '{1}'.",
+    // Placement is REPORTED, never corrected. GetBoxCenter tracks the view title, so a centre
+    // that moves while the outline changes size is the box growing around a stationary drawing —
+    // correcting that displaces the drawing by the size of its own title.
+    "placementPhaseLineLength":    "title line length",
+    "placementPhaseTitlePosition": "title position",
+    "placementStable":    "Placement after {0}: all {1} viewport(s) unmoved.",
+    "placementTitleOnly": "Placement after {0}: {1} viewport(s) report a moved box, but their outlines changed size \u2014 the title grew, the drawing did not move.",
+    "placementMoved":     "Placement after {0}: {1} viewport(s) genuinely repositioned (worst '{2}' by {3}') \u2014 see diagnostics log.",
     "viewTitlesOk":       "View titles: {0} aligned.",
     "viewTitlesSome":     "View titles: {0} aligned, {1} could not be adjusted.",
     "noteNoCrop":         "[note] View '{0}' has no active crop — region matched from its default crop box.",
