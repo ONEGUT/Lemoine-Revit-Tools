@@ -99,6 +99,8 @@ namespace LemoineTools
         internal static ExternalEvent?             BulkExportEvent     { get; private set; }
         internal static LemoineTools.Tools.BulkExport.BulkExportPrintSetHandler? BulkExportPrintSetHandler { get; private set; }
         internal static ExternalEvent?             BulkExportPrintSetEvent { get; private set; }
+        internal static LemoineTools.Tools.BulkExport.ExportSetStoreHandler? BulkExportSetStoreHandler { get; private set; }
+        internal static ExternalEvent?             BulkExportSetStoreEvent { get; private set; }
         internal static PrintViewEventHandler?     PrintViewHandler    { get; private set; }
         internal static ExternalEvent?             PrintViewEvent      { get; private set; }
 
@@ -254,6 +256,8 @@ namespace LemoineTools
             BulkExportEvent     = ExternalEvent.Create(BulkExportHandler);
             BulkExportPrintSetHandler = new LemoineTools.Tools.BulkExport.BulkExportPrintSetHandler();
             BulkExportPrintSetEvent   = ExternalEvent.Create(BulkExportPrintSetHandler);
+            BulkExportSetStoreHandler = new LemoineTools.Tools.BulkExport.ExportSetStoreHandler();
+            BulkExportSetStoreEvent   = ExternalEvent.Create(BulkExportSetStoreHandler);
             PrintViewHandler    = new PrintViewEventHandler();
             PrintViewEvent      = ExternalEvent.Create(PrintViewHandler);
             ClashPickHandler      = new ClashPickEventHandler();
