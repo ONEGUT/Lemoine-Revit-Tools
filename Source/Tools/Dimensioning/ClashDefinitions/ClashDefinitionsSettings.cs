@@ -145,8 +145,16 @@ namespace LemoineTools.Tools.Dimensioning
             // Dimension settings so the library isn't empty and existing group/marking
             // choices carry over.
             var seeded = new ClashDefinitionsSettings();
-            try { seeded.Definitions.Add(SeedFromClashDimension()); }
+            bool didSeed = false;
+            try { seeded.Definitions.Add(SeedFromClashDimension()); didSeed = true; }
             catch (Exception ex) { DiagnosticsLog.Swallowed("ClashDefinitionsSettings: seed from ClashDimension", ex); }
+
+            // Persist the seed immediately. Without this the file stays absent, so the next
+            // session re-seeds and mints a NEW definition Id — orphaning anything keyed to
+            // the old one (element picks are stored per definition Id, per document).
+            // Only write when the seed actually succeeded, so a failed migration retries
+            // next session rather than being frozen as an empty library.
+            if (didSeed) seeded.Save();
             return seeded;
         }
 
@@ -171,26 +179,24 @@ namespace LemoineTools.Tools.Dimensioning
         {
             var s = ClashDimensionSettings.Instance;
 
-            ClashGroupSpec Group(string mode, List<string> rules, List<string> cats,
-                                  List<long> elemIds, List<long> elemLinks, List<long> srcLinks) =>
+            // Element picks are NOT carried over: they were raw ElementIds on a machine-wide
+            // settings file, so they belonged to whichever project last ran and would resolve
+            // to unrelated elements here. Modes, rule keys and categories are portable and do
+            // carry over; the user re-picks elements once, per document.
+            ClashGroupSpec Group(string mode, List<string> rules, List<string> cats) =>
                 new ClashGroupSpec
                 {
                     Mode          = mode,
-                    RuleKeys      = new List<string>(rules     ?? new List<string>()),
-                    Categories    = new List<string>(cats      ?? new List<string>()),
-                    ElemIds       = new List<long>(elemIds     ?? new List<long>()),
-                    ElemLinkIds   = new List<long>(elemLinks   ?? new List<long>()),
-                    SourceLinkIds = new List<long>(srcLinks    ?? new List<long>()),
+                    RuleKeys      = new List<string>(rules ?? new List<string>()),
+                    Categories    = new List<string>(cats  ?? new List<string>()),
                 };
 
             return new ClashDefinition
             {
                 Id               = "C" + Guid.NewGuid().ToString("N").Substring(0, 7),
                 Name             = "Imported from Clash Dimension",
-                Group1           = Group(s.Group1Mode, s.Group1RuleKeys, s.Group1Categories,
-                                         s.Group1ElemIds, s.Group1ElemLinkIds, s.Group1SourceLinkIds),
-                Group2           = Group(s.Group2Mode, s.Group2RuleKeys, s.Group2Categories,
-                                         s.Group2ElemIds, s.Group2ElemLinkIds, s.Group2SourceLinkIds),
+                Group1           = Group(s.Group1Mode, s.Group1RuleKeys, s.Group1Categories),
+                Group2           = Group(s.Group2Mode, s.Group2RuleKeys, s.Group2Categories),
                 ToleranceMm      = s.ToleranceMm,
                 FillStyle        = s.FillStyle,
                 FallbackColorHex = s.FallbackColorHex,
