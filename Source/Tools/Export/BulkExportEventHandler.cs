@@ -338,7 +338,7 @@ namespace LemoineTools.Tools.BulkExport
                                 Format    = "PDF",
                                 SetName   = item.Set.Name,
                                 Directory = OutputDir("PDF", item.Set),
-                                BaseName  = ItemName(doc, item, runWidth, projNumber, projName, "PDF", pushLog),
+                                BaseName  = ResolveItemFileName(doc, item, runWidth, projNumber, projName, "PDF", pushLog),
                                 MemberIds = new List<ElementId> { item.Element.Id },
                             });
                         }
@@ -353,7 +353,7 @@ namespace LemoineTools.Tools.BulkExport
                                 Format    = "PDF",
                                 SetName   = set.Name,
                                 Directory = OutputDir("PDF", set),
-                                BaseName  = SetName(doc, set, sets.Count, projNumber, projName, pushLog),
+                                BaseName  = ResolveSetFileName(doc, set, sets.Count, projNumber, projName, pushLog),
                                 MemberIds = set.Members.Select(m => m.Id).ToList(),
                             });
                         }
@@ -382,7 +382,7 @@ namespace LemoineTools.Tools.BulkExport
                                 Format    = "PDF",
                                 SetName   = "",
                                 Directory = OutputDir("PDF", null),
-                                BaseName  = RunName(doc, sets, ids.Count, projNumber, projName, pushLog),
+                                BaseName  = ResolveRunFileName(doc, sets, ids.Count, projNumber, projName, pushLog),
                                 MemberIds = ids,
                             });
                         break;
@@ -416,7 +416,7 @@ namespace LemoineTools.Tools.BulkExport
                     Format    = fmt,
                     SetName   = item.Set.Name,
                     Directory = OutputDir(fmt, item.Set),
-                    BaseName  = ItemName(doc, item, runWidth, projNumber, projName, fmt, pushLog),
+                    BaseName  = ResolveItemFileName(doc, item, runWidth, projNumber, projName, fmt, pushLog),
                     MemberIds = new List<ElementId> { item.Element.Id },
                 });
             }
@@ -465,7 +465,7 @@ namespace LemoineTools.Tools.BulkExport
         }
 
         /// <summary>Per-item filename: the item pattern, plus the set and sequence tokens.</summary>
-        private string ItemName(Document doc, RunItem item, int runWidth,
+        private string ResolveItemFileName(Document doc, RunItem item, int runWidth,
                                 string projNumber, string projName, string fmt,
                                 Action<string, string> pushLog)
         {
@@ -488,7 +488,7 @@ namespace LemoineTools.Tools.BulkExport
         }
 
         /// <summary>Combined-PDF filename for one set — the set pattern, never a member's name.</summary>
-        private string SetName(Document doc, ResolvedSet set, int setCount,
+        private string ResolveSetFileName(Document doc, ResolvedSet set, int setCount,
                                string projNumber, string projName, Action<string, string> pushLog)
         {
             var ctx = BaseContext(doc, projNumber, projName);
@@ -505,7 +505,7 @@ namespace LemoineTools.Tools.BulkExport
         }
 
         /// <summary>Filename for the whole-run single PDF.</summary>
-        private string RunName(Document doc, List<ResolvedSet> sets, int itemCount,
+        private string ResolveRunFileName(Document doc, List<ResolvedSet> sets, int itemCount,
                                string projNumber, string projName, Action<string, string> pushLog)
         {
             var ctx = BaseContext(doc, projNumber, projName);
@@ -597,7 +597,7 @@ namespace LemoineTools.Tools.BulkExport
             else if (ExistingFileAction == "Add suffix")
             {
                 int renamed = 0;
-                foreach (var o in plan.Where(p => p.AlreadyExists))
+                foreach (var o in plan.Where(p => p.AlreadyExists).ToList())
                 {
                     string bumped = NextFreeName(o);
                     if (bumped != o.BaseName)
