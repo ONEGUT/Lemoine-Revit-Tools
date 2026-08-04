@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
@@ -42,6 +43,18 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
         /// <summary>When true: after the viewports are aligned, overlay each view title on its source title.</summary>
         public bool AlignTitles { get; set; } = true;
 
+        /// <summary>
+        /// Re-reads every viewport's box after the title work and reports any that moved, telling a
+        /// box that GREW around a stationary drawing from one that was genuinely repositioned.
+        ///
+        /// <b>Off by default, and it costs two extra whole-model regenerates when on</b> — the check
+        /// has to observe the box between mutations, and there is nowhere free to do that in a run
+        /// built around four regenerates. Turn it on when investigating viewports that land slightly
+        /// off; leave it off for production runs. This is the detector that caught the ~0.14 sheet-ft
+        /// title-height drift, so it is switched off, never deleted.
+        /// </summary>
+        public bool VerifyPlacement { get; set; } = false;
+
         // ── Inheritance toggles ───────────────────────────────────────────────
         /// <summary>Trim each target grid's 2D (view-specific) extents to the source grid's endpoints.</summary>
         public bool InheritGridExtents { get; set; } = false;
@@ -62,9 +75,11 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
 
         public string GetName() => "LemoineTools.Tools.Sheets.AlignSheetViews";
 
-        // Issues raised for the target sheet currently being processed. Reset per sheet; drives
-        // whether that sheet's roll-up line reads clean or points at the detail above it.
-        private int _sheetIssues;
+        // The sheet whose issues any Log call should be attributed to. The apply path no longer
+        // processes one sheet from start to finish — it sweeps every sheet through each phase in
+        // turn — so a single counter would smear one sheet's problems across all of them. Each
+        // phase sets this before it touches a sheet and clears it after.
+        private SheetWork? _currentSheet;
 
         /// <summary>
         /// Routine "info" progress is dropped from a real run — the per-sheet roll-up stands in for
@@ -77,10 +92,18 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
         /// </summary>
         private void Log(string t, string s)
         {
-            if (s == "warn" || s == "fail") _sheetIssues++;
+            if (s == "warn" || s == "fail") { if (_currentSheet != null) _currentSheet.Issues++; }
             if (s == "info" && !PreviewOnly) return;
             PushLog?.Invoke(t, s);
         }
+
+        /// <summary>
+        /// Run-level status that must reach the user in a REAL run, not just preview. Ordinary
+        /// "info" is dropped outside preview by <see cref="Log"/>, so the phase banners and the
+        /// pre-commit notice — the lines whose entire job is to say why the tool has gone quiet —
+        /// would be discarded by the very mode they exist for. These bypass that filter.
+        /// </summary>
+        private void Status(string t) => PushLog?.Invoke(t, "pass");
 
         // Bases are treated as parallel / matching above these cosine thresholds.
         private const double ParallelDot    = 0.999;
@@ -159,10 +182,13 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                     return;
                 }
 
+                var runClock = Stopwatch.StartNew();
+
                 if (PreviewOnly)
                 {
                     Log(AppStrings.T("testing.alignSheetViews.log.previewOnly"), "info");
-                    (pass, fail, skip, _) = DriveTargets(doc, sources, targets, applyMoves: false, onProgress);
+                    var work = MatchTargets(doc, sources, targets, onProgress, 0, 50, ref pass, ref fail, ref skip);
+                    (pass, fail, skip) = PreviewAll(doc, work, onProgress, 50, 100, pass, fail, skip);
                 }
                 else
                 {
@@ -171,37 +197,64 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                         ConfigureFailures(tx);
                         tx.Start();
 
-                        List<MatchedPair> pairs;
-                        (pass, fail, skip, pairs) = DriveTargets(doc, sources, targets, applyMoves: true, onProgress);
+                        var work = MatchTargets(doc, sources, targets, onProgress, 0, 30, ref pass, ref fail, ref skip);
+                        (pass, fail, skip) = ApplyAll(doc, work, onProgress, pass, fail, skip);
 
-                        if (pairs.Count > 0 && !RunState.CancelRequested)
+                        var pairs = work.SelectMany(w => w.Pairs).ToList();
+
+                        // Opt-in drift baseline. Costs a regenerate of its own, which is why it is
+                        // not part of the default four.
+                        if (pairs.Count > 0 && VerifyPlacement)
                         {
-                            // Baseline: where the align phase actually left every viewport, before
-                            // any title work touches the box.
-                            doc.Regenerate();
+                            Regenerate(doc, "placement baseline");
                             CapturePlacement(doc, pairs);
+                        }
 
-                            if (AlignTitles)
-                            {
-                                MatchTitleLineLengths(doc, pairs);
-                                doc.Regenerate();
+                        if (pairs.Count > 0 && AlignTitles)
+                        {
+                            Status(AppStrings.T("testing.alignSheetViews.log.phaseTitles", pairs.Count));
+                            MatchTitleLineLengths(doc, pairs);
+
+                            // ── REGEN 4 — the only one the title pass needs. LabelOffset is
+                            // measured against the box's FINAL state, so every SetBoxCenter and
+                            // LabelLineLength write above must be live before GetLabelOutline is
+                            // read. The two further regenerates that used to bracket the placement
+                            // report are gone with it (see ReportPlacement).
+                            Regenerate(doc, "view titles");
+                            if (VerifyPlacement)
                                 ReportPlacement(doc, pairs, AppStrings.T("testing.alignSheetViews.log.placementPhaseLineLength"));
 
-                                // Label position last: LabelOffset is relative to the box, so it has
-                                // to be measured against the box's final state.
-                                AlignTitleOffsets(doc, pairs);
-                                doc.Regenerate();
+                            AlignTitleOffsets(doc, pairs);
+
+                            if (VerifyPlacement)
+                            {
+                                Regenerate(doc, "placement verify");
                                 ReportPlacement(doc, pairs, AppStrings.T("testing.alignSheetViews.log.placementPhaseTitlePosition"));
                             }
                         }
+                        onProgress(92, pass, fail, skip);
 
+                        // The commit is the single longest un-interruptible step of the run — one
+                        // undo record for every sheet, and SetDelayedMiniWarnings defers all of
+                        // Revit's warning processing to here. Say so before going quiet, or the run
+                        // reads as finished-then-hung.
+                        Status(AppStrings.T("testing.alignSheetViews.log.committing", work.Count));
+                        var commitClock = Stopwatch.StartNew();
                         tx.Commit();
+                        commitClock.Stop();
+                        Status(AppStrings.T("testing.alignSheetViews.log.committed", (commitClock.ElapsedMilliseconds / 1000.0).ToString("0.#")));
                     }
                 }
 
+                runClock.Stop();
+                Status(AppStrings.T("testing.alignSheetViews.log.regenSummary",
+                                    _regens, (runClock.ElapsedMilliseconds / 1000.0).ToString("0.#")));
+
                 long issues = DiagnosticsLog.IssuesSince(issues0);
                 if (issues > 0)
-                    Log(AppStrings.T("testing.alignSheetViews.log.issuesRecorded", issues), "warn");
+                    Log(AppStrings.T(DiagnosticsLog.FileLoggingEnabled
+                            ? "testing.alignSheetViews.log.issuesRecorded"
+                            : "testing.alignSheetViews.log.issuesRecordedNoLog", issues), "warn");
 
                 Log(AppStrings.T("testing.alignSheetViews.log.done", pass, fail, skip, targets.Count),
                     fail > 0 ? "warn" : "pass");
@@ -219,36 +272,68 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                 // Session-long static handler — drop the run's payload.
                 TargetSheetIds = new List<ElementId>();
                 SourceSheetIds = new List<ElementId>();
+                _currentSheet  = null;
+                _regens        = 0;
             }
         }
 
-        // ── Per-target-sheet driver ───────────────────────────────────────────
-        private (int pass, int fail, int skip, List<MatchedPair> pairs) DriveTargets(
-            Document doc, List<SourceSheet> sources, List<ViewSheet> targets,
-            bool applyMoves, Action<int, int, int, int> onProgress)
+        // ── Regeneration budget ───────────────────────────────────────────────
+        // doc.Regenerate() recomputes the WHOLE model, so the apply path is built to issue exactly
+        // FOUR of them for the entire run, however many sheets or views it covers:
+        //
+        //   1. after every scope-box / crop-size write — TryAlign reads live crop geometry
+        //   2. after every grid extent-MODE switch     — SetCurveInView validates against it
+        //   3. after every AddLeader                   — a new leader reports defaults until then
+        //   4. after every LabelLineLength write       — GetLabelOutline must see the final box
+        //
+        // Everything between them is queued and drained in bulk. The previous shape issued 2 and 3
+        // per matched VIEWPORT and 1 per sheet, so the count scaled with sheets x views: a 100-sheet
+        // batch at 4 views a sheet spent ~900 whole-model regenerations where 4 do the same work.
+        private int _regens;
+
+        private void Regenerate(Document doc, string phase)
         {
-            int p = 0, f = 0, s = 0;
+            var sw = Stopwatch.StartNew();
+            doc.Regenerate();
+            sw.Stop();
+            _regens++;
+            DiagnosticsLog.Info("AlignSheetViews", $"Regenerate #{_regens} ({phase}) took {sw.ElapsedMilliseconds} ms.");
+        }
+
+        // Progress is carved into phase bands rather than one sheet counter, because the apply path
+        // sweeps every sheet through each phase instead of finishing sheets one at a time.
+        private static int Span(int from, int to, int done, int total)
+            => total <= 0 ? to : from + (int)Math.Round((to - from) * (double)done / total);
+
+        // ── Match every target sheet to its best source ───────────────────────
+        /// <summary>
+        /// Captures each target sheet, scores it against every source, reports the gaps, and returns
+        /// the work the apply/preview phases operate on. Performs no writes and no regenerates.
+        /// </summary>
+        private List<SheetWork> MatchTargets(Document doc, List<SourceSheet> sources, List<ViewSheet> targets,
+                                             Action<int, int, int, int> onProgress,
+                                             int pctFrom, int pctTo,
+                                             ref int p, ref int f, ref int s)
+        {
+            var work  = new List<SheetWork>();
             int total = targets.Count;
-            var allPairs = new List<MatchedPair>();
 
             for (int i = 0; i < targets.Count; i++)
             {
                 if (RunState.CancelRequested)
                 {
                     Log(AppStrings.T("testing.alignSheetViews.log.stoppedByUser", i, total), "warn");
-                    break;   // falls through to caller's commit
+                    break;
                 }
 
                 var sheet = targets[i];
                 var label = $"{sheet.SheetNumber} - {sheet.Name}";
-                _sheetIssues = 0;
-                int alignedHere = 0;
                 var targetEntries = CaptureSheet(doc, sheet);
                 if (targetEntries.Count == 0)
                 {
                     Log(AppStrings.T("testing.alignSheetViews.log.noPlaceableViews", label), "fail");
                     f++;
-                    onProgress(Pct(i + 1, total), p, f, s);
+                    onProgress(Span(pctFrom, pctTo, i + 1, total), p, f, s);
                     continue;
                 }
 
@@ -271,9 +356,14 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                 {
                     Log(AppStrings.T("testing.alignSheetViews.log.noCounterpart", label, sources.Count), "fail");
                     f++;
-                    onProgress(Pct(i + 1, total), p, f, s);
+                    onProgress(Span(pctFrom, pctTo, i + 1, total), p, f, s);
                     continue;
                 }
+
+                var sw = new SheetWork(sheet, label, bestSource, bestMatch.Pairs);
+                sw.Missing.AddRange(bestMatch.Missing);
+                sw.TargetEntries.AddRange(targetEntries);
+                _currentSheet = sw;
 
                 Log(AppStrings.T("testing.alignSheetViews.log.bestReference", label, bestSource.Label, bestMatch.Pairs.Count, bestSource.Entries.Count), "info");
                 if (sources.Count > 1)
@@ -314,84 +404,230 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                         Log(AppStrings.T("testing.alignSheetViews.log.rotated", label, pr.Target.ViewName, pr.Target.Rotation), "warn");
                 }
 
-                if (!applyMoves)
+                _currentSheet = null;
+                work.Add(sw);
+                onProgress(Span(pctFrom, pctTo, i + 1, total), p, f, s);
+            }
+
+            return work;
+        }
+
+        // ── Preview driver ────────────────────────────────────────────────────
+        /// <summary>Read-only report for every matched sheet. Writes nothing and never regenerates,
+        /// so it needs none of the apply path's phase sequencing — but it keeps its own grid report,
+        /// which is the reason the mode exists.</summary>
+        private (int pass, int fail, int skip) PreviewAll(
+            Document doc, List<SheetWork> work, Action<int, int, int, int> onProgress,
+            int pctFrom, int pctTo, int p, int f, int s)
+        {
+            var srcGridCache = new Dictionary<long, List<Grid>>();
+            var discard      = new List<GridWrite>();
+
+            for (int i = 0; i < work.Count; i++)
+            {
+                if (RunState.CancelRequested)
                 {
-                    foreach (var pr in bestMatch.Pairs)
-                    {
-                        Log(AppStrings.T("testing.alignSheetViews.log.wouldAlign", label, pr.Target.ViewName, pr.Source.ViewName, (AlignTitles ? AppStrings.T("testing.alignSheetViews.log.wouldAlignTitle") : AppStrings.T("testing.alignSheetViews.log.wouldAlignEnd"))), "info");
-                        DiagnosePair(doc, pr, label);
-                        // Read-only grid report: preview's job is to say whether the drawing or the
-                        // tool is at fault, and it used to be silent on grids entirely.
-                        if (InheritGridExtents) TrimGrids(doc, pr, label, apply: false);
-                    }
-                    foreach (var miss in bestMatch.Missing)
-                        DiagnoseMissing(miss, targetEntries, label);
-                    s += bestMatch.Pairs.Count;
-                    onProgress(Pct(i + 1, total), p, f, s);
-                    continue;
+                    Log(AppStrings.T("testing.alignSheetViews.log.stoppedByUser", i, work.Count), "warn");
+                    break;
                 }
 
-                // ── Apply ─────────────────────────────────────────────────────
-                // Phase A — geometry-affecting inheritance FIRST (scope box rewrites the crop box).
-                bool geomChanged = false;
-                var inheritedScope = new HashSet<long>();
-                if (InheritScopeBox)
+                var sw = work[i];
+                _currentSheet = sw;
+                foreach (var pr in sw.Pairs)
                 {
-                    int assigned = 0;
-                    foreach (var pr in bestMatch.Pairs)
+                    Log(AppStrings.T("testing.alignSheetViews.log.wouldAlign", sw.Label, pr.Target.ViewName, pr.Source.ViewName, (AlignTitles ? AppStrings.T("testing.alignSheetViews.log.wouldAlignTitle") : AppStrings.T("testing.alignSheetViews.log.wouldAlignEnd"))), "info");
+                    DiagnosePair(doc, pr, sw.Label);
+
+                    // Read-only grid report: preview's job is to say whether the drawing or the
+                    // tool is at fault, and it used to be silent on grids entirely.
+                    if (InheritGridExtents)
                     {
-                        if (pr.Source.ScopeBoxId == ElementId.InvalidElementId) continue;
-                        if (AssignScopeBox(doc, pr, label))
+                        var gp = PrepareGrids(doc, pr, sw.Label, apply: false, sw, srcGridCache, discard);
+                        if (gp != null)
                         {
-                            inheritedScope.Add(pr.Target.ViewId.Value);
-                            geomChanged = true;
-                            assigned++;
+                            PrepareElbows(gp, apply: false, new List<ElbowWrite>());
+                            ReportGridTally(gp, apply: false);
                         }
                     }
-                    if (assigned > 0) Log(AppStrings.T("testing.alignSheetViews.log.scopeBoxApplied", label, assigned), "info");
                 }
-                if (InheritCropSize)
+                foreach (var miss in sw.Missing)
+                    DiagnoseMissing(miss, sw.TargetEntries, sw.Label);
+
+                s += sw.Pairs.Count;
+                _currentSheet = null;
+                onProgress(Span(pctFrom, pctTo, i + 1, work.Count), p, f, s);
+            }
+
+            return (p, f, s);
+        }
+
+        // ── Apply driver — run-wide phases, four regenerates total ────────────
+        /// <summary>
+        /// Sweeps every matched sheet through each phase in turn rather than finishing one sheet at
+        /// a time, so each of the four regenerates serves the whole run.
+        ///
+        /// Phase order is load-bearing, not stylistic:
+        /// <list type="number">
+        /// <item>Scope box + crop size — rewrites the crop the alignment maths reads.</item>
+        /// <item><b>REGEN</b> — makes those crops live.</item>
+        /// <item>Align + crop visibility — SetBoxCenter needs no regenerate of its own.</item>
+        /// <item>Grid prepare — reconcile, bubbles, extent-MODE switches; queues the curve writes.</item>
+        /// <item><b>REGEN</b> — makes the mode switches live so the curves validate against them.</item>
+        /// <item>Curve writes.</item>
+        /// <item>Elbow decisions — MUST follow the curve writes: the elbow delta is measured off the
+        ///       trimmed extent, so deciding earlier hangs every elbow off the wrong end. Creates
+        ///       leaders and clears unwanted ones.</item>
+        /// <item><b>REGEN</b> — new leaders report default geometry until this.</item>
+        /// <item>Elbow positioning, then the per-pair grid tallies and per-sheet roll-ups.</item>
+        /// </list>
+        ///
+        /// CANCELLATION: a cancel stops the COLLECTING phases but never the draining ones. Work
+        /// already queued is always flushed and committed, so "work so far preserved" still holds —
+        /// a half-applied extent-mode switch with no curve behind it would be worse than either
+        /// finishing or not starting.
+        /// </summary>
+        private (int pass, int fail, int skip) ApplyAll(
+            Document doc, List<SheetWork> work, Action<int, int, int, int> onProgress,
+            int p, int f, int s)
+        {
+            var srcGridCache = new Dictionary<long, List<Grid>>();
+            var gridWrites   = new List<GridWrite>();
+            var elbowWrites  = new List<ElbowWrite>();
+            var gridPasses   = new List<GridPass>();
+
+            // ── Phase 1 — geometry-affecting inheritance, every sheet ─────────
+            bool geomChanged = false;
+            var inheritedScope = new HashSet<long>();
+            if (InheritScopeBox || InheritCropSize)
+            {
+                Status(AppStrings.T("testing.alignSheetViews.log.phaseInherit", work.Count));
+                for (int i = 0; i < work.Count; i++)
                 {
-                    foreach (var pr in bestMatch.Pairs)
-                        if (InheritCropGeometry(doc, pr, inheritedScope.Contains(pr.Target.ViewId.Value), label))
-                            geomChanged = true;
+                    if (RunState.CancelRequested) { Log(AppStrings.T("testing.alignSheetViews.log.stoppedByUser", i, work.Count), "warn"); break; }
+                    var sw = work[i];
+                    _currentSheet = sw;
+
+                    if (InheritScopeBox)
+                    {
+                        int assigned = 0;
+                        foreach (var pr in sw.Pairs)
+                        {
+                            if (pr.Source.ScopeBoxId == ElementId.InvalidElementId) continue;
+                            if (AssignScopeBox(doc, pr, sw.Label))
+                            {
+                                inheritedScope.Add(pr.Target.ViewId.Value);
+                                geomChanged = true;
+                                assigned++;
+                            }
+                        }
+                        if (assigned > 0) Log(AppStrings.T("testing.alignSheetViews.log.scopeBoxApplied", sw.Label, assigned), "info");
+                    }
+                    if (InheritCropSize)
+                    {
+                        foreach (var pr in sw.Pairs)
+                            if (InheritCropGeometry(doc, pr, inheritedScope.Contains(pr.Target.ViewId.Value), sw.Label))
+                                geomChanged = true;
+                    }
+
+                    _currentSheet = null;
+                    onProgress(Span(30, 45, i + 1, work.Count), p, f, s);
                 }
+            }
 
-                // One regen per target sheet so the moved crop boxes report live geometry before align.
-                if (geomChanged) doc.Regenerate();
+            // ── REGEN 1 — the moved crop boxes must report live geometry before align ──
+            if (geomChanged) Regenerate(doc, "crop geometry");
 
-                // Phase B — align off the (now live) crop geometry.
-                foreach (var pr in bestMatch.Pairs)
+            // ── Phase 2 — align off the now-live crop geometry, every sheet ───
+            Status(AppStrings.T("testing.alignSheetViews.log.phaseAlign", work.Count));
+            for (int i = 0; i < work.Count; i++)
+            {
+                if (RunState.CancelRequested) { Log(AppStrings.T("testing.alignSheetViews.log.stoppedByUser", i, work.Count), "warn"); break; }
+                var sw = work[i];
+                _currentSheet = sw;
+
+                foreach (var pr in sw.Pairs)
                 {
                     if (TryAlign(doc, pr))
                     {
-                        Log(AppStrings.T("testing.alignSheetViews.log.aligned", label, pr.Target.ViewName, pr.Source.ViewName), "info");
-                        allPairs.Add(pr);
-                        alignedHere++;
+                        Log(AppStrings.T("testing.alignSheetViews.log.aligned", sw.Label, pr.Target.ViewName, pr.Source.ViewName), "info");
+                        sw.Aligned++;
                         p++;
                     }
                     else
                     {
-                        Log(AppStrings.T("testing.alignSheetViews.log.failedMove", label, pr.Target.ViewName), "fail");
+                        Log(AppStrings.T("testing.alignSheetViews.log.failedMove", sw.Label, pr.Target.ViewName), "fail");
                         f++;
                     }
                 }
 
-                // Phase C — view-only inheritance that does not move the viewport.
-                if (InheritGridExtents)    foreach (var pr in bestMatch.Pairs) TrimGrids(doc, pr, label, apply: true);
-                if (InheritCropVisibility) foreach (var pr in bestMatch.Pairs) SetCropVisibility(doc, pr, label);
+                // Neither of these moves the viewport or needs a regenerate.
+                if (InheritCropVisibility)
+                    foreach (var pr in sw.Pairs) SetCropVisibility(doc, pr, sw.Label);
 
-                // One line per sheet. A clean sheet says so and nothing else; a sheet with problems
-                // points at the detail already printed above it rather than repeating it.
-                Log(_sheetIssues == 0
-                        ? AppStrings.T("testing.alignSheetViews.log.sheetOk", label, alignedHere)
-                        : AppStrings.T("testing.alignSheetViews.log.sheetWithIssues", label, alignedHere, _sheetIssues),
-                    _sheetIssues == 0 ? "pass" : "warn");
-
-                onProgress(Pct(i + 1, total), p, f, s);
+                _currentSheet = null;
+                onProgress(Span(45, 60, i + 1, work.Count), p, f, s);
             }
 
-            return (p, f, s, allPairs);
+            // ── Phase 3 — grid prepare: reconcile, bubbles, extent-mode switches ──
+            if (InheritGridExtents)
+            {
+                Status(AppStrings.T("testing.alignSheetViews.log.phaseGrids", work.Count));
+                for (int i = 0; i < work.Count; i++)
+                {
+                    if (RunState.CancelRequested) { Log(AppStrings.T("testing.alignSheetViews.log.stoppedByUser", i, work.Count), "warn"); break; }
+                    var sw = work[i];
+                    _currentSheet = sw;
+                    foreach (var pr in sw.Pairs)
+                    {
+                        var gp = PrepareGrids(doc, pr, sw.Label, apply: true, sw, srcGridCache, gridWrites);
+                        if (gp != null) gridPasses.Add(gp);
+                    }
+                    _currentSheet = null;
+                    onProgress(Span(60, 75, i + 1, work.Count), p, f, s);
+                }
+
+                // ── REGEN 2 — mode switches live before any curve is validated or written ──
+                if (gridWrites.Count > 0)
+                {
+                    Regenerate(doc, "grid extent modes");
+                    WriteGridCurves(gridWrites);
+                }
+
+                // ── Phase 4 — elbows, only now that the extents are final ─────
+                bool created = false;
+                foreach (var gp in gridPasses)
+                {
+                    _currentSheet = gp.Sheet;
+                    created |= PrepareElbows(gp, apply: true, elbowWrites);
+                    _currentSheet = null;
+                }
+
+                // ── REGEN 3 — a new leader reports its defaults until this ────
+                if (created) Regenerate(doc, "grid leaders");
+                if (elbowWrites.Count > 0) PositionElbows(elbowWrites);
+
+                // Grid tallies last, so Changed/Rejected reflect the writes that actually landed.
+                foreach (var gp in gridPasses)
+                {
+                    _currentSheet = gp.Sheet;
+                    ReportGridTally(gp, apply: true);
+                    _currentSheet = null;
+                }
+                onProgress(85, p, f, s);
+            }
+
+            // ── Per-sheet roll-ups, in sheet order ────────────────────────────
+            // _currentSheet stays null here on purpose: the roll-up's own "warn" tone would
+            // otherwise increment the very count it is reporting.
+            foreach (var sw in work)
+            {
+                Log(sw.Issues == 0
+                        ? AppStrings.T("testing.alignSheetViews.log.sheetOk", sw.Label, sw.Aligned)
+                        : AppStrings.T("testing.alignSheetViews.log.sheetWithIssues", sw.Label, sw.Aligned, sw.Issues),
+                    sw.Issues == 0 ? "pass" : "warn");
+            }
+
+            return (p, f, s);
         }
 
         // ── Inheritance: scope box (applied before alignment) ─────────────────
@@ -552,38 +788,54 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
         /// verdict still runs and is reported, which is how preview mode answers "is this the
         /// drawing or the tool?" without touching the model.
         /// </summary>
-        private void TrimGrids(Document doc, MatchedPair pr, string label, bool apply)
+        private GridPass? PrepareGrids(Document doc, MatchedPair pr, string label, bool apply,
+                                       SheetWork? sheet,
+                                       Dictionary<long, List<Grid>> srcGridCache,
+                                       List<GridWrite> writes)
         {
             try
             {
-                if (!(doc.GetElement(pr.Source.ViewId) is View sv)) return;
-                if (!(doc.GetElement(pr.Target.ViewId) is View tv)) return;
+                if (!(doc.GetElement(pr.Source.ViewId) is View sv)) return null;
+                if (!(doc.GetElement(pr.Target.ViewId) is View tv)) return null;
 
-                var srcGrids = new FilteredElementCollector(doc, sv.Id)
-                    .OfClass(typeof(Grid))
-                    .Cast<Grid>()
-                    .ToList();
+                // A source view is read by every target that matched it, so its grid list is
+                // collected once per run rather than once per pair. The cache is owned by the
+                // driver and dropped when the run returns — it must never become a field on this
+                // session-long static handler, which would pin live elements for the session.
+                if (!srcGridCache.TryGetValue(sv.Id.Value, out var srcGrids))
+                {
+                    srcGrids = new FilteredElementCollector(doc, sv.Id)
+                        .OfClass(typeof(Grid))
+                        .Cast<Grid>()
+                        .ToList();
+                    srcGridCache[sv.Id.Value] = srcGrids;
+                }
 
                 if (srcGrids.Count == 0)
                 {
                     Log(AppStrings.T("testing.alignSheetViews.log.noGrids", label, pr.Source.ViewName), "info");
-                    return;
+                    return null;
                 }
 
+                var pass = new GridPass(pr, label, sv, tv, sheet);
+
                 // A grid the target shows and the source does not can never be matched. Name it
-                // rather than leaving a difference the user has to spot on the plot.
+                // rather than leaving a difference the user has to spot on the plot. Target-scoped,
+                // so unlike the source list this genuinely is per pair and cannot be cached.
                 var srcIds = new HashSet<long>(srcGrids.Select(g => g.Id.Value));
-                int targetOnly = new FilteredElementCollector(doc, tv.Id)
+                pass.TargetOnly = new FilteredElementCollector(doc, tv.Id)
                     .OfClass(typeof(Grid))
                     .Cast<Grid>()
                     .Count(g => !srcIds.Contains(g.Id.Value));
 
-                // Each outcome is counted separately — a bare "skipped" number cannot be acted on.
-                var t       = new GridTally();
-                var writes  = new List<GridWrite>();
-                var visible = new List<Grid>();   // fed to the elbow pass once extents are final
+                GridTally t = pass.Tally;
 
-                // ── Pass 1 — read the source, decide, switch the target's extent mode ──
+                // Per-view settings hoisted out of the per-grid loop. FilterCatches is deliberately
+                // NOT hoisted with them: it asks whether the filter's own rules select THIS grid,
+                // which is what stops a filter that merely names the Grids category from being
+                // blamed for hiding a grid it does not match.
+                var ctx = BuildVisibilityContext(doc, sv, tv, label, pr.Target.ViewName);
+
                 foreach (var g in srcGrids)
                 {
                     try
@@ -593,15 +845,13 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                         // mistake as trusting IsCurveValidInView. Reconcile whatever DIFFERS between
                         // the two views, then do the work regardless and let Revit's own exception be
                         // the verdict if it really cannot be done.
-                        ReconcileVisibility(doc, g, sv, tv, apply, t, label, pr);
+                        ReconcileVisibility(doc, g, sv, tv, apply, t, label, pr, ctx);
 
                         // Revit refuses EVERY datum call for a grid it will not display here —
                         // extent type, curves, leaders, the lot — so carrying on raised the same
                         // exception from a dozen call sites for one root cause. Now the reconcile
                         // gets its chance to fix whatever differs from the source, and if Revit
                         // still says no after that, one refusal settles the whole grid.
-                        // This is not the old CanBeVisibleInView veto: that ran BEFORE any repair
-                        // and skipped grids the user could plainly see.
                         if (!CanBeVisible(g, tv))
                         {
                             t.NotShowable++;
@@ -610,12 +860,11 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                             continue;
                         }
 
-                        visible.Add(g);
+                        pass.Visible.Add(g);
 
                         // Bubbles are a property of their own, independent of the extents, so they
                         // are matched for EVERY visible grid — before the curve work and regardless
-                        // of how it turns out. Doing this only on the success paths is what made
-                        // heads move on some grids and not others in the same view.
+                        // of how it turns out.
                         MirrorBubbles(g, sv, tv, apply, t);
 
                         // Source on model extents: match it by putting the target back on model too.
@@ -636,12 +885,8 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                                 $"Grid {g.Id.Value} ('{g.Name}') claims view-specific extents in source view {sv.Id.Value} but returned no curve — not trimmed.");
                             continue;
                         }
-                        // SetCurveInView takes a single curve, so a multi-segment grid can only carry
-                        // its first segment across. Say so rather than dropping the rest silently.
                         if (curves.Count > 1) t.MultiSegment++;
 
-                        // Revit rejects an unbound curve outright ("the curve is unbound or not
-                        // coincident"), so catch it here where it can be named.
                         if (curves[0] is Line sl && !sl.IsBound)
                         {
                             t.Unbound++;
@@ -678,7 +923,7 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
 
                         g.SetDatumExtentType(DatumEnds.End0, tv, DatumExtentType.ViewSpecific);
                         g.SetDatumExtentType(DatumEnds.End1, tv, DatumExtentType.ViewSpecific);
-                        writes.Add(new GridWrite(g, c, m0, m1));
+                        writes.Add(new GridWrite(g, c, m0, m1, pass));
                     }
                     catch (Exception ex)
                     {
@@ -687,52 +932,61 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                     }
                 }
 
-                // One regen for the whole view so the mode switches are live before any curve is
-                // written — never per grid (a regen recomputes the entire model).
-                if (writes.Count > 0) doc.Regenerate();
-
-                // ── Pass 2 — write the curves ──
-                foreach (var w in writes)
-                {
-                    try
-                    {
-                        if (!w.Grid.IsCurveValidInView(DatumExtentType.ViewSpecific, tv, w.Curve))
-                        {
-                            // Advisory, not authoritative: attempt the write anyway and let the throw
-                            // (if any) be the verdict, so a false negative can never silently skip.
-                            DiagnosticsLog.Warn("AlignSheetViews",
-                                $"Grid {w.Grid.Id.Value} ('{w.Grid.Name}') reported its source curve invalid in view {tv.Id.Value} — writing anyway.");
-                        }
-                        w.Grid.SetCurveInView(DatumExtentType.ViewSpecific, tv, w.Curve);
-                        t.Changed++;
-                    }
-                    catch (Exception ex)
-                    {
-                        t.Rejected++;
-                        DiagnosticsLog.Swallowed($"AlignSheetViews: set curve for grid {w.Grid.Id.Value} in view {tv.Id.Value}", ex);
-                        // A failed restore leaves the end in 2D mode with no curve written — a
-                        // half-change the user has to know about, not just a diagnostics entry.
-                        if (!RestoreEnds(w, tv))
-                            Log(AppStrings.T("testing.alignSheetViews.log.gridsRestoreFailed", label, pr.Target.ViewName, w.Grid.Name), "warn");
-                    }
-                }
-
-                // ── Pass 3 — leader elbows, once the extents are final ──
-                // An elbow hangs off the grid end, so it can only be placed after the curve write.
-                MirrorElbows(doc, visible, sv, tv, apply, t, label, pr);
-
-                ReportGridTally(t, targetOnly, pr, label, apply);
+                return pass;
             }
             catch (Exception ex)
             {
                 Log(AppStrings.T("testing.alignSheetViews.log.couldNotTrimGrids", label, pr.Target.ViewName), "warn");
                 DiagnosticsLog.Swallowed($"AlignSheetViews: trim grids on view {pr.Target.ViewId.Value}", ex);
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Drains every queued curve write, from every pair in the run. Must run after ONE
+        /// regenerate has made the extent-mode switches recorded in <see cref="PrepareGrids"/>
+        /// live — that regenerate is the reason these writes are queued rather than issued inline.
+        /// Each write carries its own target view, so nothing here depends on call ordering.
+        /// </summary>
+        private void WriteGridCurves(List<GridWrite> writes)
+        {
+            foreach (var w in writes)
+            {
+                try
+                {
+                    View tv = w.Pass.TargetView;
+                    if (!w.Grid.IsCurveValidInView(DatumExtentType.ViewSpecific, tv, w.Curve))
+                    {
+                        // Advisory, not authoritative: attempt the write anyway and let the throw
+                        // (if any) be the verdict, so a false negative can never silently skip.
+                        DiagnosticsLog.Warn("AlignSheetViews",
+                            $"Grid {w.Grid.Id.Value} ('{w.Grid.Name}') reported its source curve invalid in view {tv.Id.Value} — writing anyway.");
+                    }
+                    w.Grid.SetCurveInView(DatumExtentType.ViewSpecific, tv, w.Curve);
+                    w.Pass.Tally.Changed++;
+                }
+                catch (Exception ex)
+                {
+                    w.Pass.Tally.Rejected++;
+                    DiagnosticsLog.Swallowed($"AlignSheetViews: set curve for grid {w.Grid.Id.Value} in view {w.Pass.TargetView.Id.Value}", ex);
+                    // A failed restore leaves the end in 2D mode with no curve written — a
+                    // half-change the user has to know about, not just a diagnostics entry.
+                    _currentSheet = w.Pass.Sheet;
+                    if (!RestoreEnds(w, w.Pass.TargetView))
+                        Log(AppStrings.T("testing.alignSheetViews.log.gridsRestoreFailed", w.Pass.Label, w.Pass.Pair.Target.ViewName, w.Grid.Name), "warn");
+                    _currentSheet = null;
+                }
             }
         }
 
         /// <summary>Every outcome gets a line — a zero result always names its reason.</summary>
-        private void ReportGridTally(GridTally t, int targetOnly, MatchedPair pr, string label, bool apply)
+        private void ReportGridTally(GridPass gp, bool apply)
         {
+            GridTally   t          = gp.Tally;
+            int         targetOnly = gp.TargetOnly;
+            MatchedPair pr         = gp.Pair;
+            string      label      = gp.Label;
+
             Log(AppStrings.T(apply ? "testing.alignSheetViews.log.gridsResult"
                                    : "testing.alignSheetViews.log.gridsWouldResult",
                              label, pr.Target.ViewName, t.Changed, t.AlreadyMatching),
@@ -794,7 +1048,7 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
         /// names, so clearing it would silently reveal everything else it hides.
         /// </summary>
         private void ReconcileVisibility(Document doc, Grid g, View sv, View tv, bool apply,
-                                         GridTally t, string label, MatchedPair pr)
+                                         GridTally t, string label, MatchedPair pr, VisibilityContext ctx)
         {
             var cleared  = new List<string>();
             var blockers = new List<string>();
@@ -808,7 +1062,9 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                 }
 
                 // 2 — Grids category switched off in the target but not the source.
-                var cat = Category.GetCategory(doc, BuiltInCategory.OST_Grids);
+                // The lookup is hoisted; the STATE test stays live, because clearing it for the
+                // first grid must stop the rest of the grids reporting a cause already fixed.
+                var cat = ctx.GridCategory;
                 if (cat != null && tv.GetCategoryHidden(cat.Id) && !sv.GetCategoryHidden(cat.Id))
                 {
                     cleared.Add(AppStrings.T("testing.alignSheetViews.log.gridCauseCategory"));
@@ -816,7 +1072,7 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                 }
 
                 // 3 — the grid's workset hidden in the target but not the source.
-                if (doc.IsWorkshared)
+                if (ctx.Workshared)
                 {
                     WorksetId ws = g.WorksetId;
                     if (ws != null
@@ -829,12 +1085,13 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                 }
 
                 // 4 — a filter that hides THIS grid in the target and does not do so in the source.
-                foreach (var fid in tv.GetFilters())
+                // Which filters are even candidates is a property of the view pair, so that part is
+                // hoisted into ctx. Whether a candidate catches THIS grid is not, and stays here:
+                // matching through the filter's own rules is what stops a filter that merely names
+                // the Grids category from being blamed for a grid its rules do not select.
+                foreach (var pf in ctx.CandidateFilters)
                 {
-                    if (tv.GetFilterVisibility(fid)) continue;
-                    if (!(doc.GetElement(fid) is ParameterFilterElement pf)) continue;
                     if (!FilterCatches(pf, g)) continue;
-                    if (SourceHidesToo(sv, fid)) continue;   // identical on both — cannot be the cause
                     blockers.Add(AppStrings.T("testing.alignSheetViews.log.gridCauseFilter", pf.Name));
                 }
             }
@@ -857,6 +1114,48 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                 Log(AppStrings.T("testing.alignSheetViews.log.gridBlocked",
                                  label, pr.Target.ViewName, g.Name, string.Join(", ", blockers)), "warn");
             }
+        }
+
+        // ── Per-view-pair visibility state, hoisted out of the per-grid loop ──
+        // Only genuinely view-level work belongs here. Anything whose answer changes as grids are
+        // reconciled (a category or workset this run un-hides) must stay a live per-grid test, or
+        // every grid would report a cause the first grid already cleared.
+        private sealed class VisibilityContext
+        {
+            public Category? GridCategory { get; set; }
+            public bool      Workshared   { get; set; }
+            /// <summary>Filters on the target view that hide it there and do NOT hide it identically
+            /// on the source. Still has to be tested against each grid's own rules.</summary>
+            public List<ParameterFilterElement> CandidateFilters { get; } = new List<ParameterFilterElement>();
+        }
+
+        private VisibilityContext BuildVisibilityContext(Document doc, View sv, View tv, string label, string targetViewName)
+        {
+            var ctx = new VisibilityContext();
+            try
+            {
+                ctx.GridCategory = Category.GetCategory(doc, BuiltInCategory.OST_Grids);
+                ctx.Workshared   = doc.IsWorkshared;
+
+                foreach (var fid in tv.GetFilters())
+                {
+                    if (tv.GetFilterVisibility(fid)) continue;
+                    if (!(doc.GetElement(fid) is ParameterFilterElement pf)) continue;
+                    if (SourceHidesToo(sv, fid)) continue;   // identical on both — cannot be the cause
+                    ctx.CandidateFilters.Add(pf);
+                }
+            }
+            catch (Exception ex)
+            {
+                // A partial context degrades the CAUSE REPORT, never the trim itself, so the run
+                // continues — but silently returning an empty one would read as "nothing is hiding
+                // these grids", which is the false-clean answer this tool exists to avoid. Said out
+                // loud in the run log, not just diagnostics, because a diagnostics-only note is
+                // invisible whenever the log file is switched off.
+                Log(AppStrings.T("testing.alignSheetViews.log.gridsCauseUnavailable", label, targetViewName), "warn");
+                DiagnosticsLog.Swallowed($"AlignSheetViews: build visibility context for view {tv.Id.Value}", ex);
+            }
+            return ctx;
         }
 
         /// <summary>True when the filter's own rules actually select this grid. A filter that names
@@ -1007,28 +1306,33 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
         }
 
         /// <summary>
-        /// Copies each end's leader "elbow" — the jog dragged onto a grid head so it steps aside from
-        /// its neighbours — from the source view to the target.
+        /// Decides each end's leader "elbow" — the jog dragged onto a grid head so it steps aside
+        /// from its neighbours — matching the target view to the source.
         ///
         /// Matched in BOTH directions: a source end with no elbow has any elbow on the target
         /// cleared, so the two views agree instead of the target keeping jogs the source does not
         /// have. Elbow and End are absolute model points, so they are shifted onto the target view's
         /// plane exactly as the extent curve is.
         ///
-        /// Split into create-then-position around a single regenerate, for two reasons. A leader that
-        /// has just been added reports its DEFAULT geometry until the document is regenerated, so
-        /// positioning it in the same breath writes onto stale state and the elbow snaps back to
-        /// where Revit first put it. And mutating a <see cref="Leader"/> is not enough on its own —
-        /// <c>SetLeader</c> is what commits it back onto the datum, which is why
-        /// <c>IsLeaderValid</c> takes a Leader as well.
+        /// MUST RUN AFTER THE CURVE WRITES. An elbow hangs off the grid end, and the delta is
+        /// computed from <see cref="DisplayedCurve"/> in the target view — which reports the
+        /// trimmed extent only once <see cref="WriteGridCurves"/> has written it. Deciding elbows
+        /// any earlier reads a view already switched to ViewSpecific but carrying no view-specific
+        /// curve yet, and hangs every elbow off the wrong end.
+        ///
+        /// This phase WRITES to the model: <c>AddLeader</c> creates the leaders it will later
+        /// position, and a cleared elbow is committed here. Positioning is deferred to
+        /// <see cref="PositionElbows"/> because a leader reports its DEFAULT geometry until the
+        /// document is regenerated — position it in the same breath and the elbow snaps back.
+        /// Returns true when any leader was created, i.e. when that regenerate is actually needed.
         /// </summary>
-        private void MirrorElbows(Document doc, List<Grid> visible, View sv, View tv, bool apply,
-                                  GridTally t, string label, MatchedPair pr)
+        private bool PrepareElbows(GridPass pass, bool apply, List<ElbowWrite> pending)
         {
-            var pending = new List<(Grid G, DatumEnds End, XYZ Elbow, XYZ Tip)>();
+            View sv = pass.SourceView, tv = pass.TargetView;
+            GridTally t = pass.Tally;
             bool created = false;
 
-            foreach (var g in visible)
+            foreach (var g in pass.Visible)
             {
                 XYZ delta = LeaderPlaneDelta(g, sv, tv);
 
@@ -1054,7 +1358,7 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                             catch (Exception rex)
                             {
                                 Log(AppStrings.T("testing.alignSheetViews.log.gridElbowStuck",
-                                                 label, pr.Target.ViewName, g.Name), "warn");
+                                                 pass.Label, pass.Pair.Target.ViewName, g.Name), "warn");
                                 DiagnosticsLog.Swallowed($"AlignSheetViews: clear leader {end} of grid {g.Id.Value} in view {tv.Id.Value}", rex);
                             }
                             continue;
@@ -1075,7 +1379,7 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                         if (!apply) continue;
 
                         if (tgtLeader == null) { g.AddLeader(end, tv); created = true; }
-                        pending.Add((g, end, elbow, tip));
+                        pending.Add(new ElbowWrite(g, end, elbow, tip, pass));
                     }
                     catch (Exception ex)
                     {
@@ -1084,34 +1388,43 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                 }
             }
 
-            if (pending.Count == 0) return;
+            return created;
+        }
 
-            // One regen for the whole view, never per elbow.
-            if (created) doc.Regenerate();
-
-            foreach (var (g, end, elbow, tip) in pending)
+        /// <summary>
+        /// Writes every queued elbow position, from every pair in the run. Runs after the single
+        /// regenerate that makes freshly added leaders report real geometry rather than their
+        /// defaults. Mutating a <see cref="Leader"/> does not commit it — <c>SetLeader</c> does,
+        /// which is why <c>IsLeaderValid</c> takes a Leader argument too.
+        /// </summary>
+        private void PositionElbows(List<ElbowWrite> pending)
+        {
+            foreach (var w in pending)
             {
                 try
                 {
-                    Leader? lead = TryGetLeader(g, end, tv);
+                    View tv = w.Pass.TargetView;
+                    Leader? lead = TryGetLeader(w.Grid, w.End, tv);
                     if (lead == null) continue;
 
-                    lead.Elbow = elbow;
-                    lead.End   = tip;
+                    lead.Elbow = w.Elbow;
+                    lead.End   = w.Tip;
 
                     // Advisory only — attempt the write and let a throw be the verdict, the same way
                     // IsCurveValidInView is treated.
-                    if (!g.IsLeaderValid(end, tv, lead))
+                    if (!w.Grid.IsLeaderValid(w.End, tv, lead))
                         DiagnosticsLog.Warn("AlignSheetViews",
-                            $"Grid {g.Id.Value} ('{g.Name}') reported its source elbow invalid at {end} in view {tv.Id.Value} — writing anyway.");
+                            $"Grid {w.Grid.Id.Value} ('{w.Grid.Name}') reported its source elbow invalid at {w.End} in view {tv.Id.Value} — writing anyway.");
 
-                    g.SetLeader(end, tv, lead);
+                    w.Grid.SetLeader(w.End, tv, lead);
                 }
                 catch (Exception ex)
                 {
+                    _currentSheet = w.Pass.Sheet;
                     Log(AppStrings.T("testing.alignSheetViews.log.gridElbowRejected",
-                                     label, pr.Target.ViewName, g.Name), "warn");
-                    DiagnosticsLog.Swallowed($"AlignSheetViews: position elbow {end} of grid {g.Id.Value} in view {tv.Id.Value}", ex);
+                                     w.Pass.Label, w.Pass.Pair.Target.ViewName, w.Grid.Name), "warn");
+                    _currentSheet = null;
+                    DiagnosticsLog.Swallowed($"AlignSheetViews: position elbow {w.End} of grid {w.Grid.Id.Value} in view {w.Pass.TargetView.Id.Value}", ex);
                 }
             }
         }
@@ -1983,16 +2296,79 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
         }
 
         // ── A queued grid curve write, with the extent modes to restore if it is rejected ─
+        // Carries its OWN target view, pair, label and tally. These used to be implicit in the
+        // enclosing per-pair scope, which was safe only while the write happened in that same
+        // scope. Now that writes from every pair in the run are drained from one list, a write
+        // that could not name its own view would land in whichever view happened to be in scope —
+        // wrong extents in the wrong view, and worst exactly where it is most common: one grid
+        // visible in several target views on the same sheet.
         private sealed class GridWrite
         {
-            public GridWrite(Grid grid, Curve curve, DatumExtentType mode0, DatumExtentType mode1)
+            public GridWrite(Grid grid, Curve curve, DatumExtentType mode0, DatumExtentType mode1, GridPass pass)
             {
-                Grid = grid; Curve = curve; Mode0 = mode0; Mode1 = mode1;
+                Grid = grid; Curve = curve; Mode0 = mode0; Mode1 = mode1; Pass = pass;
             }
             public Grid            Grid  { get; }
             public Curve           Curve { get; }
             public DatumExtentType Mode0 { get; }
             public DatumExtentType Mode1 { get; }
+            public GridPass        Pass  { get; }
+        }
+
+        // ── A queued leader-elbow position, scoped the same way and for the same reason ─
+        private sealed class ElbowWrite
+        {
+            public ElbowWrite(Grid grid, DatumEnds end, XYZ elbow, XYZ tip, GridPass pass)
+            {
+                Grid = grid; End = end; Elbow = elbow; Tip = tip; Pass = pass;
+            }
+            public Grid      Grid  { get; }
+            public DatumEnds End   { get; }
+            public XYZ       Elbow { get; }
+            public XYZ       Tip   { get; }
+            public GridPass  Pass  { get; }
+        }
+
+        // ── One pair's grid work, carried between the run-wide phases ─────────
+        // PrepareGrids fills this; the curve-write, elbow and reporting phases read it. Holding
+        // it per pair is what lets the regenerates move out to once-per-run without the phases
+        // losing track of which view each piece of work belongs to.
+        private sealed class GridPass
+        {
+            public GridPass(MatchedPair pair, string label, View sourceView, View targetView, SheetWork? sheet)
+            {
+                Pair = pair; Label = label; SourceView = sourceView; TargetView = targetView; Sheet = sheet;
+            }
+            public MatchedPair Pair       { get; }
+            public string      Label      { get; }
+            /// <summary>The sheet this pair belongs to, so the drain phases — which run outside any
+            /// per-sheet loop — still attribute their warnings to the right roll-up.</summary>
+            public SheetWork?  Sheet      { get; }
+            public View        SourceView { get; }
+            public View        TargetView { get; }
+            public GridTally   Tally      { get; } = new GridTally();
+            public int         TargetOnly { get; set; }
+            public List<Grid>  Visible    { get; } = new List<Grid>();
+        }
+
+        // ── One target sheet's matched work, carried between the run-wide phases ──
+        private sealed class SheetWork
+        {
+            public SheetWork(ViewSheet sheet, string label, SourceSheet source, List<MatchedPair> pairs)
+            {
+                Sheet = sheet; Label = label; Source = source; Pairs = pairs;
+            }
+            public ViewSheet         Sheet   { get; }
+            public string            Label   { get; }
+            public SourceSheet       Source  { get; }
+            public List<MatchedPair> Pairs   { get; }
+            public int               Aligned { get; set; }
+            /// <summary>Source views with no counterpart, kept for preview's missing-match report.</summary>
+            public List<VpEntry>     Missing       { get; } = new List<VpEntry>();
+            /// <summary>Every placeable view on the target sheet — the candidate set that report scores against.</summary>
+            public List<VpEntry>     TargetEntries { get; } = new List<VpEntry>();
+            /// <summary>Warn/fail lines raised for this sheet, across every phase.</summary>
+            public int               Issues  { get; set; }
         }
 
         // ── Captured per-viewport state ───────────────────────────────────────

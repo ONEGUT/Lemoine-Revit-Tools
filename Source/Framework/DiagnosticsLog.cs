@@ -60,6 +60,20 @@ namespace LemoineTools.Framework
         /// </summary>
         public static event Action<Entry>? EntryLogged;
 
+        /// <summary>
+        /// Whether entries are appended to the durable file. <b>Defaults to false</b>; set from
+        /// <see cref="AppSettings.DiagnosticsLogEnabled"/> on load and whenever the user toggles it
+        /// on the Global Settings → General tab.
+        ///
+        /// Pushed in by AppSettings rather than read out of it: <c>AppSettings.LoadFromDisk</c> logs
+        /// from its own catch block, so a pull would re-enter static initialisation.
+        ///
+        /// Off suppresses ONLY the file write. The in-memory ring, <see cref="IssueCount"/> and the
+        /// <see cref="EntryLogged"/> fan-out all behave identically either way, so a tool's
+        /// "N issues recorded" figure stays accurate — it just has nowhere durable to point.
+        /// </summary>
+        public static volatile bool FileLoggingEnabled;
+
         // ── Public API ────────────────────────────────────────────────────────
 
         /// <summary>
@@ -172,6 +186,10 @@ namespace LemoineTools.Framework
 
         private static void AppendToFile(Entry entry)
         {
+            // Opt-in (see FileLoggingEnabled). Checked here rather than in Write so the ring,
+            // the issue counters and the live sink keep working with the file switched off.
+            if (!FileLoggingEnabled) return;
+
             // Called under _gate. A logging-IO failure must never throw at the call
             // site — the in-memory ring and live sink still carry the entry — so we
             // fall back to the debugger output only.

@@ -75,7 +75,21 @@
     "noSourcesWithViews": "None of the selected source sheets carry placeable views — nothing to align to.",
     "noTargets":          "No valid target sheets (a sheet listed as both source and target is treated as a source).",
     "previewOnly":        "Preview only — reporting matches; no viewports will be moved.",
+    // ── Run-phase status lines ────────────────────────────────────────────────
+    // Pushed with a "pass" tone rather than "info": the handler drops "info" outside preview
+    // mode, which would discard exactly the lines that explain why a long run has gone quiet.
+    "phaseInherit":       "Applying scope box / crop size across {0} sheet(s)\u2026",
+    "phaseAlign":         "Aligning viewports across {0} sheet(s)\u2026",
+    "phaseGrids":         "Matching grid extents across {0} sheet(s)\u2026",
+    "phaseTitles":        "Aligning {0} view title(s)\u2026",
+    // The commit is one undo record for the whole batch and can take minutes on a large run.
+    "committing":         "Committing {0} sheet(s) \u2014 Revit is writing the changes. This is the longest step and cannot be interrupted.",
+    "committed":          "Commit finished in {0}s.",
+    "regenSummary":       "{0} model regeneration(s) for the whole run; {1}s total.",
     "issuesRecorded":     "{0} non-fatal issue(s) recorded — see diagnostics log.",
+    // Shown instead when the diagnostics file is switched off in Global Settings, so the
+    // count never points the user at a file that was never written.
+    "issuesRecordedNoLog": "{0} non-fatal issue(s) recorded. Diagnostics log file is off — enable it in Global Settings → General to capture the detail.",
     "done":               "Done — {0} aligned, {1} error(s), {2} skipped across {3} target sheet(s).",
     "fatalError":         "Align Sheet Views error: {0}",
     "stoppedByUser":      "Stopped by user — {0} of {1} target sheet(s) processed; work so far preserved.",
@@ -133,6 +147,9 @@
     "gridsMultiSegment":  "[{0}] Grids on '{1}': {2} are multi-segment — only the first segment's extents were copied.",
     "gridsUnbound":       "[{0}] Grids on '{1}': {2} returned an unbound (infinite) line — Revit cannot use one as an extent, not trimmed.",
     "gridsTargetOnly":    "[{0}] Grids on '{1}': {2} appear in the target view but not the source — left unchanged.",
+    // Emitted when the per-view visibility state could not be read: the grid trim still runs,
+    // but any "why is this grid hidden" cause it would have named is unavailable for this view.
+    "gridsCauseUnavailable": "[{0}] '{1}': could not read view visibility settings — grid trim continues, but hidden-grid causes cannot be reported for this view.",
     "gridsRestoreFailed": "[{0}] '{1}' grid '{2}': write failed AND its extent mode could not be restored — that end is now 2D with no curve set.",
     "couldNotTrimGrids":  "[{0}] Could not trim grids for '{1}'.",
     // Revit has many ways to hide a grid; the cause is named so "not trimmed" can be acted on.

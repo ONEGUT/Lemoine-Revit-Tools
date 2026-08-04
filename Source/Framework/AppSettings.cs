@@ -19,6 +19,10 @@ namespace LemoineTools.Framework
 
         /// <summary>Culture folder for user-facing text (e.g. "en", "fr"). Empty = use the fallback ("en").</summary>
         [XmlAttribute] public string Language { get; set; } = "en";
+
+        /// <summary>Whether <see cref="DiagnosticsLog"/> writes its durable file. Off by default —
+        /// see <see cref="AppSettings.DiagnosticsLogEnabled"/> for the trade-off.</summary>
+        [XmlAttribute] public bool DiagnosticsLog { get; set; } = false;
     }
 
     /// <summary>Singleton facade for persisted UI preferences (theme and scale). Changes are saved to disk immediately.</summary>
@@ -35,6 +39,22 @@ namespace LemoineTools.Framework
 
         /// <summary>Currently active language (culture folder) for user-facing text. Defaults to "en".</summary>
         public string Language { get; private set; } = "en";
+
+        /// <summary>
+        /// Whether <see cref="DiagnosticsLog"/> appends to its durable file at
+        /// %AppData%\LemoineTools\diagnostics.log. <b>Off by default.</b>
+        ///
+        /// Writing is one open/append/close per entry under a process-wide lock, and a bulk run
+        /// can emit thousands of entries (Align Sheet Views alone logs per grid, per view), so the
+        /// file is opt-in rather than always-on.
+        ///
+        /// KNOWN COST OF LEAVING THIS OFF: this file is the only forensic record of a hard Revit
+        /// crash — native / message-loop / stack-overflow faults produce no managed exception and
+        /// nothing else survives the process. With logging off there is nothing on disk to diagnose
+        /// such a crash from. Turn it on before reproducing a crash. The in-memory ring
+        /// (<see cref="DiagnosticsLog.Recent"/>) and the issue counters are unaffected either way.
+        /// </summary>
+        public bool DiagnosticsLogEnabled { get; private set; }
 
         /// <summary>Fired after <see cref="ActiveTheme"/> changes; the new theme is passed as the argument.</summary>
         public event Action<ThemePalette>?  ThemeChanged;
@@ -80,6 +100,19 @@ namespace LemoineTools.Framework
             Language = culture;
             AppStrings.Load(culture);
             RaiseIsolated(LanguageChanged, culture, "AppSettings.SetLanguage");
+            SaveToDisk();
+        }
+
+        /// <summary>Turns the durable diagnostics file on or off and persists the choice.
+        /// No-op if unchanged. See <see cref="DiagnosticsLogEnabled"/> for what leaving it off costs.</summary>
+        /// <param name="enabled">True to append entries to diagnostics.log.</param>
+        public void SetDiagnosticsLogEnabled(bool enabled)
+        {
+            if (enabled == DiagnosticsLogEnabled) return;
+            DiagnosticsLogEnabled = enabled;
+            // Push, never pull: DiagnosticsLog must not reach back into AppSettings, or the
+            // logging call inside LoadFromDisk's own catch would re-enter static initialisation.
+            DiagnosticsLog.FileLoggingEnabled = enabled;
             SaveToDisk();
         }
 
@@ -242,6 +275,8 @@ namespace LemoineTools.Framework
                         UiSize = s;
                     if (!string.IsNullOrWhiteSpace(dto.Language))
                         Language = dto.Language;
+                    DiagnosticsLogEnabled            = dto.DiagnosticsLog;
+                    DiagnosticsLog.FileLoggingEnabled = dto.DiagnosticsLog;
                 }
             }
             catch (Exception ex)
@@ -257,7 +292,13 @@ namespace LemoineTools.Framework
                 string path = SettingsFilePath;
                 string? dir = Path.GetDirectoryName(path);
                 if (dir != null) Directory.CreateDirectory(dir);
-                var dto = new UISettingsDto { Theme = ActiveTheme.Name, UiSize = UiSize.ToString(), Language = Language };
+                var dto = new UISettingsDto
+                {
+                    Theme          = ActiveTheme.Name,
+                    UiSize         = UiSize.ToString(),
+                    Language       = Language,
+                    DiagnosticsLog = DiagnosticsLogEnabled,
+                };
                 var xs = new XmlSerializer(typeof(UISettingsDto));
                 using (var w = new StreamWriter(path)) xs.Serialize(w, dto);
             }

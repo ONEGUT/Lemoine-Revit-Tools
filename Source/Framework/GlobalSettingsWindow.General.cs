@@ -79,6 +79,39 @@ namespace LemoineTools.Framework
         {
             var stack = new StackPanel();
 
+            // Opt-in file writing. Off by default: the append is one open/write/close per entry
+            // under a process-wide lock, and a bulk run can emit thousands. Everything else about
+            // the log (in-memory ring, issue counts shown in a run's summary) is unaffected.
+            var logToggle = new ToggleSwitches { Margin = new Thickness(0, 0, 0, 10) };
+            logToggle.AccessibleName = AppStrings.T("globalSettings.general.diagnosticsWriteFile");
+            logToggle.SetItems(
+                new List<ToggleItem>
+                {
+                    new ToggleItem
+                    {
+                        Id        = "diagFile",
+                        Label     = AppStrings.T("globalSettings.general.diagnosticsWriteFile"),
+                        Desc      = AppStrings.T("globalSettings.general.diagnosticsWriteFileDesc"),
+                        DefaultOn = false,
+                    },
+                },
+                new Dictionary<string, bool> { ["diagFile"] = AppSettings.Instance.DiagnosticsLogEnabled });
+            logToggle.StateChanged += state =>
+            {
+                // Persists to disk; guarded because this window has no dispatcher safety net of
+                // its own and a throw here would take Revit with it.
+                try
+                {
+                    if (state.TryGetValue("diagFile", out bool on))
+                        AppSettings.Instance.SetDiagnosticsLogEnabled(on);
+                }
+                catch (Exception ex)
+                {
+                    DiagnosticsLog.Swallowed("GlobalSettings: toggle diagnostics file logging", ex);
+                }
+            };
+            stack.Children.Add(logToggle);
+
             var desc = new TextBlock
             {
                 Text = AppStrings.T("globalSettings.general.diagnosticsDesc"),

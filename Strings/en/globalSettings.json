@@ -38,6 +38,10 @@
     "language": "Language",
     "languageHint": "Already-open tool windows keep their current language; new windows pick up the change.",
     "diagnostics": "Diagnostics",
+    // Label + description for the opt-in file-writing toggle. The description states the cost of
+    // leaving it off plainly: a hard Revit crash leaves nothing on disk to diagnose from.
+    "diagnosticsWriteFile": "Write diagnostics log file",
+    "diagnosticsWriteFileDesc": "Off by default \u2014 writing is one file append per entry and a bulk run can produce thousands. Issue counts in a tool's run summary are unaffected. Turn this on before reproducing a crash: it is the only record that survives one.",
     "diagnosticsDesc": "Best-effort operations that fail quietly are recorded here, so a half-applied result is never invisible. The log is written to:",
     "openLog": "Open diagnostics log"
   },
