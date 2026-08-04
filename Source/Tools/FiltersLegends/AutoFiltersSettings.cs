@@ -314,13 +314,12 @@ namespace LemoineTools.Tools.AutoFilters
         [XmlArrayItem("Trade")]
         public List<FilterTradeConfig> Trades { get; set; } = new List<FilterTradeConfig>();
 
-        /// <summary>
-        /// Names of ParameterFilterElements last created by "Create Filters".
-        /// Used to detect and delete orphans when trades or rules are removed.
-        /// </summary>
-        [XmlArray("CreatedFilters")]
-        [XmlArrayItem("Filter")]
-        public List<string> CreatedFilterNames { get; set; } = new List<string>();
+        // NOTE: there is deliberately no CreatedFilterNames manifest here.
+        // Which filters this tool owns is a per-DOCUMENT fact; recording it in this
+        // machine-wide file meant the orphan pass in one project walked the manifest
+        // left by another and deleted matching filters there. Ownership now lives on
+        // each ParameterFilterElement as an AutoFilterOwnerSchema stamp, read out of
+        // the document it belongs to. Do not reintroduce a manifest here.
 
         /// <summary>
         /// Guarantees every trade has a non-empty, unique Id, rewriting any empty or
@@ -405,6 +404,53 @@ namespace LemoineTools.Tools.AutoFilters
                 }
             }
             return names;
+        }
+
+        /// <summary>
+        /// Maps every filter name this library expects to own → the owning
+        /// <c>{tradeId}::{ruleId}</c> key. Same membership as
+        /// <see cref="ComputeExpectedFilterNames"/>, but carrying the owner identity that
+        /// the ParameterFilterElement ownership stamp records.
+        ///
+        /// Orphan cleanup compares on the OWNER, not the name: a filter stamped for a
+        /// trade absent from the running user's library belongs to someone else and must
+        /// be left alone. Comparing names alone would let one user of a shared model
+        /// delete another user's filters.
+        /// </summary>
+        public static Dictionary<string, string> ComputeExpectedOwnedFilters(
+            IEnumerable<FilterTradeConfig> trades)
+        {
+            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (trades == null) return map;
+            foreach (var t in trades)
+            {
+                if (t == null || t.ExternallyManaged) continue;
+                foreach (var r in t.Rules)
+                {
+                    if (!r.Enabled || !RuleProducesFilter(r)) continue;
+                    map[MakeFilterName(t.Id, r.Name)] = AutoFilterOwnerSchema.OwnerKey(t.Id, r.Id);
+                }
+            }
+            return map;
+        }
+
+        /// <summary>
+        /// Trade ids this engine may judge during orphan cleanup: present in the current
+        /// library AND not externally managed.
+        ///
+        /// Two exclusions, both deliberate. A stamped filter whose TradeId is absent from
+        /// the library was created by a library this user does not have — deleting it would
+        /// let one user of a shared model destroy another's filters. And an externally-managed
+        /// trade (Ceiling Heatmap, Ceiling Grids) owns its own rules; this engine never
+        /// regenerates those definitions, so it must never delete them either.
+        /// </summary>
+        public static HashSet<string> ComputeKnownTradeIds(IEnumerable<FilterTradeConfig> trades)
+        {
+            var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (trades == null) return ids;
+            foreach (var t in trades)
+                if (t != null && !t.ExternallyManaged && !string.IsNullOrEmpty(t.Id)) ids.Add(t.Id);
+            return ids;
         }
 
         /// <summary>

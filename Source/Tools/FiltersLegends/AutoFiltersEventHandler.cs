@@ -375,10 +375,8 @@ namespace LemoineTools.Tools.AutoFilters
 
             int reused = 0;
 
-            // Build the expected filter name set from current settings (used for orphan cleanup)
-            var expectedFilterNames = createOnly
-                ? AutoFiltersSettings.ComputeExpectedFilterNames(trades)
-                : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            // Orphan cleanup builds its own expected set inside the transaction, keyed by
+            // owning trade+rule rather than by name — see the ownership stamp pass below.
 
             string txName = createOnly ? "Auto Filters — Create" : "Auto Filters — Create & Color";
             using (var tx = new Transaction(doc, txName))
@@ -386,35 +384,58 @@ namespace LemoineTools.Tools.AutoFilters
                 ConfigureFailures(tx);
                 tx.Start();
 
-                // Remove orphaned filters: in the saved manifest but no longer in the expected set
+                // Remove orphaned filters. Ownership comes from a stamp on the filter
+                // element itself, read out of THIS document — not from a machine-wide
+                // manifest, which described whichever project last ran and made this pass
+                // delete filters belonging to other projects.
                 if (createOnly)
                 {
-                    var prevCreated = AutoFiltersSettings.Instance.CreatedFilterNames;
-                    if (prevCreated != null)
-                    {
-                        foreach (var orphanName in prevCreated)
-                        {
-                            if (RunState.CancelRequested)
-                            {
-                                Log(AppStrings.T("autofilters.filtersWindow.log.stoppedOrphans", removed), "warn");
-                                break;
-                            }
+                    var expectedOwned = AutoFiltersSettings.ComputeExpectedOwnedFilters(trades);
+                    var knownTradeIds = AutoFiltersSettings.ComputeKnownTradeIds(trades);
 
-                            if (!expectedFilterNames.Contains(orphanName)
-                                && existingFilters.TryGetValue(orphanName, out var orphan))
-                            {
-                                try
-                                {
-                                    doc.Delete(orphan.Id);
-                                    existingFilters.Remove(orphanName);
-                                    removed++;
-                                    Log(AppStrings.T("autofilters.filtersWindow.log.removedFilter", orphanName), "info");
-                                }
-                                catch (Exception ex)
-                                {
-                                    Log(AppStrings.T("autofilters.filtersWindow.log.removeFailed", orphanName, ex.Message), "fail");
-                                }
-                            }
+                    // Adopt filters made before stamping existed, so they stay manageable
+                    // instead of becoming permanently invisible to cleanup.
+                    int adopted = AutoFilterOwnerSchema.AdoptUnstamped(doc, expectedOwned, existingFilters);
+                    if (adopted > 0)
+                        DiagnosticsLog.Info("AutoFilters", $"Adopted {adopted} pre-existing filter(s) into ownership tracking.");
+
+                    var owned = AutoFilterOwnerSchema.ReadAll(doc);
+                    DiagnosticsLog.Info("AutoFilters",
+                        owned.Count > 0
+                            ? $"Found {owned.Count} filter(s) owned by Lemoine in this document."
+                            : "No Lemoine-owned filters found in this document.");
+
+                    // ownerKey → the name that owner should carry now.
+                    var expectedNameByOwner = new Dictionary<string, string>(StringComparer.Ordinal);
+                    foreach (var kv in expectedOwned) expectedNameByOwner[kv.Value] = kv.Key;
+
+                    foreach (var rec in owned)
+                    {
+                        if (RunState.CancelRequested)
+                        {
+                            Log(AppStrings.T("autofilters.filtersWindow.log.stoppedOrphans", removed), "warn");
+                            break;
+                        }
+
+                        // Not from a trade this library has → another user's filter. Not ours to delete.
+                        if (!knownTradeIds.Contains(rec.TradeId)) continue;
+
+                        // Ours, and either the rule is gone or it has been renamed (the
+                        // correctly-named filter is recreated below).
+                        bool stillExpected = expectedNameByOwner.TryGetValue(rec.Key, out var wantName);
+                        if (stillExpected && string.Equals(wantName, rec.Name, StringComparison.OrdinalIgnoreCase))
+                            continue;
+
+                        try
+                        {
+                            doc.Delete(rec.ElementId);
+                            existingFilters.Remove(rec.Name);
+                            removed++;
+                            Log(AppStrings.T("autofilters.filtersWindow.log.removedFilter", rec.Name), "info");
+                        }
+                        catch (Exception ex)
+                        {
+                            Log(AppStrings.T("autofilters.filtersWindow.log.removeFailed", rec.Name, ex.Message), "fail");
                         }
                     }
                 }
@@ -498,16 +519,10 @@ namespace LemoineTools.Tools.AutoFilters
                 tx.Commit();
             }
 
-            // Persist updated manifest so future runs know which filters we own.
-            // Record only filters that actually exist in the document now — a rule
-            // whose creation failed must not be claimed as owned (it would otherwise
-            // never be cleaned up as an orphan).
-            if (createOnly)
-            {
-                AutoFiltersSettings.Instance.CreatedFilterNames =
-                    expectedFilterNames.Where(existingFilters.ContainsKey).ToList();
-                AutoFiltersSettings.Instance.Save();
-            }
+            // No manifest to persist: ownership was stamped onto each filter element inside
+            // the transaction above, so it is already recorded in the document. A rule whose
+            // creation failed carries no stamp and is therefore never claimed as owned —
+            // the property the old manifest had to reconstruct here by hand.
 
             string removeMsg = removed > 0 ? AppStrings.T("autofilters.filtersWindow.log.removedSuffix", removed) : "";
             Log(AppStrings.T("autofilters.filtersWindow.log.completeSummary", pass, reused, fail, skip, removeMsg), "pass");
@@ -713,6 +728,9 @@ namespace LemoineTools.Tools.AutoFilters
                     pfe = elementFilter == null
                         ? ParameterFilterElement.Create(doc, filterName, catIds)
                         : ParameterFilterElement.Create(doc, filterName, catIds, elementFilter);
+                    // Record ownership on the element itself so a later run can tell our
+                    // filters from another user's without consulting machine-wide state.
+                    AutoFilterOwnerSchema.Stamp(pfe, trade.Id, rule.Id);
                     existingFilters[filterName] = pfe;
                     pass++;
                 }
@@ -959,11 +977,19 @@ namespace LemoineTools.Tools.AutoFilters
                 assignments.Add((v, enabled, ogs));
             }
 
+            // Carry ownership across the rebuild. This method has no trade/rule in scope,
+            // so the stamp must be read off the outgoing element before it is deleted —
+            // otherwise a rebuilt filter silently becomes unowned and can never be
+            // cleaned up as an orphan later.
+            var prevOwner = AutoFilterOwnerSchema.TryRead(old);
+
             doc.Delete(oldId);
 
             var pfe = elementFilter == null
                 ? ParameterFilterElement.Create(doc, filterName, catIds)
                 : ParameterFilterElement.Create(doc, filterName, catIds, elementFilter);
+            if (prevOwner != null)
+                AutoFilterOwnerSchema.Stamp(pfe, prevOwner.TradeId, prevOwner.RuleId);
             existingFilters[filterName] = pfe;
 
             foreach (var a in assignments)
@@ -1153,6 +1179,7 @@ namespace LemoineTools.Tools.AutoFilters
             pfe = elementFilter == null
                 ? ParameterFilterElement.Create(doc, filterName, catIds)
                 : ParameterFilterElement.Create(doc, filterName, catIds, elementFilter);
+            AutoFilterOwnerSchema.Stamp(pfe, trade.Id, rule.Id);
             ctx.ExistingFilters[filterName] = pfe;
             return pfe;
         }

@@ -73,6 +73,23 @@ namespace LemoineTools.Framework
             _fActiveViewName = activeViewName ?? "";
         }
 
+        /// <summary>
+        /// Filter names the ACTIVE DOCUMENT records as created by this tool, captured on the
+        /// Revit main thread by the launching command. Used on close to decide whether the
+        /// document has drifted from the trade library and needs a create pass.
+        ///
+        /// This replaces a machine-wide manifest that described whichever project last ran,
+        /// so the drift check compared this project's settings against another project's
+        /// filters. Null means "no document was open" — distinct from an empty list, which
+        /// means the document genuinely owns none.
+        /// </summary>
+        internal void SetOwnedFilterNames(IEnumerable<string>? ownedFilterNames)
+        {
+            _fOwnedFilterNames = ownedFilterNames?.ToList();
+        }
+
+        private List<string>? _fOwnedFilterNames;
+
         private int FTargetCount => (_fTargetActiveView ? 1 : 0) + _fTargetTemplateNames.Count;
 
         // Refuses to leave zero targets selected — ApplyTradesToView falls back to the active
@@ -439,11 +456,15 @@ namespace LemoineTools.Framework
                     AutoFiltersSettings.Instance.Save();
                 }
 
-                var expected     = AutoFiltersSettings.ComputeExpectedFilterNames(_filterTrades);
-                bool manifestStale = !expected.SetEquals(
-                    AutoFiltersSettings.Instance.CreatedFilterNames ?? new List<string>());
+                var expected = AutoFiltersSettings.ComputeExpectedFilterNames(_filterTrades);
 
-                if ((dirty || manifestStale) && expected.Count > 0)
+                // Drift check against what THIS document owns. With no document open there is
+                // nothing to compare, so fall back to the edit flag alone rather than assuming
+                // drift and firing a pointless run.
+                bool documentDrifted = _fOwnedFilterNames != null
+                                    && !expected.SetEquals(_fOwnedFilterNames);
+
+                if ((dirty || documentDrifted) && expected.Count > 0)
                 {
                     // Only refresh the definitions of rules whose category/parameter/match
                     // definition actually changed in the menu — every other existing filter is
