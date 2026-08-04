@@ -341,6 +341,28 @@ namespace LemoineTools.Tools.BulkExport
             line.Text = AppStrings.T("export.bulkExport.sets.setExample", setName, resolved);
         }
 
+        // The settings window shows sentences; the file stores the enum name. Persisted tokens
+        // stay hardcoded strings by house rule — they are compared and switched on, not displayed.
+        private static string GranularityOptionLabel(PdfGranularity g)
+        {
+            switch (g)
+            {
+                case PdfGranularity.PerSheet:   return "One PDF per sheet";
+                case PdfGranularity.SingleFile: return "One PDF for everything";
+                default:                        return "One PDF per set";
+            }
+        }
+
+        private static string GranularityFromOptionLabel(string? label)
+        {
+            switch (label)
+            {
+                case "One PDF per sheet":      return nameof(PdfGranularity.PerSheet);
+                case "One PDF for everything": return nameof(PdfGranularity.SingleFile);
+                default:                      return nameof(PdfGranularity.PerSet);
+            }
+        }
+
         internal string GranularityLabel()
         {
             switch (_granularity)
@@ -1177,9 +1199,6 @@ namespace LemoineTools.Tools.BulkExport
             s.ExportIfc                    = _ifcOn;
             s.IfcVersion                   = _ifcVersion;
             s.PdfGranularity               = _granularity.ToString();
-            s.SetFilenamePattern           = _setPattern;
-            s.SetSubfolders                = _setSubfolders;
-            s.ExistingFileAction           = _existingFileAction;
             s.PdfPaperPlacement            = _pdfPlacement;
             s.HiddenLinesVector            = _hiddenLines == "Vector Processing";
             s.DwgExportSetupName           = _dwgSetup;
@@ -1261,6 +1280,12 @@ namespace LemoineTools.Tools.BulkExport
                                 Options = new FileOpts { Placeholder = @"C:\Projects\Exports\" }, Default = s.OutputFolder },
                             new SettingDef { Id = "splitformat", Kind = "toggle", Label = "Split output by file format",
                                 Hint = "Creates PDF\\, DWG\\ subfolders automatically.", Default = s.SplitByFormat },
+                            new SettingDef { Id = "setsubfolders", Kind = "toggle", Label = "Give each set its own subfolder",
+                                Hint = "Nests under the format folder, e.g. PDF\\Architectural\\.", Default = s.SetSubfolders },
+                            new SettingDef { Id = "existingfile", Kind = "single", Label = "If an output file already exists",
+                                Hint = "Overwrite matches Revit's own behaviour; the review step always reports the count.",
+                                Options = new SingleSelectOpts { Items = new List<string> { "Overwrite", "Skip", "Add suffix" } },
+                                Default = s.ExistingFileAction },
                         }
                     },
                     new SettingsGroup
@@ -1268,7 +1293,11 @@ namespace LemoineTools.Tools.BulkExport
                         Id = "G2", Title = "Filename",
                         Settings = new List<SettingDef>
                         {
-                            new SettingDef { Id = "pattern", Kind = "text", Label = "Default filename pattern",
+                            new SettingDef { Id = "setpattern", Kind = "text", Label = "Default SET filename pattern",
+                                Hint = "Names each set's combined PDF. Tokens: {SetName} {SetIndex} {SheetCount} {SetCount} {ProjectNumber} {ProjectName} {Year} {Month} {Day}",
+                                Options = new TextOpts { Mono = true, Placeholder = "{SetName}" },
+                                Default = s.SetFilenamePattern },
+                            new SettingDef { Id = "pattern", Kind = "text", Label = "Default ITEM filename pattern",
                                 Hint = "Tokens: {SheetNumber} {SheetName} {Revision} {IssueDate} {ProjectNumber} {Year} {Month} {Day} + any custom tokens defined in Naming settings",
                                 Options = new TextOpts { Mono = true, Placeholder = "{SheetNumber}-{SheetName}" },
                                 Default = s.FilenamePattern },
@@ -1290,7 +1319,9 @@ namespace LemoineTools.Tools.BulkExport
                         Id = "G4", Title = "PDF Options",
                         Settings = new List<SettingDef>
                         {
-                            new SettingDef { Id = "combinepdf",  Kind = "toggle", Label = "Combine into single PDF by default", Default = s.CombinePdf },
+                            new SettingDef { Id = "granularity", Kind = "single", Label = "PDF output by default",
+                                Options = new SingleSelectOpts { Items = new List<string> { "One PDF per sheet", "One PDF per set", "One PDF for everything" } },
+                                Default = GranularityOptionLabel(ExportSetLayout.ParseGranularity(s.PdfGranularity)) },
                             new SettingDef { Id = "placement",   Kind = "single", Label = "Paper placement",
                                 Options = new SingleSelectOpts { Items = new List<string> { "Center", "Offset from Corner" } },
                                 Default = s.PdfPaperPlacement },
@@ -1366,12 +1397,15 @@ namespace LemoineTools.Tools.BulkExport
             {
                 case "outdir":          s.OutputFolder               = value as string ?? "";                      break;
                 case "splitformat":     s.SplitByFormat              = value is bool b1 && b1;                     break;
+                case "setsubfolders":   s.SetSubfolders              = value is bool sf && sf;                     break;
+                case "existingfile":    s.ExistingFileAction         = value as string ?? "Overwrite";             break;
+                case "setpattern":      s.SetFilenamePattern         = value as string ?? "{SetName}";             break;
                 case "pattern":         s.FilenamePattern            = value as string ?? "";                      break;
                 case "defpdf":          s.ExportPdf                  = value is bool b2 && b2;                     break;
                 case "defdwg":          s.ExportDwg                  = value is bool b3 && b3;                     break;
                 case "defnwc":          s.ExportNwc                  = value is bool b5 && b5;                     break;
                 case "defifc":          s.ExportIfc                  = value is bool b6 && b6;                     break;
-                case "combinepdf":      s.CombinePdf                 = value is bool b4 && b4;                     break;
+                case "granularity":     s.PdfGranularity             = GranularityFromOptionLabel(value as string); break;
                 case "placement":       s.PdfPaperPlacement          = value as string ?? "Center";                break;
                 case "hiddenlines":     s.HiddenLinesVector          = value as string == "Vector Processing";     break;
                 case "colordepth":      s.ColorDepth                 = value as string ?? "Color";                 break;

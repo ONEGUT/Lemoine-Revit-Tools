@@ -458,9 +458,11 @@ Actions: **+ New set**, **Auto-group by ▾**, **Move selected to ▾** (kept as
 batch filed under the wrong target), **Import from Revit print set ▾**,
 **Save set as Revit print set**, **Save sets** *(writes to the model — §5.3)*.
 
-Secondary actions (rename, duplicate, delete, save-as-print-set) live in the row's **⋯ popup**, per
-CLAUDE.md's rule about not cluttering a drag-able row. The header carries the **unsaved-changes
-indicator** from §5.3.
+Secondary actions (rename, duplicate, delete, save-as-print-set) live in the card's **expanded
+Options panel**, keeping them off the drag-able row per CLAUDE.md. *(Built this way rather than the
+sketched "⋯ popup": a `Popup` with `StaysOpen=false` crashes Revit, and hand-rolling a dismissable
+one is disproportionate risk for a three-item menu.)* The actions row carries the
+**unsaved-changes indicator** from §5.3.
 
 **Four design constraints that make this a different thing from the deleted
 `SheetPackLayoutEditor`** (§2.10) — a reviewer should check these specifically:
@@ -630,7 +632,7 @@ than a re-derivation that can drift.
 | `Source/Tools/Export/ExportSetModels.cs` | **new** — `ExportSet`, `ExportSetMember`, `PdfGranularity`, `PlannedOutput`; absorbs `PrintSetModels.cs` |
 | `Source/Tools/Export/ExportSetStore.cs` | **new** — Extensible Storage schema, `DataStorage` lookup, serialize/deserialize the layout (D2 / §5.3) |
 | `Source/Tools/Export/ExportSetStoreHandler.cs` | **new** — `IExternalEventHandler` for the ES write (needs the main thread + a transaction); clears its payload in `finally` |
-| `Source/Tools/Export/SetListEditor.cs` | **new** — the S2 control; tool-local, not generalised into the framework until a second tool needs it |
+| `Source/Tools/Export/BulkExportViewModel.Sets.cs` + `.SetsUi.cs` | **new** — the set model logic and the S1/S2 UI. Built as ViewModel partials rather than the planned standalone `SetListEditor` control: a control would have needed a callback surface for state that already lives on the ViewModel, and partials keep it more tool-local, not less |
 | `Source/Framework/Controls/Input/BrowserTreePicker.xaml(.cs)` | **+ optional `RowBadgeProvider` and `RefreshBadges()`** (§8.1). Null by default — every existing caller unaffected. Shared control: verify Copy Datums, Align Sheet Views and Place Dependent Views render identically |
 | `Source/Tools/Export/BulkExportViewModel.cs` | S1 ordering + target bar; S2 rebuilt; S3 two patterns + tokens; S4 Combine removed; S8 two controls; S9 review; `OnWindowClosed` nulls the store handler's callbacks too |
 | `Source/Tools/Export/BulkExportEventHandler.cs` | two paths → `ExportSets`; de-dup; pre-flight; progress weighting; dry-run |
