@@ -72,6 +72,47 @@ namespace LemoineTools.Framework
             AppSettings.Instance.UiSizeChanged += OnUiSizeChanged;
         }
 
+        // ── Document links ────────────────────────────────────────────────────
+        //
+        // entryId → legend view id, for legends this document has stamped. Captured on the
+        // Revit main thread by the launching command; this window never touches the Revit
+        // API. Replaces LegendEntry.RevitViewId, which stored an ElementId in a machine-wide
+        // file and so claimed a legend in every project the user opened.
+        private Dictionary<string, long> _legendLinks = new Dictionary<string, long>(StringComparer.Ordinal);
+
+        /// <summary>Called once by the launching command with this document's legend links.</summary>
+        internal void SetLegendLinks(Dictionary<string, long>? links)
+            => _legendLinks = links ?? new Dictionary<string, long>(StringComparer.Ordinal);
+
+        /// <summary>
+        /// True when THIS document holds a legend stamped for the given entry. A legend that
+        /// was deleted in Revit simply is not in the map, so the entry falls back to Create
+        /// instead of targeting a dead id.
+        /// </summary>
+        private bool TryGetLinkedLegendId(string? entryId, out long viewId)
+        {
+            viewId = -1;
+            if (string.IsNullOrEmpty(entryId)) return false;
+            return _legendLinks.TryGetValue(entryId!, out viewId) && viewId > 0;
+        }
+
+        /// <summary>
+        /// Resolves a stored TextNoteType NAME against the types captured from the active
+        /// document. Returns null (use the project default) when the name is unset or absent
+        /// here — a name from another project can no longer resolve to an unrelated element,
+        /// which an ElementId could.
+        /// </summary>
+        private ElementId? ResolveTextTypeId(string? typeName)
+        {
+            if (string.IsNullOrEmpty(typeName)) return null;
+            foreach (var t in _textTypes)
+                if (string.Equals(t.Name, typeName, StringComparison.OrdinalIgnoreCase)) return t.Id;
+
+            DiagnosticsLog.Warn("LegendCreator",
+                $"Text style '{typeName}' is not in this project — using the project default.");
+            return null;
+        }
+
         private void OnThemeChanged(ThemePalette t)
         {
             if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished) return;
@@ -309,10 +350,10 @@ namespace LemoineTools.Framework
             var e  = entries[_activeIndex];
             int pt = e.Layout?.FontPt ?? 9;
             return new LegendRoleCaps(
-                LegendTextTypeSizes.CapInches(e.TitleTypeId,       pt),
-                LegendTextTypeSizes.CapInches(e.SubtitleTypeId,    pt),
-                LegendTextTypeSizes.CapInches(e.GroupHeaderTypeId, pt),
-                LegendTextTypeSizes.CapInches(e.LabelTypeId,       pt));
+                LegendTextTypeSizes.CapInches(e.TitleTypeName,       pt),
+                LegendTextTypeSizes.CapInches(e.SubtitleTypeName,    pt),
+                LegendTextTypeSizes.CapInches(e.GroupHeaderTypeName, pt),
+                LegendTextTypeSizes.CapInches(e.LabelTypeName,       pt));
         }
 
         // Pushes a bottom inset onto the sidebar tab list so its last item (the
@@ -799,8 +840,9 @@ namespace LemoineTools.Framework
 
             var copy = entry.Clone();
             copy.Id          = LegendIdGen.New("legend");
-            copy.RevitViewId = -1;
             copy.DisplayName = null;
+            // No link to clear: the copy simply has no stamped legend in the document
+            // under its fresh id, so it correctly reports "not yet created".
             if (copy.Layout == null) copy.Layout = new LegendLayoutConfig();
             copy.Layout.Title = (entry.Layout?.Title ?? AppStrings.T("testing.legendCreator.builder.window.defaults.untitledLegend")) + AppStrings.T("testing.legendCreator.builder.window.defaults.copySuffix");
 
@@ -1007,7 +1049,7 @@ namespace LemoineTools.Framework
             _createBusy = false;
             if (_createPill != null) _createPill.Opacity = 1.0;
             if (_createPillLabel == null) return;
-            _createPillLabel.Text = entry.RevitViewId != -1 ? AppStrings.T("testing.legendCreator.builder.window.actions.updateLegend") : AppStrings.T("testing.legendCreator.builder.window.actions.createLegend");
+            _createPillLabel.Text = TryGetLinkedLegendId(entry.Id, out _) ? AppStrings.T("testing.legendCreator.builder.window.actions.updateLegend") : AppStrings.T("testing.legendCreator.builder.window.actions.createLegend");
         }
 
         // Toggles the floating Create pill between idle and in-flight (busy) states.
@@ -1024,7 +1066,7 @@ namespace LemoineTools.Framework
             var entries = LegendCreatorSettings.Instance.Legends;
             if (_activeIndex >= 0 && _activeIndex < entries.Count)
                 _createPillLabel.Text =
-                    entries[_activeIndex].RevitViewId != -1 ? AppStrings.T("testing.legendCreator.builder.window.actions.updateLegend") : AppStrings.T("testing.legendCreator.builder.window.actions.createLegend");
+                    TryGetLinkedLegendId(entries[_activeIndex].Id, out _) ? AppStrings.T("testing.legendCreator.builder.window.actions.updateLegend") : AppStrings.T("testing.legendCreator.builder.window.actions.createLegend");
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -1185,17 +1227,17 @@ namespace LemoineTools.Framework
             // Wrap each setter so a text-style change refreshes the live preview — role
             // text sizes come from the chosen TextNoteType, so the preview must re-resolve
             // its caps (ActiveRoleCaps) when a selection changes.
-            void SetAndRefresh(Action<long> set, long id) { set(id); OnBuilderEdited(); }
+            void SetAndRefresh(Action<string> set, string typeName) { set(typeName); OnBuilderEdited(); }
 
-            AddTextTypeRow(grid, 0, AppStrings.T("testing.legendCreator.builder.window.textStyles.title"),        entry.TitleTypeId,       id => SetAndRefresh(v => entry.TitleTypeId       = v, id));
-            AddTextTypeRow(grid, 1, AppStrings.T("testing.legendCreator.builder.window.textStyles.subtitle"),     entry.SubtitleTypeId,    id => SetAndRefresh(v => entry.SubtitleTypeId    = v, id));
-            AddTextTypeRow(grid, 2, AppStrings.T("testing.legendCreator.builder.window.textStyles.groupHeader"), entry.GroupHeaderTypeId, id => SetAndRefresh(v => entry.GroupHeaderTypeId = v, id));
-            AddTextTypeRow(grid, 3, AppStrings.T("testing.legendCreator.builder.window.textStyles.label"),        entry.LabelTypeId,       id => SetAndRefresh(v => entry.LabelTypeId       = v, id));
+            AddTextTypeRow(grid, 0, AppStrings.T("testing.legendCreator.builder.window.textStyles.title"),        entry.TitleTypeName,       n => SetAndRefresh(v => entry.TitleTypeName       = v, n));
+            AddTextTypeRow(grid, 1, AppStrings.T("testing.legendCreator.builder.window.textStyles.subtitle"),     entry.SubtitleTypeName,    n => SetAndRefresh(v => entry.SubtitleTypeName    = v, n));
+            AddTextTypeRow(grid, 2, AppStrings.T("testing.legendCreator.builder.window.textStyles.groupHeader"), entry.GroupHeaderTypeName, n => SetAndRefresh(v => entry.GroupHeaderTypeName = v, n));
+            AddTextTypeRow(grid, 3, AppStrings.T("testing.legendCreator.builder.window.textStyles.label"),        entry.LabelTypeName,       n => SetAndRefresh(v => entry.LabelTypeName       = v, n));
 
             return WrapCard(AppStrings.T("testing.legendCreator.builder.window.textStyles.header"), grid);
         }
 
-        private void AddTextTypeRow(WpfGrid grid, int row, string label, long storedId, Action<long> onChanged)
+        private void AddTextTypeRow(WpfGrid grid, int row, string label, string storedName, Action<string> onChanged)
         {
             var lbl = new TextBlock
             {
@@ -1221,19 +1263,37 @@ namespace LemoineTools.Framework
                 combo.Items.Add(name);
 
             int initIdx = 0;
-            if (storedId != -1)
+            bool unresolved = false;
+            if (!string.IsNullOrEmpty(storedName))
             {
+                int found = -1;
                 for (int i = 0; i < _textTypes.Count; i++)
-                    if (_textTypes[i].Id.Value == storedId) { initIdx = i; break; }
+                    if (string.Equals(_textTypes[i].Name, storedName, StringComparison.OrdinalIgnoreCase)) { found = i; break; }
+
+                if (found >= 0) initIdx = found;
+                else
+                {
+                    // The remembered style does not exist in THIS project. Previously the combo
+                    // silently fell back to item 0 while the entry kept the unresolvable value,
+                    // so the UI showed one style and the run used another. Say so instead.
+                    unresolved = true;
+                    DiagnosticsLog.Warn("LegendCreator",
+                        $"Text style '{storedName}' for '{label}' is not in this project — falling back to '{(_textTypes.Count > 0 ? _textTypes[0].Name : "(none)")}'.");
+                }
             }
             combo.SelectedIndex = initIdx;
 
             combo.SelectionChanged += (s, e) =>
             {
                 int idx = combo.SelectedIndex;
-                long newId = idx >= 0 && idx < _textTypes.Count ? _textTypes[idx].Id.Value : -1L;
-                onChanged(newId);
+                string newName = idx >= 0 && idx < _textTypes.Count ? _textTypes[idx].Name : "";
+                onChanged(newName);
             };
+
+            // Write the fallback back to the entry so what is stored matches what is shown,
+            // and the next run cannot use a style the user can no longer see.
+            if (unresolved)
+                onChanged(_textTypes.Count > 0 ? _textTypes[initIdx].Name : "");
 
             WpfGrid.SetRow(lbl,   row); WpfGrid.SetColumn(lbl,   0);
             WpfGrid.SetRow(combo, row); WpfGrid.SetColumn(combo, 2);
@@ -1263,17 +1323,20 @@ namespace LemoineTools.Framework
             entry.Layout = builder.Layout;
             entry.Rows   = builder.Rows;
 
-            bool isUpdate = entry.RevitViewId != -1;
+            bool isUpdate = TryGetLinkedLegendId(entry.Id, out long linkedViewId);
 
             App.LegendCreatorHandler.Layout     = entry.Layout;
             App.LegendCreatorHandler.Rows        = entry.Rows;
             App.LegendCreatorHandler.UpdateMode  = isUpdate;
-            App.LegendCreatorHandler.TargetLegendId    = isUpdate   ? new ElementId(entry.RevitViewId)       : (ElementId?)null;
+            App.LegendCreatorHandler.TargetLegendId    = isUpdate ? new ElementId(linkedViewId) : (ElementId?)null;
             App.LegendCreatorHandler.TemplateLegendId  = null;
-            App.LegendCreatorHandler.TitleTypeId       = entry.TitleTypeId       != -1 ? new ElementId(entry.TitleTypeId)       : (ElementId?)null;
-            App.LegendCreatorHandler.SubtitleTypeId    = entry.SubtitleTypeId    != -1 ? new ElementId(entry.SubtitleTypeId)    : (ElementId?)null;
-            App.LegendCreatorHandler.GroupHeaderTypeId = entry.GroupHeaderTypeId != -1 ? new ElementId(entry.GroupHeaderTypeId) : (ElementId?)null;
-            App.LegendCreatorHandler.LabelTypeId       = entry.LabelTypeId       != -1 ? new ElementId(entry.LabelTypeId)       : (ElementId?)null;
+            // The entry id travels with the run so the handler can stamp the legend it
+            // creates, binding it to this entry inside the document.
+            App.LegendCreatorHandler.EntryId           = entry.Id;
+            App.LegendCreatorHandler.TitleTypeId       = ResolveTextTypeId(entry.TitleTypeName);
+            App.LegendCreatorHandler.SubtitleTypeId    = ResolveTextTypeId(entry.SubtitleTypeName);
+            App.LegendCreatorHandler.GroupHeaderTypeId = ResolveTextTypeId(entry.GroupHeaderTypeName);
+            App.LegendCreatorHandler.LabelTypeId       = ResolveTextTypeId(entry.LabelTypeName);
             // Keep the last failure line so the status chip can say WHY a run failed —
             // discarding the log left only "Completed with N error(s)" and no reason.
             // (Full detail also lands in diagnostics.log via the handler's Log mirror.)
@@ -1300,8 +1363,12 @@ namespace LemoineTools.Framework
                     var list = LegendCreatorSettings.Instance.Legends;
                     if (capturedIndex < list.Count)
                     {
-                        list[capturedIndex].RevitViewId = idValue;
-                        LegendCreatorSettings.Instance.Save();
+                        // The durable binding was written into the document by the handler,
+                        // inside its own transaction (LegendLinkSchema). All that is needed
+                        // here is to refresh this window's in-memory view of it so the button
+                        // flips to "Update" without reopening. Nothing is persisted to disk:
+                        // the link is no longer a settings value.
+                        _legendLinks[list[capturedIndex].Id] = idValue;
                         UpdateCreateUpdateButton(list[capturedIndex]);
                     }
                     FlashStatus(AppStrings.T("testing.legendCreator.builder.window.status.createdMessage"));

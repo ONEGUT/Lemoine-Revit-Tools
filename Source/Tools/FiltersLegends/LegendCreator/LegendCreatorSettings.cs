@@ -17,7 +17,12 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
     //     └── Legends[]         — list of named legend slots
     //           ├── Layout      — Title / Subtitle / dims / font / gap
     //           ├── Rows[]      — vertical rows
-    //           └── RevitViewId — ElementId of the created Revit legend view (-1 = not yet created)
+    //           └── *TypeName   — per-role TextNoteType NAMES (portable between projects)
+    //
+    // Which Revit legend view an entry created is NOT stored here — it is stamped into
+    // the document itself (LegendLinkSchema), keyed by the entry's Id. This file is
+    // machine-wide and shared by every project, so an ElementId kept here claimed a
+    // legend in projects that had never seen one.
     // =========================================================================
 
     /// <summary>
@@ -162,17 +167,22 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
         /// </summary>
         [XmlAttribute] public string? DisplayName { get; set; }
 
-        /// <summary>
-        /// <see cref="Autodesk.Revit.DB.ElementId.IntegerValue"/> of the legend view created
-        /// in Revit. <c>-1</c> means the legend has not been created yet.
-        /// </summary>
-        [XmlAttribute] public long RevitViewId { get; set; } = -1;
+        // NOTE: there is deliberately no RevitViewId here, and the text styles below are
+        // NAMES, not ElementIds. Both used to be raw ElementIds in this machine-wide file,
+        // which meant a legend created in one project was claimed by every other project —
+        // the window offered "Update Legend" and targeted an id belonging to some unrelated
+        // element. Which legend belongs to an entry is now recorded in the document itself
+        // (LegendLinkSchema stamps the created legend view). Do not reintroduce ids here.
 
-        /// <summary>Per-role TextNoteType ElementId (-1 = use project default).</summary>
-        [XmlAttribute] public long TitleTypeId       { get; set; } = -1;
-        [XmlAttribute] public long SubtitleTypeId    { get; set; } = -1;
-        [XmlAttribute] public long GroupHeaderTypeId { get; set; } = -1;
-        [XmlAttribute] public long LabelTypeId       { get; set; } = -1;
+        /// <summary>
+        /// Per-role TextNoteType NAME (empty = use project default). A name is portable
+        /// between projects; an ElementId is not. Resolved against the active document
+        /// when the window opens, and reported when it cannot be resolved.
+        /// </summary>
+        [XmlAttribute] public string TitleTypeName       { get; set; } = "";
+        [XmlAttribute] public string SubtitleTypeName    { get; set; } = "";
+        [XmlAttribute] public string GroupHeaderTypeName { get; set; } = "";
+        [XmlAttribute] public string LabelTypeName       { get; set; } = "";
 
         [XmlElement("Layout")]
         public LegendLayoutConfig Layout { get; set; } = new LegendLayoutConfig();
@@ -189,13 +199,12 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
 
         public LegendEntry Clone() => new LegendEntry
         {
-            Id                = Id,
-            DisplayName       = DisplayName,
-            RevitViewId       = RevitViewId,
-            TitleTypeId       = TitleTypeId,
-            SubtitleTypeId    = SubtitleTypeId,
-            GroupHeaderTypeId = GroupHeaderTypeId,
-            LabelTypeId       = LabelTypeId,
+            Id                  = Id,
+            DisplayName         = DisplayName,
+            TitleTypeName       = TitleTypeName,
+            SubtitleTypeName    = SubtitleTypeName,
+            GroupHeaderTypeName = GroupHeaderTypeName,
+            LabelTypeName       = LabelTypeName,
             Layout            = LegendCreatorSettings.DeepCopy(Layout),
             Rows              = LegendCreatorSettings.DeepCopy(Rows),
             PreviewVisible    = PreviewVisible,
@@ -312,6 +321,23 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
                 foreach (var e in Legends)
                     e.Layout?.Normalize();
             }
+
+            // Re-mint entry ids left over from the old generator (and the hardcoded
+            // "legend_seed_1" that shipped identically to every install). These ids are now
+            // the key binding an entry to a legend stamped inside a shared model, so a value
+            // that is identical across installs would make two users resolve to each other's
+            // views. Safe to do unconditionally: an entry carrying a legacy id predates
+            // stamping, so no document link can be broken by re-minting it.
+            int reIded = 0;
+            foreach (var e in Legends)
+            {
+                if (e == null || !LegendIdGen.IsLegacyId(e.Id)) continue;
+                e.Id = LegendIdGen.New("legend");
+                reIded++;
+            }
+            if (reIded > 0)
+                DiagnosticsLog.Info("LegendCreatorSettings",
+                    $"Re-minted {reIded} legend entry id(s) from the pre-GUID scheme.");
         }
 
         public static LegendCreatorSettings DefaultSeed() => new LegendCreatorSettings
@@ -320,7 +346,9 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
             {
                 new LegendEntry
                 {
-                    Id = "legend_seed_1",
+                    // Minted, never hardcoded: this id binds the entry to a legend stamped
+                    // inside a shared model, so a constant would be identical on every install.
+                    Id = LegendIdGen.New("legend"),
                     Layout = new LegendLayoutConfig
                     {
                         Title    = "Filter Legend",
@@ -403,11 +431,34 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
     // =========================================================================
     internal static class LegendIdGen
     {
-        private static int _counter = 0;
+        /// <summary>
+        /// Mints a globally unique id for a legend entry, group, row or block.
+        ///
+        /// Previously this was <c>{prefix}_{Ticks % 100000}_{n}</c> off a counter that reset
+        /// to zero on every Revit restart — so the first id of every session, on every
+        /// machine, was drawn from a 100 000-value space and always ended <c>_1</c>. That was
+        /// harmless while ids only ever indexed one user's own settings file, but these ids
+        /// now bind entries to legends stamped inside a SHARED model: two users colliding on
+        /// an id would resolve to each other's Revit views. A full GUID makes collision
+        /// impossible rather than unlikely.
+        /// </summary>
         public static string New(string prefix)
+            => $"{prefix}_{Guid.NewGuid():N}";
+
+        /// <summary>
+        /// True for an id minted by the old scheme (or the hardcoded <c>legend_seed_1</c>
+        /// that shipped identically to every install), which must be re-minted before it
+        /// can be trusted as a document-wide key.
+        /// </summary>
+        public static bool IsLegacyId(string? id)
         {
-            int n = System.Threading.Interlocked.Increment(ref _counter);
-            return $"{prefix}_{DateTime.UtcNow.Ticks % 100000}_{n}";
+            if (string.IsNullOrEmpty(id)) return true;
+            int us = id!.LastIndexOf('_');
+            if (us < 0) return true;
+            // New ids carry a 32-char hex GUID after the final underscore.
+            string tail = id.Substring(us + 1);
+            if (tail.Length == 32) return false;
+            return true;
         }
     }
 }

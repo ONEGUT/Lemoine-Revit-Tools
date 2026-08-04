@@ -44,6 +44,14 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
         /// </summary>
         public bool UpdateMode { get; set; }
 
+        /// <summary>
+        /// Id of the LegendEntry driving this run. Stamped onto the legend view the run
+        /// creates, so the document itself records which entry owns which legend — the
+        /// binding used to be an ElementId kept in a machine-wide settings file, which
+        /// claimed a legend in every project the user opened.
+        /// </summary>
+        public string? EntryId { get; set; }
+
         // Per-role TextNoteType element IDs. Null → fall back to first in document.
         public ElementId? TitleTypeId       { get; set; }
         public ElementId? SubtitleTypeId    { get; set; }
@@ -67,8 +75,9 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
             finally
             {
                 // Session-long static handler — drop the run's payload.
-                Layout = null;
-                Rows   = null;
+                Layout  = null;
+                Rows    = null;
+                EntryId = null;
             }
             Progress(100, pass, fail, skip);
             Complete(pass, fail, skip);
@@ -308,6 +317,10 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
                     }
                     dv.Name = legendName;
                     createdNew = true;
+                    // Bind the new legend to its entry inside the document, in this same
+                    // transaction. Without the stamp the next session cannot tell this
+                    // legend from any other and would offer Create again.
+                    LegendLinkSchema.Stamp(dv, EntryId);
                     // Clear any content carried over from the template legend before drawing.
                     ClearLegendContents(dv);
                 }

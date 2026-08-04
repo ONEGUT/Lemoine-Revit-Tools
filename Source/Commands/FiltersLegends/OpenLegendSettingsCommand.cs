@@ -53,13 +53,15 @@ namespace LemoineTools.Commands
             // Capture each type's real text height (TEXT_SIZE is paper-space feet) as paper
             // inches, so the preview (which runs off the Revit thread) can size each role's
             // text to the real type instead of a single font-point fallback.
-            var typeCapInches = new Dictionary<long, double>();
+            // Keyed by NAME: legend entries persist a style name, not an ElementId, so the
+            // choice survives moving between projects.
+            var typeCapInches = new Dictionary<string, double>(System.StringComparer.OrdinalIgnoreCase);
             foreach (var t in textNoteTypes)
             {
                 try
                 {
                     double feet = t.get_Parameter(BuiltInParameter.TEXT_SIZE)?.AsDouble() ?? 0;
-                    if (feet > 0) typeCapInches[t.Id.Value] = feet * 12.0;
+                    if (feet > 0) typeCapInches[t.Name] = feet * 12.0;
                 }
                 catch (System.Exception ex)
                 {
@@ -79,12 +81,25 @@ namespace LemoineTools.Commands
                     .Select(v => (v.Id, v.Name))
                     .ToList();
 
+            // Which legends in THIS document belong to which legend entry, read from the
+            // stamp on each legend view. Replaces LegendEntry.RevitViewId, a raw ElementId
+            // kept machine-wide that made every project claim the first project's legend.
+            var legendLinks = doc == null
+                ? new Dictionary<string, long>(System.StringComparer.Ordinal)
+                : LemoineTools.Tools.FiltersLegends.LegendCreator.LegendLinkSchema.ReadLinks(doc);
+
+            DiagnosticsLog.Info("OpenLegendSettings",
+                legendLinks.Count > 0
+                    ? $"Found {legendLinks.Count} legend(s) in this document linked to a legend entry."
+                    : "No legend-entry links found in this document — entries will offer Create.");
+
             var ready = new ManualResetEventSlim(false);
             LegendSettingsWindow? win = null;
 
             var thread = new System.Threading.Thread(() =>
             {
                 win = new LegendSettingsWindow(textTypes, legendViews);
+                win.SetLegendLinks(legendLinks);
                 win.Closed += (s, e) =>
                 {
                     _window = null;
