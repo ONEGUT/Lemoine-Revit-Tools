@@ -120,8 +120,10 @@ namespace LemoineTools.Tools.BulkExport
 
         // ── S1 state ──────────────────────────────────────────────────────────
         private string                        _exportMode    = "Sheets";
-        private List<string>                  _selectedNames = new List<string>();
-        private Dictionary<string, ElementId> _nameToId      = new Dictionary<string, ElementId>();
+        // Ordered by Project Browser position (see _browserRank) — this list IS the export order,
+        // so it is stored as ids rather than display names: the old name round-trip both lost the
+        // order and could not survive two items resolving to the same display key.
+        private List<long>                    _selectedIds   = new List<long>();
 
         // ── S2 state (print sets) ──────────────────────────────────────────────
         // Existing Revit print sets (ViewSheetSet elements), refreshed after creating a new
@@ -195,6 +197,12 @@ namespace LemoineTools.Tools.BulkExport
         private readonly BrowserTree          _browserTree;
         private readonly Dictionary<long, string>    _idToName = new Dictionary<long, string>();
 
+        // Project Browser display position for every captured leaf, by ElementId.Value.
+        // BrowserTreePicker hands its selection back as a HashSet, whose enumeration order is
+        // unspecified — so without this the export order (and a combined PDF's page order) is
+        // whatever the hash happens to yield. Every selection is sorted through this map.
+        private readonly Dictionary<long, int> _browserRank = new Dictionary<long, int>();
+
         // ── Preview (token preview in S3) ─────────────────────────────────────
         private string _previewSheetNumber = "A101";
         private string _previewSheetName   = "Ground Floor";
@@ -221,19 +229,19 @@ namespace LemoineTools.Tools.BulkExport
             _browserTree   = browserTree;
             _availablePrintSets = availablePrintSets ?? new List<PrintSetInfo>();
 
+            BuildBrowserRanks();
+
             // Build fast ID→Sheet lookup
             _sheetById = new Dictionary<ElementId, ViewSheet>();
             foreach (var s in _allSheets)
             {
                 _sheetById[s.Id] = s;
                 string key = $"{s.SheetNumber} — {s.Name}";
-                if (!_nameToId.ContainsKey(key)) _nameToId[key] = s.Id;
                 if (!_idToName.ContainsKey(s.Id.Value)) _idToName[s.Id.Value] = key;
             }
             foreach (var v in _allViews)
             {
                 string key = v.Name;
-                if (!_nameToId.ContainsKey(key)) _nameToId[key] = v.Id;
                 if (!_idToName.ContainsKey(v.Id.Value)) _idToName[v.Id.Value] = key;
             }
 
@@ -250,6 +258,38 @@ namespace LemoineTools.Tools.BulkExport
             if (string.IsNullOrEmpty(_dwgSetup) && _dwgSetupNames.Count > 0)
                 _dwgSetup = _dwgSetupNames[0];
         }
+
+        // ── Export order ──────────────────────────────────────────────────────
+
+        // Depth-first walk of the captured browser tree: index i is the leaf's Project Browser
+        // display position. Runs once at construction; the tree is a Revit-free snapshot so this
+        // is safe off the main thread.
+        private void BuildBrowserRanks()
+        {
+            if (_browserTree == null) return;
+            int next = 0;
+            void Walk(BrowserNode n)
+            {
+                if (n.Id.HasValue && !_browserRank.ContainsKey(n.Id.Value))
+                    _browserRank[n.Id.Value] = next++;
+                foreach (var child in n.Children) Walk(child);
+            }
+            foreach (var root in _browserTree.Roots) Walk(root);
+        }
+
+        /// <summary>
+        /// The tool's single definition of export order: Project Browser position. Ids missing
+        /// from the captured tree (a view the browser does not list) sort last in natural name
+        /// order, so the result is always deterministic — never the caller's hash order.
+        /// </summary>
+        private List<long> OrderByBrowser(IEnumerable<long> ids)
+            => ids.OrderBy(id => _browserRank.TryGetValue(id, out int rank) ? rank : int.MaxValue)
+                  .ThenBy(id => _idToName.TryGetValue(id, out var name) ? name : "",
+                          NaturalOrderComparer.OrdinalIgnoreCase)
+                  .ToList();
+
+        private List<ElementId> SelectedElementIds()
+            => _selectedIds.Select(id => new ElementId(id)).ToList();
 
         // ═════════════════════════════════════════════════════════════════════
         //  GetStepContent
@@ -330,20 +370,13 @@ namespace LemoineTools.Tools.BulkExport
             // that initialises the mirror field.
             picker.SelectionChanged += ids =>
             {
-                _selectedNames = ids
-                    .Where(id => _idToName.ContainsKey(id))
-                    .Select(id => _idToName[id])
-                    .ToList();
+                _selectedIds = OrderByBrowser(ids);
                 Fire();
             };
             // Carry the current selection forward — SetTree keeps only the ids still eligible,
             // so a Sheets↔Views switch clears (no old id is eligible in the new mode) while a
             // "Show all" toggle preserves the views that remain pickable.
-            var currentSel = _selectedNames
-                .Where(_nameToId.ContainsKey)
-                .Select(n => _nameToId[n].Value)
-                .ToList();
-            picker.SetTree(_browserTree, BuildEligibleIds((bool)(showAllCb.Tag ?? false)), currentSel);
+            picker.SetTree(_browserTree, BuildEligibleIds((bool)(showAllCb.Tag ?? false)), _selectedIds);
             return picker;
         }
 
@@ -365,7 +398,7 @@ namespace LemoineTools.Tools.BulkExport
             var newPicker = BuildTreePicker(showAllCb ?? new CheckBox { Tag = false });
             newPicker.Tag = "multiselect";
             outer.Children.Add(newPicker);
-            // BuildTreePicker's end-of-SetTree callback already re-seeded _selectedNames with
+            // BuildTreePicker's end-of-SetTree callback already re-seeded _selectedIds with
             // the surviving selection and fired validation; nothing to clear here.
             Fire();
         }
@@ -514,7 +547,7 @@ namespace LemoineTools.Tools.BulkExport
             }
 
             handler.Name      = _newPrintSetName.Trim();
-            handler.MemberIds = _selectedNames.Where(_nameToId.ContainsKey).Select(n => _nameToId[n]).ToList();
+            handler.MemberIds = SelectedElementIds();
             handler.OnCreated = sets => OnUi(() =>
             {
                 string saved       = _newPrintSetName.Trim();
@@ -1153,7 +1186,7 @@ namespace LemoineTools.Tools.BulkExport
 
         public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
         {
-            ["sheets"]  = _selectedNames.Count == 0 ? "—" : AppStrings.T("export.bulkExport.review.sheetsValue", _selectedNames.Count),
+            ["sheets"]  = _selectedIds.Count == 0 ? "—" : AppStrings.T("export.bulkExport.review.sheetsValue", _selectedIds.Count),
             ["formats"] = GetActiveFormats(),
             ["packs"]   = HasActivePrintSets() ? AppStrings.T("export.bulkExport.review.printSetsValue", _selectedPrintSetIds.Count) : AppStrings.T("export.bulkExport.review.printSetsNone"),
             ["quality"] = _pdfOn ? AppStrings.T("export.bulkExport.review.qualityValue", _colorDepth, _rasterQuality) : AppStrings.T("export.bulkExport.review.qualityPdfOff"),
@@ -1184,7 +1217,7 @@ namespace LemoineTools.Tools.BulkExport
         {
             switch (stepId)
             {
-                case "S1": return _selectedNames.Count > 0;
+                case "S1": return _selectedIds.Count > 0;
                 case "S2": return true;
                 case "S3": return _pdfOn || _dwgOn || _nwcOn || _ifcOn;
                 case "S4": return true;   // PDF settings
@@ -1200,8 +1233,8 @@ namespace LemoineTools.Tools.BulkExport
         {
             switch (stepId)
             {
-                case "S1": return _selectedNames.Count == 0 ? "—"
-                    : AppStrings.T("export.bulkExport.summaries.s1", _selectedNames.Count, _exportMode.ToLower());
+                case "S1": return _selectedIds.Count == 0 ? "—"
+                    : AppStrings.T("export.bulkExport.summaries.s1", _selectedIds.Count, _exportMode.ToLower());
                 case "S2": return HasActivePrintSets()
                     ? AppStrings.T("export.bulkExport.summaries.s2PrintSets", _selectedPrintSetIds.Count)
                     : AppStrings.T("export.bulkExport.summaries.s2Individual");
@@ -1274,10 +1307,7 @@ namespace LemoineTools.Tools.BulkExport
                 })
                 .ToList();
 
-            _handler.SelectedIds              = _selectedNames
-                .Where(n => _nameToId.ContainsKey(n))
-                .Select(n => _nameToId[n])
-                .ToList();
+            _handler.SelectedIds              = SelectedElementIds();
             _handler.ExportMode               = _exportMode;
             // Send the pattern for the mode being exported — its tokens are guaranteed
             // valid for those elements.
