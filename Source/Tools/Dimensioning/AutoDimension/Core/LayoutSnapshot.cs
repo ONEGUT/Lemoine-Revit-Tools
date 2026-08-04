@@ -177,12 +177,52 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension.Core
 
                 var xs = new XmlSerializer(typeof(LayoutSnapshot));
                 using (var w = new StreamWriter(path)) xs.Serialize(w, snap);
+
+                PruneOldSnapshots(dir);
                 return path;
             }
             catch (Exception ex)
             {
                 LemoineTools.Framework.DiagnosticsLog.Error("LayoutSnapshotWriter: write snapshot", ex);
                 return null;
+            }
+        }
+
+        /// <summary>Snapshots kept on disk before the oldest are discarded.</summary>
+        private const int MaxSnapshots = 50;
+
+        /// <summary>
+        /// Keeps the newest <see cref="MaxSnapshots"/> snapshots and deletes the rest.
+        /// These are written per view per run whenever DumpLayoutSnapshots is on, and were
+        /// never pruned — a machine that once enabled the flag grew this folder forever.
+        /// A prune failure must not fail the run that produced the snapshot, so it is
+        /// logged and swallowed.
+        /// </summary>
+        private static void PruneOldSnapshots(string dir)
+        {
+            try
+            {
+                var files = new DirectoryInfo(dir).GetFiles("*.xml");
+                if (files.Length <= MaxSnapshots) return;
+
+                Array.Sort(files, (a, b) => b.CreationTimeUtc.CompareTo(a.CreationTimeUtc));
+                int deleted = 0;
+                for (int i = MaxSnapshots; i < files.Length; i++)
+                {
+                    try { files[i].Delete(); deleted++; }
+                    catch (Exception ex)
+                    {
+                        LemoineTools.Framework.DiagnosticsLog.Swallowed(
+                            $"LayoutSnapshotWriter: delete old snapshot {files[i].Name}", ex);
+                    }
+                }
+                if (deleted > 0)
+                    LemoineTools.Framework.DiagnosticsLog.Info("LayoutSnapshotWriter",
+                        $"Pruned {deleted} old layout snapshot(s), keeping the newest {MaxSnapshots}.");
+            }
+            catch (Exception ex)
+            {
+                LemoineTools.Framework.DiagnosticsLog.Swallowed("LayoutSnapshotWriter: prune snapshots", ex);
             }
         }
     }

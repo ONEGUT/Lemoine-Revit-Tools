@@ -183,6 +183,9 @@ namespace LemoineTools
             // Load user-facing text for the saved language (English fallback) before any window opens.
             AppStrings.Load(AppSettings.Instance.Language);
 
+            // Tidy superseded files in %AppData%\LemoineTools. Never throws.
+            Framework.LegacyFileCleanup.RunOnce();
+
             // Surface Revit's transaction failures and modal dialogs into the running tool's
             // Output log (and suppress warning dialogs). Both handlers no-op unless a Lemoine
             // run is active, so non-Lemoine work is never affected.
