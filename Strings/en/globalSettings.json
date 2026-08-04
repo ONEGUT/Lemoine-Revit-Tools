@@ -80,6 +80,10 @@
     "noteViews": "Bulk Views by Level no longer searches for rooms — its views come from levels or scope boxes, so the old crop/cluster settings now belong to the Scope Box Creator above.",
     "bulkSub": "Bulk Export — Defaults",
     "outputFolder": "Output folder (blank = ask each run)",
+    // Shown under both output-folder rows. These folders are remembered per project, so
+    // exporting one model no longer leaves another model pointing at its delivery folder.
+    "folderPerProjectHint": "Remembered for this project only.",
+    "folderNoDocumentHint": "No project open — this folder applies until one is opened.",
     "sheetPattern": "Sheet filename pattern",
     "viewPattern": "View filename pattern",
     "defaultFormats": "Default formats",

@@ -12,6 +12,10 @@ namespace LemoineTools.Commands
     {
         public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
         {
+            // Keep the project-scoped settings key fresh: commands run on the Revit main
+            // thread with the document in hand, tool windows do not.
+            DocumentKey.SetCurrent(commandData.Application.ActiveUIDocument?.Document);
+
             var doc = commandData.Application.ActiveUIDocument.Document;
 
             if (App.LinkAudit != null && App.LinkAudit.IsVisible)

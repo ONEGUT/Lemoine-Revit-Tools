@@ -196,6 +196,7 @@ namespace LemoineTools.Framework
             {
                 AddTextRow(body, AppStrings.T("globalSettings.groups.dwgFolder"), mg.OutputFolder,
                     v => { mg.OutputFolder = v; mg.Save(); }, mono: true);
+                body.Children.Add(SubLabel(FolderScopeHint()));
 
                 var mgToggles = new ToggleSwitches();
                 mgToggles.SetItems(new List<ToggleItem>
@@ -254,6 +255,7 @@ namespace LemoineTools.Framework
             {
                 AddTextRow(body, AppStrings.T("globalSettings.groups.outputFolder"), be.OutputFolder,
                     v => { be.OutputFolder = v; be.Save(); }, mono: true);
+                body.Children.Add(SubLabel(FolderScopeHint()));
                 AddTextRow(body, AppStrings.T("globalSettings.groups.sheetPattern"), be.FilenamePattern,
                     v => { be.FilenamePattern = v; be.Save(); }, mono: true);
                 AddTextRow(body, AppStrings.T("globalSettings.groups.viewPattern"), be.ViewFilenamePattern,
@@ -375,5 +377,15 @@ namespace LemoineTools.Framework
 
             return scroll;
         }
+
+        /// <summary>
+        /// Caption for the output-folder rows, which are remembered per project rather than
+        /// machine-wide. With no project open the value lands in a shared fallback slot, so
+        /// say that instead of letting the user assume it will follow them into a model.
+        /// </summary>
+        private static string FolderScopeHint()
+            => DocumentKey.Current != null
+                ? AppStrings.T("globalSettings.groups.folderPerProjectHint")
+                : AppStrings.T("globalSettings.groups.folderNoDocumentHint");
     }
 }

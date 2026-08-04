@@ -24,6 +24,10 @@ namespace LemoineTools.Commands
 
         public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
         {
+            // Keep the project-scoped settings key fresh: commands run on the Revit main
+            // thread with the document in hand, tool windows do not.
+            DocumentKey.SetCurrent(commandData.Application.ActiveUIDocument?.Document);
+
             // If a window is already alive, bring it to front via its own dispatcher
             if (_window != null)
             {
