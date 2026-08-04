@@ -98,6 +98,20 @@
     "qualityValue": "{0} · {1}", "qualityPdfOff": "PDF disabled",
     "warnSheetsMode": "{0} exports 3D views only and needs Views mode — it will be skipped while you're in Sheets mode."
   },
+  // Short nouns substituted into log lines.
+  "words": {
+    "sheet": "sheet",
+    "view":  "view",
+    "items": "items",
+    "unnamedSet": "the selection"
+  },
+  // Set-persistence (Extensible Storage) messages.
+  "sets": {
+    "noPersistFamily":   "Sets cannot be saved in a family document — they stay in this window only.",
+    "noPersistLinked":   "Sets cannot be saved into a linked model — they stay in this window only.",
+    "noPersistReadOnly": "This model is read-only, so sets cannot be saved into it — they stay in this window only.",
+    "saveFailed":        "Could not save the sets into this model: {0}"
+  },
   "log": {
     "printSetNameRequired":  "Enter a name for the print set before saving.",
     "printSetEmptySelection":"Nothing selected in Step 1 to save as a print set.",
@@ -105,7 +119,6 @@
     "noDoc":          "No active Revit document — please open a project before exporting.",
     "noFolder":       "Output folder not specified.",
     "folderFail":     "Cannot create output folder: {0}",
-    "droppedWarn":    "{0} element(s) could not be resolved — they may have been deleted since the window was opened.",
     "noElements":     "No elements found for the selected IDs.",
     "noTitleblock":   "Sheet {0} has no titleblock — paper size may be incorrect.",
     "nwcNeedsViews":  "NWC: Skipped — NWC requires Views mode (3D views only). Switch to Views in Step 1.",
@@ -114,17 +127,9 @@
     "fatalError":     "Bulk Export error: {0}",
     "nameCollision":  "{0}: two items resolved to the same filename '{1}' — saved the second as '{2}' so it isn't overwritten.",
     "printSetSaved":  "Saved print set '{0}'.",
-    "packNoItems":    "Print set '{0}': none of its members exist in the model anymore — skipped.",
-    "pdfPackOk":      "PDF (print set): {0}.pdf [{1} sheets]",
-    "pdfPackFalse":   "PDF failed — print set '{0}': export returned false.",
-    "pdfPackFail":    "PDF failed — print set '{0}': {1}",
-    "dwgPackNoSetup": "DWG setup '{0}' not found — print set '{1}' DWG skipped.",
     "dwgOk":          "DWG: {0}.dwg",
     "dwgFalse":       "DWG failed — {0}: export returned false.",
     "dwgFail":        "DWG failed — {0}: {1}",
-    "pdfCombinedOk":  "PDF (combined): {0}.pdf [{1} items]",
-    "pdfCombinedFalse":"PDF failed — combined export returned false.",
-    "pdfCombinedFail":"PDF failed — combined: {0}",
     "pdfOk":          "PDF: {0}.pdf",
     "pdfFalse":       "PDF failed — {0}: export returned false.",
     "pdfFail":        "PDF failed — {0}: {1}",
@@ -134,6 +139,20 @@
     "nwcFail":        "NWC failed — {0}: {1}",
     "ifcNot3d":       "IFC: Skipped {0} — not a 3D view.",
     "ifcOk":          "IFC: {0}.ifc",
-    "ifcFail":        "IFC failed — {0}: {1}"
+    "ifcFail":        "IFC failed — {0}: {1}",
+    "nameFallback":   "{0}: pattern '{1}' produced no usable filename for {3} '{2}' — saved as '{4}' instead.",
+    "planEmpty":      "Nothing to export — no format is enabled for any set.",
+    "setMembersMissing": "Set '{0}': {1} of {2} member(s) no longer exist in the model — skipping those.",
+    "setEmpty":       "Set '{0}': no members left to export — skipped.",
+    "titleblocksOk":  "Titleblocks: all {0} sheet(s) have one.",
+    "singleFileDupes":"{0} item(s) appear in more than one set — each is included once, at its first position.",
+    "existsCheckFailed": "Could not check whether '{0}' already exists: {1}",
+    "noExisting":     "No output files already exist in the target folder(s).",
+    "existingOverwrite": "{0} of {1} output file(s) already exist and WILL BE OVERWRITTEN.",
+    "existingSkip":   "{0} of {1} output file(s) already exist and will be skipped.",
+    "existingSuffix": "{0} output file(s) already existed — a numbered suffix was added so nothing is overwritten.",
+    "skippedExisting":"Skipped {0} — the file already exists.",
+    "combinedStarting": "Exporting {0} items to a single PDF ('{1}') — Revit runs this as one operation; it cannot be cancelled once started and may take several minutes.",
+    "pdfCombinedOk2": "PDF (combined): {0}.pdf [{1} items, {2}]"
   }
 }

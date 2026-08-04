@@ -188,6 +188,14 @@ namespace LemoineTools.Tools.BulkExport
         // ── S5 state (output) ─────────────────────────────────────────────────
         private string _outputFolder  = BulkExportSettings.Instance.OutputFolder;
         private bool   _splitByFormat = BulkExportSettings.Instance.SplitByFormat;
+        private bool   _setSubfolders = BulkExportSettings.Instance.SetSubfolders;
+        private string _existingFileAction = BulkExportSettings.Instance.ExistingFileAction;
+
+        // ── Set state ─────────────────────────────────────────────────────────
+        // Names the combined PDFs. Separate from the item pattern because one pattern cannot
+        // name both a file-per-sheet and a file-per-set: {SheetNumber} on a 40-sheet file is
+        // meaningless, which is why a set's PDF used to be named after an arbitrary member.
+        private string _setPattern = BulkExportSettings.Instance.SetFilenamePattern;
 
         // ── Revit data ────────────────────────────────────────────────────────
         private readonly List<ViewSheet>             _allSheets;
@@ -290,6 +298,51 @@ namespace LemoineTools.Tools.BulkExport
 
         private List<ElementId> SelectedElementIds()
             => _selectedIds.Select(id => new ElementId(id)).ToList();
+
+        // ── Run payload ───────────────────────────────────────────────────────
+
+        /// <summary>
+        /// The sets this run exports. Everything the handler sees is a set — a plain selection
+        /// with no grouping arrives as one unnamed set, which is what collapsed the old split
+        /// between an "individual" path and a "print set" path that ignored each other's input.
+        /// </summary>
+        private List<ExportSetSpec> BuildRunSets()
+        {
+            if (HasActivePrintSets())
+            {
+                return _availablePrintSets
+                    .Where(ps => _selectedPrintSetIds.Contains(ps.Id.Value))
+                    .Select(ps => new ExportSetSpec
+                    {
+                        Name = ps.Name,
+                        // A print set's own membership is unordered (ViewSheetSet.Views is a
+                        // ViewSet), so impose the browser order here — otherwise a combined PDF's
+                        // page order is whatever Revit happened to store.
+                        MemberIds       = OrderByBrowser(ps.MemberIds.Select(id => id.Value))
+                                              .Select(id => new ElementId(id)).ToList(),
+                        PatternOverride = _patternOverrides.TryGetValue(ps.Id.Value, out var pat) ? pat : null,
+                        PdfOverride     = _pdfOverrides.TryGetValue(ps.Id.Value, out var pdf) ? pdf : null,
+                        DwgOverride     = _dwgOverrides.TryGetValue(ps.Id.Value, out var dwg) ? dwg : null,
+                    })
+                    .ToList();
+            }
+
+            return new List<ExportSetSpec>
+            {
+                new ExportSetSpec { Name = "", MemberIds = SelectedElementIds() },
+            };
+        }
+
+        /// <summary>
+        /// PDF output granularity for this run. Until the Sets step carries the control, this
+        /// reproduces the previous behaviour exactly: checked print sets always combined per set,
+        /// otherwise the Combine toggle chose between one whole-selection file and one per sheet.
+        /// </summary>
+        private PdfGranularity RunGranularity()
+        {
+            if (HasActivePrintSets()) return PdfGranularity.PerSet;
+            return _combinePdf ? PdfGranularity.SingleFile : PdfGranularity.PerSheet;
+        }
 
         // ═════════════════════════════════════════════════════════════════════
         //  GetStepContent
@@ -1293,21 +1346,11 @@ namespace LemoineTools.Tools.BulkExport
             s.ReplaceHalftoneWithThinLines = _replaceHalftone;
             s.Save();
 
-            // Print sets to export: every checked set, each carrying its own overrides
-            // (null = inherit the tool's global pattern/format for that field).
-            var printSetsToExport = _availablePrintSets
-                .Where(ps => _selectedPrintSetIds.Contains(ps.Id.Value))
-                .Select(ps => new PrintSetExportSpec
-                {
-                    Name            = ps.Name,
-                    MemberIds       = new List<ElementId>(ps.MemberIds),
-                    PatternOverride = _patternOverrides.TryGetValue(ps.Id.Value, out var pat) ? pat : null,
-                    PdfOverride     = _pdfOverrides.TryGetValue(ps.Id.Value, out var pdf) ? pdf : null,
-                    DwgOverride     = _dwgOverrides.TryGetValue(ps.Id.Value, out var dwg) ? dwg : null,
-                })
-                .ToList();
-
-            _handler.SelectedIds              = SelectedElementIds();
+            _handler.Sets                     = BuildRunSets();
+            _handler.Granularity              = RunGranularity();
+            _handler.SetFilenamePattern       = _setPattern;
+            _handler.SetSubfolders            = _setSubfolders;
+            _handler.ExistingFileAction       = _existingFileAction;
             _handler.ExportMode               = _exportMode;
             // Send the pattern for the mode being exported — its tokens are guaranteed
             // valid for those elements.
@@ -1333,7 +1376,6 @@ namespace LemoineTools.Tools.BulkExport
             _handler.NwcFacetingFactor        = _nwcFacetingFactor;
             _handler.ExportIfc                = _ifcOn;
             _handler.IfcVersion               = _ifcVersion;
-            _handler.CombinePdf               = _combinePdf;
             _handler.DwgSetupName             = _dwgSetup;
             _handler.PdfPlacement             = _pdfPlacement;
             _handler.HiddenLines              = _hiddenLines;
@@ -1343,7 +1385,6 @@ namespace LemoineTools.Tools.BulkExport
             _handler.ZoomPercent              = _zoomPct;
             _handler.ViewLinksInBlue          = _viewLinksBlue;
             _handler.ReplaceHalftoneWithThinLines = _replaceHalftone;
-            _handler.PrintSets                = printSetsToExport;
             _handler.PushLog                  = pushLog;
             _handler.OnProgress               = onProgress;
             _handler.OnComplete               = onComplete;

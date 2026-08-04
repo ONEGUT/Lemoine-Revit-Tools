@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -68,16 +69,35 @@ namespace LemoineTools.Tools.BulkExport
             return null;
         }
 
-        /// <summary>The document's layout storage element, or null when none has been written yet.</summary>
+        /// <summary>
+        /// The document's layout storage elements. Lets exceptions propagate — see
+        /// <see cref="FindStorage"/> for why the write path must not swallow them.
+        /// </summary>
+        private static List<DataStorage> CollectStorage(Document doc)
+            => new FilteredElementCollector(doc)
+                .OfClass(typeof(DataStorage))
+                .WherePasses(new ExtensibleStorageFilter(SchemaGuid))
+                .Cast<DataStorage>()
+                .ToList();
+
+        /// <summary>
+        /// The document's layout storage element, or null when none has been written yet.
+        /// Read path only: a lookup failure is reported and treated as "no layout".
+        /// **Not** used by <see cref="Write"/> — a swallowed failure there would report "none
+        /// found" and create a second storage element, after which reads would pick between two
+        /// layouts arbitrarily.
+        /// </summary>
         public static DataStorage? FindStorage(Document doc)
         {
             if (doc == null) return null;
             try
             {
-                return new FilteredElementCollector(doc)
-                    .OfClass(typeof(DataStorage))
-                    .WherePasses(new ExtensibleStorageFilter(SchemaGuid))
-                    .FirstOrDefault() as DataStorage;
+                var all = CollectStorage(doc);
+                if (all.Count > 1)
+                    DiagnosticsLog.Warn("ExportSetStore.FindStorage",
+                        $"{all.Count} set-layout storage elements in this document — using the first; " +
+                        "the others are orphans from an interrupted save");
+                return all.FirstOrDefault();
             }
             catch (Exception ex)
             {
@@ -152,7 +172,9 @@ namespace LemoineTools.Tools.BulkExport
             layout.Version = ExportSetLayout.CurrentVersion;
             string xml = Serialize(layout);
 
-            var storage = FindStorage(doc) ?? DataStorage.Create(doc);
+            // Deliberately the strict lookup: if the collector throws, the write must fail loudly
+            // rather than conclude "none exists" and mint a duplicate storage element.
+            var storage = CollectStorage(doc).FirstOrDefault() ?? DataStorage.Create(doc);
             if (storage == null)
                 throw new InvalidOperationException("Could not create the storage element for the set layout.");
 

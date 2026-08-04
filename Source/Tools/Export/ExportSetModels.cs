@@ -175,20 +175,6 @@ namespace LemoineTools.Tools.BulkExport
     }
 
     /// <summary>
-    /// One print set chosen as an export group. Superseded by <see cref="ExportSetSpec"/> — kept
-    /// only until the handler's two export paths are collapsed into one, so this commit still
-    /// builds.
-    /// </summary>
-    public sealed class PrintSetExportSpec
-    {
-        public string          Name            { get; set; } = "";
-        public List<ElementId> MemberIds       { get; set; } = new List<ElementId>();
-        public string?         PatternOverride { get; set; }
-        public bool?           PdfOverride     { get; set; }
-        public bool?           DwgOverride     { get; set; }
-    }
-
-    /// <summary>
     /// One set handed to the export handler for a run: name, ordered members, and the resolved
     /// overrides. Built from an <see cref="ExportSet"/> by the ViewModel — the handler never sees
     /// the editable model, only the flattened run payload.
