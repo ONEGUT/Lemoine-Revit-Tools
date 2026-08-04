@@ -46,6 +46,18 @@ namespace LemoineTools.Tools.BulkExport
                 psHandler.OnCreated = null;
                 psHandler.OnError   = null;
             }
+
+            // Same reasoning for the set-layout store handler — its callbacks close over this
+            // VM and its live step UI.
+            var storeHandler = App.BulkExportSetStoreHandler;
+            if (storeHandler != null)
+            {
+                storeHandler.OnSaved = null;
+                storeHandler.OnError = null;
+            }
+
+            if (_picker != null) _picker.RowBadgeProvider = null;
+            _picker = null;
         }
 
         // ── IStepFlowTool ──────────────────────────────────────────────────────
@@ -86,16 +98,19 @@ namespace LemoineTools.Tools.BulkExport
         // earlier choices must be rebuilt when the user navigates to them:
         //   S2 reads the live S1 selection, S3's token picker matches the export mode,
         //   S6's note reflects sheets-vs-views mode.
-        private Action<string>? _refreshStep;
+        internal Action<string>? _refreshStep;
         public void SetContentRefreshCallback(Action<string> rebuildStepContent) => _refreshStep = rebuildStepContent;
         public void OnStepActivated(string stepId)
         {
-            if (stepId == "S2" || stepId == "S3" || stepId == "S6")
+            // S1 too: its target-set dropdown lists the sets, which Step 2 can change.
+            // Rebuilding re-fires SelectionChanged with the surviving selection, which the
+            // assignment diff sees as a no-op unless ids genuinely dropped out.
+            if (stepId == "S1" || stepId == "S2" || stepId == "S3" || stepId == "S6")
                 _refreshStep?.Invoke(stepId);
         }
 
         public event EventHandler? ValidationChanged;
-        private void Fire() => ValidationChanged?.Invoke(this, EventArgs.Empty);
+        internal void Fire() => ValidationChanged?.Invoke(this, EventArgs.Empty);
 
         // ── NWC faceting presets (label→value, no anonymous tuples) ──────────
         private static readonly string[] NwcFacetingLabels = { "Low — 0.5", "Standard — 1.0", "High — 2.0", "Ultra — 5.0" };
@@ -115,6 +130,7 @@ namespace LemoineTools.Tools.BulkExport
         // exist on a view, so offering them in Views mode would produce empty/degenerate names.
         private const string SheetDefaultPattern = "{SheetNumber}-{SheetName}";
         private const string ViewDefaultPattern  = "{ViewName}";
+        private const string SetDefaultPattern   = "{SetName}";
 
         private bool ViewsMode => _exportMode == "Views";
 
@@ -123,21 +139,14 @@ namespace LemoineTools.Tools.BulkExport
         // Ordered by Project Browser position (see _browserRank) — this list IS the export order,
         // so it is stored as ids rather than display names: the old name round-trip both lost the
         // order and could not survive two items resolving to the same display key.
-        private List<long>                    _selectedIds   = new List<long>();
+        internal List<long>                   _selectedIds   = new List<long>();
 
         // ── S2 state (print sets) ──────────────────────────────────────────────
         // Existing Revit print sets (ViewSheetSet elements), refreshed after creating a new
         // one. Checking a set makes it an export group with its own optional overrides.
-        private List<PrintSetInfo>       _availablePrintSets;
-        private readonly HashSet<long>   _selectedPrintSetIds = new HashSet<long>();
-        private readonly Dictionary<long, string?> _patternOverrides = new Dictionary<long, string?>();
-        private readonly Dictionary<long, bool?>   _pdfOverrides     = new Dictionary<long, bool?>();
-        private readonly Dictionary<long, bool?>   _dwgOverrides     = new Dictionary<long, bool?>();
-        private string _newPrintSetName = "";
+        internal List<PrintSetInfo>      _availablePrintSets;
         // Live handles into the S2 "Save as print set" row so the create callback can clear
         // the name box and show a success/error message (rebuilt each time S2 is activated).
-        private WpfTextBox? _printSetNameBox;
-        private TextBlock?  _printSetSaveStatus;
 
         // ── S3 state (filename & formats) ────────────────────────────────────
         // Separate patterns per mode so each carries a default built from its own valid
@@ -149,8 +158,8 @@ namespace LemoineTools.Tools.BulkExport
             get => ViewsMode ? _viewPattern : _sheetPattern;
             set { if (ViewsMode) _viewPattern = value; else _sheetPattern = value; }
         }
-        private bool               _pdfOn           = BulkExportSettings.Instance.ExportPdf;
-        private bool               _dwgOn           = BulkExportSettings.Instance.ExportDwg;
+        internal bool              _pdfOn           = BulkExportSettings.Instance.ExportPdf;
+        internal bool              _dwgOn           = BulkExportSettings.Instance.ExportDwg;
         private bool               _nwcOn           = BulkExportSettings.Instance.ExportNwc;
         private bool               _ifcOn           = BulkExportSettings.Instance.ExportIfc;
         private string             _ifcVersion      = BulkExportSettings.Instance.IfcVersion;
@@ -181,7 +190,6 @@ namespace LemoineTools.Tools.BulkExport
         private string _rasterQuality   = BulkExportSettings.Instance.RasterQuality;
         private string _hiddenLines     = BulkExportSettings.Instance.HiddenLinesVector
                                           ? "Vector Processing" : "Raster Processing";
-        private bool   _combinePdf      = BulkExportSettings.Instance.CombinePdf;
         private bool   _viewLinksBlue   = BulkExportSettings.Instance.ViewLinksInBlue;
         private bool   _replaceHalftone = BulkExportSettings.Instance.ReplaceHalftoneWithThinLines;
 
@@ -198,18 +206,18 @@ namespace LemoineTools.Tools.BulkExport
         private string _setPattern = BulkExportSettings.Instance.SetFilenamePattern;
 
         // ── Revit data ────────────────────────────────────────────────────────
-        private readonly List<ViewSheet>             _allSheets;
-        private readonly List<View>                  _allViews;
+        internal readonly List<ViewSheet>            _allSheets;
+        internal readonly List<View>                 _allViews;
         private readonly List<string>                _dwgSetupNames;
         private readonly Dictionary<ElementId, ViewSheet> _sheetById;
-        private readonly BrowserTree          _browserTree;
-        private readonly Dictionary<long, string>    _idToName = new Dictionary<long, string>();
+        internal readonly BrowserTree         _browserTree;
+        internal readonly Dictionary<long, string>   _idToName = new Dictionary<long, string>();
 
         // Project Browser display position for every captured leaf, by ElementId.Value.
         // BrowserTreePicker hands its selection back as a HashSet, whose enumeration order is
         // unspecified — so without this the export order (and a combined PDF's page order) is
         // whatever the hash happens to yield. Every selection is sorted through this map.
-        private readonly Dictionary<long, int> _browserRank = new Dictionary<long, int>();
+        internal readonly Dictionary<long, int> _browserRank = new Dictionary<long, int>();
 
         // ── Preview (token preview in S3) ─────────────────────────────────────
         private string _previewSheetNumber = "A101";
@@ -227,7 +235,8 @@ namespace LemoineTools.Tools.BulkExport
             List<ViewSheet>          allSheets,
             List<View>               allViews,
             BrowserTree       browserTree,
-            List<PrintSetInfo>? availablePrintSets = null)
+            List<PrintSetInfo>? availablePrintSets = null,
+            ExportSetLayout?    storedLayout       = null)
         {
             _handler       = handler;
             _event         = externalEvent;
@@ -253,6 +262,10 @@ namespace LemoineTools.Tools.BulkExport
                 if (!_idToName.ContainsKey(v.Id.Value)) _idToName[v.Id.Value] = key;
             }
 
+            // Restore the set layout stored in this document. Must run after _idToName and
+            // _browserRank are populated — ApplyLayout re-resolves every member against them.
+            ApplyLayout(storedLayout);
+
             // Seed preview from first sheet
             if (_allSheets.Count > 0)
             {
@@ -265,6 +278,77 @@ namespace LemoineTools.Tools.BulkExport
             // while _dwgSetup stayed empty until the user touched it).
             if (string.IsNullOrEmpty(_dwgSetup) && _dwgSetupNames.Count > 0)
                 _dwgSetup = _dwgSetupNames[0];
+        }
+
+        // Ids checked in the current SelectionChanged batch, filed after the selection field is
+        // updated so AssignToTarget sees a consistent view of what is selected.
+        private readonly List<long> _pendingAssign = new List<long>();
+
+        // ── Naming helpers ────────────────────────────────────────────────────
+
+        /// <summary>
+        /// The tool's own per-run token values. Declared beside the ViewModel as Computed
+        /// definitions and passed as <c>extraComputed</c> — they are per-tool run values, never
+        /// global registry entries.
+        /// </summary>
+        private static IReadOnlyList<TokenDefinition> SetTokenDefs() => new[]
+        {
+            new TokenDefinition("SetName",    AppStrings.T("export.bulkExport.sets.tokSetName"),    TokenOrigin.Computed, TokenSubject.Environment, TokenEntity.Any),
+            new TokenDefinition("SetIndex",   AppStrings.T("export.bulkExport.sets.tokSetIndex"),   TokenOrigin.Computed, TokenSubject.Environment, TokenEntity.Any),
+            new TokenDefinition("SheetCount", AppStrings.T("export.bulkExport.sets.tokSheetCount"), TokenOrigin.Computed, TokenSubject.Environment, TokenEntity.Any),
+            new TokenDefinition("SetCount",   AppStrings.T("export.bulkExport.sets.tokSetCount"),   TokenOrigin.Computed, TokenSubject.Environment, TokenEntity.Any),
+        };
+
+        private static IReadOnlyList<TokenDefinition> ItemTokenDefs() => new[]
+        {
+            new TokenDefinition("SetName", AppStrings.T("export.bulkExport.sets.tokSetName"), TokenOrigin.Computed, TokenSubject.Environment, TokenEntity.Any),
+            new TokenDefinition("SetSeq",  AppStrings.T("export.bulkExport.sets.tokSetSeq"),  TokenOrigin.Computed, TokenSubject.Environment, TokenEntity.Any),
+        };
+
+        private static TextBlock ExampleLine()
+        {
+            var tb = new TextBlock
+            {
+                TextWrapping = TextWrapping.Wrap,
+                FontStyle    = FontStyles.Italic,
+                Margin       = new Thickness(0, 4, 0, 0),
+            };
+            tb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            tb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            tb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            return tb;
+        }
+
+        /// <summary>Live example for the set pattern, resolved against the first real set.</summary>
+        private void UpdateSetExample(TextBlock line)
+        {
+            var sample = _sets.FirstOrDefault(s => s.Members.Count > 0);
+            string setName = sample?.Name ?? AppStrings.T("export.bulkExport.sets.sampleSetName");
+            int    count   = sample?.Members.Count ?? _selectedIds.Count;
+
+            var ctx = new TokenContext();
+            ctx.Computed["SetName"]       = setName;
+            ctx.Computed["SetIndex"]      = "01";
+            ctx.Computed["SetCount"]      = Math.Max(1, _sets.Count).ToString();
+            ctx.Computed["SheetCount"]    = count.ToString();
+            ctx.Computed["ProjectNumber"] = "2024-001";
+            ctx.Computed["ProjectName"]   = "Sample Project";
+            ctx.Computed["Year"]          = DateTime.Now.Year.ToString();
+            ctx.Computed["Month"]         = DateTime.Now.Month.ToString("D2");
+            ctx.Computed["Day"]           = DateTime.Now.Day.ToString("D2");
+
+            string resolved = SanitiseFilenamePreview(TokenResolver.Resolve(_setPattern, ctx));
+            line.Text = AppStrings.T("export.bulkExport.sets.setExample", setName, resolved);
+        }
+
+        internal string GranularityLabel()
+        {
+            switch (_granularity)
+            {
+                case PdfGranularity.PerSheet:   return AppStrings.T("export.bulkExport.sets.perSheetShort");
+                case PdfGranularity.SingleFile: return AppStrings.T("export.bulkExport.sets.singleFileShort");
+                default:                        return AppStrings.T("export.bulkExport.sets.perSetShort");
+            }
         }
 
         // ── Export order ──────────────────────────────────────────────────────
@@ -299,52 +383,6 @@ namespace LemoineTools.Tools.BulkExport
         private List<ElementId> SelectedElementIds()
             => _selectedIds.Select(id => new ElementId(id)).ToList();
 
-        // ── Run payload ───────────────────────────────────────────────────────
-
-        /// <summary>
-        /// The sets this run exports. Everything the handler sees is a set — a plain selection
-        /// with no grouping arrives as one unnamed set, which is what collapsed the old split
-        /// between an "individual" path and a "print set" path that ignored each other's input.
-        /// </summary>
-        private List<ExportSetSpec> BuildRunSets()
-        {
-            if (HasActivePrintSets())
-            {
-                return _availablePrintSets
-                    .Where(ps => _selectedPrintSetIds.Contains(ps.Id.Value))
-                    .Select(ps => new ExportSetSpec
-                    {
-                        Name = ps.Name,
-                        // A print set's own membership is unordered (ViewSheetSet.Views is a
-                        // ViewSet), so impose the browser order here — otherwise a combined PDF's
-                        // page order is whatever Revit happened to store.
-                        MemberIds       = OrderByBrowser(ps.MemberIds.Select(id => id.Value))
-                                              .Select(id => new ElementId(id)).ToList(),
-                        PatternOverride = _patternOverrides.TryGetValue(ps.Id.Value, out var pat) ? pat : null,
-                        PdfOverride     = _pdfOverrides.TryGetValue(ps.Id.Value, out var pdf) ? pdf : null,
-                        DwgOverride     = _dwgOverrides.TryGetValue(ps.Id.Value, out var dwg) ? dwg : null,
-                    })
-                    .ToList();
-            }
-
-            return new List<ExportSetSpec>
-            {
-                new ExportSetSpec { Name = "", MemberIds = SelectedElementIds() },
-            };
-        }
-
-        /// <summary>
-        /// PDF output granularity for this run. Until the Sets step carries the control, this
-        /// reproduces the previous behaviour exactly: checked print sets always combined per set,
-        /// otherwise the Combine toggle chose between one whole-selection file and one per sheet.
-        /// </summary>
-        private PdfGranularity RunGranularity()
-        {
-            if (HasActivePrintSets()) return PdfGranularity.PerSet;
-            return _combinePdf ? PdfGranularity.SingleFile : PdfGranularity.PerSheet;
-        }
-
-        // ═════════════════════════════════════════════════════════════════════
         //  GetStepContent
         // ═════════════════════════════════════════════════════════════════════
         public FrameworkElement? GetStepContent(string stepId)
@@ -352,7 +390,7 @@ namespace LemoineTools.Tools.BulkExport
             switch (stepId)
             {
                 case "S1": return BuildS1();
-                case "S2": return BuildS2();
+                case "S2": return BuildS2Sets();
                 case "S3": return BuildS3();
                 case "S4": return BuildS4Pdf();
                 case "S5": return BuildS5Dwg();
@@ -408,9 +446,23 @@ namespace LemoineTools.Tools.BulkExport
             outer.Tag = showAllCb;
             outer.Children.Add(showAllCb);
 
+            outer.Children.Add(BuildTargetBar());
+
             var multiSelect = BuildTreePicker(showAllCb);
             multiSelect.Tag = "multiselect";
             outer.Children.Add(multiSelect);
+
+            var assignHint = new TextBlock
+            {
+                Text         = AppStrings.T("export.bulkExport.sets.assignHint"),
+                TextWrapping = TextWrapping.Wrap,
+                FontStyle    = FontStyles.Italic,
+                Margin       = new Thickness(0, 6, 0, 0),
+            };
+            assignHint.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            assignHint.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            assignHint.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            outer.Children.Add(assignHint);
 
             return outer;
         }
@@ -421,15 +473,34 @@ namespace LemoineTools.Tools.BulkExport
             // Subscribe BEFORE SetTree — per the BrowserTreePicker contract, the
             // single SelectionChanged fired at the end of SetTree is the only mechanism
             // that initialises the mirror field.
+            // The badge on each checked row names the set it went into — assigning while
+            // selecting makes the active set modal state, and this is what keeps it visible.
+            picker.RowBadgeProvider = BadgeFor;
+
             picker.SelectionChanged += ids =>
             {
-                _selectedIds = OrderByBrowser(ids);
+                var now      = OrderByBrowser(ids);
+                var previous = new HashSet<long>(_selectedIds);
+                var current  = new HashSet<long>(now);
+
+                foreach (long id in now.Where(id => !previous.Contains(id)))
+                    _pendingAssign.Add(id);
+                foreach (long id in _selectedIds.Where(id => !current.Contains(id)))
+                    RemoveFromAllSets(id);
+
+                _selectedIds = now;
+                foreach (long id in _pendingAssign) AssignToTarget(id);
+                _pendingAssign.Clear();
+
+                picker.RefreshBadges();
+                UpdateTargetBar();
                 Fire();
             };
             // Carry the current selection forward — SetTree keeps only the ids still eligible,
             // so a Sheets↔Views switch clears (no old id is eligible in the new mode) while a
             // "Show all" toggle preserves the views that remain pickable.
             picker.SetTree(_browserTree, BuildEligibleIds((bool)(showAllCb.Tag ?? false)), _selectedIds);
+            _picker = picker;
             return picker;
         }
 
@@ -482,256 +553,6 @@ namespace LemoineTools.Tools.BulkExport
         // each with an optional filename-pattern and format override, or save the current
         // S1 selection as a new print set. Membership comes from Revit itself, not a drag-drop
         // editor, so no "Load"/reorder UI is needed — a real print set already knows its members.
-        private FrameworkElement BuildS2()
-        {
-            var outer = new StackPanel();
-
-            var note = new TextBlock
-            {
-                Text         = AppStrings.T("export.bulkExport.labels.printSetsNote"),
-                TextWrapping = TextWrapping.Wrap,
-                FontStyle    = FontStyles.Italic,
-                Margin       = new Thickness(0, 0, 0, 10),
-            };
-            note.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            note.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            note.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            outer.Children.Add(note);
-
-            var listContainer = new StackPanel();
-            outer.Children.Add(listContainer);
-
-            void RebuildList()
-            {
-                listContainer.Children.Clear();
-                if (_availablePrintSets.Count == 0)
-                {
-                    listContainer.Children.Add(Dim(AppStrings.T("export.bulkExport.labels.noPrintSets")));
-                }
-                foreach (var ps in _availablePrintSets)
-                    listContainer.Children.Add(BuildPrintSetRow(ps, RebuildList));
-            }
-            RebuildList();
-
-            AddDivider(outer);
-            AddSectionLabel(outer, AppStrings.T("export.bulkExport.labels.saveAsPrintSet"));
-
-            var saveRow = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 4) };
-            var saveBtn = new Button
-            {
-                Content = AppStrings.T("export.bulkExport.labels.savePrintSetBtn"),
-                Margin  = new Thickness(6, 0, 0, 0),
-                Padding = new Thickness(8, 0, 8, 0),
-            };
-            saveBtn.SetResourceReference(Button.MinHeightProperty,   "LemoineH_BtnMin");
-            saveBtn.SetResourceReference(Button.FontSizeProperty,    "LemoineFS_SM");
-            saveBtn.SetResourceReference(Button.FontFamilyProperty,  "LemoineUiFont");
-            saveBtn.SetResourceReference(Button.ForegroundProperty,  "LemoineText");
-            saveBtn.SetResourceReference(Button.BackgroundProperty,  "LemoineCanvas");
-            saveBtn.SetResourceReference(Button.BorderBrushProperty, "LemoineBorder");
-            saveBtn.Template = ControlStyles.BuildFlatButtonTemplate();
-            DockPanel.SetDock(saveBtn, Dock.Right);
-
-            var nameBox = new WpfTextBox { Text = _newPrintSetName, Padding = new Thickness(6, 2, 6, 2) };
-            nameBox.SetResourceReference(WpfTextBox.BackgroundProperty,  "LemoineSelectBg");
-            nameBox.SetResourceReference(WpfTextBox.ForegroundProperty,  "LemoineText");
-            nameBox.SetResourceReference(WpfTextBox.BorderBrushProperty, "LemoineBorderMid");
-            nameBox.SetResourceReference(WpfTextBox.FontFamilyProperty,  "LemoineUiFont");
-            nameBox.SetResourceReference(WpfTextBox.FontSizeProperty,    "LemoineFS_SM");
-            nameBox.SetResourceReference(WpfTextBox.MinHeightProperty,   "LemoineH_Input");
-            nameBox.TextChanged += (s, e) => _newPrintSetName = nameBox.Text;
-            _printSetNameBox = nameBox;
-
-            saveBtn.Click += (s, e) => SaveCurrentSelectionAsPrintSet(RebuildList);
-
-            saveRow.Children.Add(saveBtn);
-            saveRow.Children.Add(nameBox);
-            outer.Children.Add(saveRow);
-
-            var saveHint = new TextBlock
-            {
-                Text         = AppStrings.T("export.bulkExport.labels.saveAsPrintSetHint"),
-                TextWrapping = TextWrapping.Wrap,
-            };
-            saveHint.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            saveHint.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            saveHint.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            outer.Children.Add(saveHint);
-
-            // Inline status for the save action — a blank name or a duplicate-name failure
-            // previously went only to diagnostics.log, so the button appeared to do nothing.
-            var status = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 0) };
-            status.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            status.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            status.Visibility = WpfVisibility.Collapsed;
-            _printSetSaveStatus = status;
-            outer.Children.Add(status);
-
-            return outer;
-        }
-
-        private void SetPrintSetStatus(string text, bool isError)
-        {
-            var status = _printSetSaveStatus;
-            if (status == null) return;
-            status.Text = text;
-            status.SetResourceReference(TextBlock.ForegroundProperty, isError ? "LemoineRed" : "LemoineTextDim");
-            status.Visibility = WpfVisibility.Visible;
-        }
-
-        private void SaveCurrentSelectionAsPrintSet(Action rebuildList)
-        {
-            if (string.IsNullOrWhiteSpace(_newPrintSetName))
-            {
-                SetPrintSetStatus(AppStrings.T("export.bulkExport.log.printSetNameRequired"), isError: true);
-                return;
-            }
-            var handler = App.BulkExportPrintSetHandler;
-            var evt     = App.BulkExportPrintSetEvent;
-            if (handler == null || evt == null) return;
-
-            // The handler runs on Revit's main thread, so its callbacks must marshal back to
-            // this window's dispatcher before touching any WPF element.
-            var dispatcher = System.Windows.Threading.Dispatcher.CurrentDispatcher;
-            void OnUi(Action a)
-            {
-                if (dispatcher.HasShutdownStarted || dispatcher.HasShutdownFinished) return;
-                dispatcher.BeginInvoke(a);
-            }
-
-            handler.Name      = _newPrintSetName.Trim();
-            handler.MemberIds = SelectedElementIds();
-            handler.OnCreated = sets => OnUi(() =>
-            {
-                string saved       = _newPrintSetName.Trim();
-                _availablePrintSets = sets;
-                _newPrintSetName    = "";
-                if (_printSetNameBox != null) _printSetNameBox.Text = "";
-                rebuildList();
-                SetPrintSetStatus(AppStrings.T("export.bulkExport.log.printSetSaved", saved), isError: false);
-                Fire();
-            });
-            handler.OnError = msg => OnUi(() => SetPrintSetStatus(msg ?? "", isError: true));
-            evt.Raise();
-        }
-
-        private FrameworkElement BuildPrintSetRow(PrintSetInfo ps, Action rebuildList)
-        {
-            long key = ps.Id.Value;
-            bool selected = _selectedPrintSetIds.Contains(key);
-
-            var card = new Border
-            {
-                BorderThickness = new Thickness(1),
-                CornerRadius    = new CornerRadius(5),
-                Padding         = new Thickness(10, 8, 10, 8),
-                Margin          = new Thickness(0, 0, 0, 8),
-            };
-            card.SetResourceReference(Border.BackgroundProperty,  selected ? "LemoineAccentDim" : "LemoineRaised");
-            card.SetResourceReference(Border.BorderBrushProperty, selected ? "LemoineAccent" : "LemoineBorder");
-
-            var stack = new StackPanel();
-
-            var headerRow = new StackPanel { Orientation = Orientation.Horizontal };
-            var cb = new CheckBox { IsChecked = selected, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
-            headerRow.Children.Add(cb);
-
-            var nameTb = new TextBlock
-            {
-                Text = AppStrings.T("export.bulkExport.labels.printSetRow", ps.Name, ps.MemberIds.Count),
-                VerticalAlignment = VerticalAlignment.Center,
-            };
-            nameTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
-            nameTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-            nameTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            headerRow.Children.Add(nameTb);
-            stack.Children.Add(headerRow);
-
-            var overridesPanel = new StackPanel { Margin = new Thickness(24, 8, 0, 0) };
-            overridesPanel.Visibility = selected ? WpfVisibility.Visible : WpfVisibility.Collapsed;
-            stack.Children.Add(overridesPanel);
-
-            void RebuildOverrides()
-            {
-                overridesPanel.Children.Clear();
-
-                var patternLabel = new TextBlock { Text = AppStrings.T("export.bulkExport.labels.printSetPatternOverride"), Margin = new Thickness(0, 0, 0, 4) };
-                patternLabel.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-                patternLabel.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-                patternLabel.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-                overridesPanel.Children.Add(patternLabel);
-
-                _patternOverrides.TryGetValue(key, out var curPattern);
-                var patternBox = new WpfTextBox
-                {
-                    Text = curPattern ?? "", Width = 260, HorizontalAlignment = HorizontalAlignment.Left,
-                    Padding = new Thickness(6, 2, 6, 2),
-                };
-                patternBox.SetResourceReference(WpfTextBox.BackgroundProperty,  "LemoineSelectBg");
-                patternBox.SetResourceReference(WpfTextBox.ForegroundProperty,  "LemoineText");
-                patternBox.SetResourceReference(WpfTextBox.BorderBrushProperty, "LemoineBorderMid");
-                patternBox.SetResourceReference(WpfTextBox.FontFamilyProperty,  "LemoineMonoFont");
-                patternBox.SetResourceReference(WpfTextBox.FontSizeProperty,    "LemoineFS_SM");
-                patternBox.SetResourceReference(WpfTextBox.MinHeightProperty,   "LemoineH_Input");
-                patternBox.TextChanged += (s, e) =>
-                    _patternOverrides[key] = string.IsNullOrWhiteSpace(patternBox.Text) ? null : patternBox.Text;
-                overridesPanel.Children.Add(patternBox);
-
-                overridesPanel.Children.Add(new FrameworkElement { Height = 8 });
-
-                string inheritLabel = AppStrings.T("export.bulkExport.labels.printSetInherit");
-                string onLabel      = AppStrings.T("export.bulkExport.labels.printSetOn");
-                string offLabel     = AppStrings.T("export.bulkExport.labels.printSetOff");
-                var tristate = new List<string> { inheritLabel, onLabel, offLabel };
-
-                FrameworkElement FormatOverrideRow(string label, Dictionary<long, bool?> map)
-                {
-                    var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 4) };
-                    var lbl = new TextBlock { Text = label, Width = 50, VerticalAlignment = VerticalAlignment.Center };
-                    lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-                    lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-                    lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-                    row.Children.Add(lbl);
-
-                    map.TryGetValue(key, out var cur);
-                    var sel = new SingleSelect
-                    {
-                        Width = 140,
-                        Items = tristate,
-                        SelectedItem = cur == true ? onLabel : cur == false ? offLabel : inheritLabel,
-                    };
-                    sel.SelectionChanged += v =>
-                        map[key] = v == onLabel ? true : v == offLabel ? false : (bool?)null;
-                    row.Children.Add(sel);
-                    return row;
-                }
-
-                overridesPanel.Children.Add(FormatOverrideRow("PDF", _pdfOverrides));
-                overridesPanel.Children.Add(FormatOverrideRow("DWG", _dwgOverrides));
-            }
-            RebuildOverrides();
-
-            cb.Checked += (s, e) =>
-            {
-                _selectedPrintSetIds.Add(key);
-                card.SetResourceReference(Border.BackgroundProperty,  "LemoineAccentDim");
-                card.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
-                overridesPanel.Visibility = WpfVisibility.Visible;
-                Fire();
-            };
-            cb.Unchecked += (s, e) =>
-            {
-                _selectedPrintSetIds.Remove(key);
-                card.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
-                card.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-                overridesPanel.Visibility = WpfVisibility.Collapsed;
-                Fire();
-            };
-
-            card.Child = stack;
-            return card;
-        }
-
         // ── S3 — Filename & Formats ───────────────────────────────────────────
         // Pattern + format toggles only. Each format's own options live in its dedicated
         // step (S4 PDF, S5 DWG, S6 NWC, S7 IFC), shown only when that format is enabled.
@@ -739,50 +560,59 @@ namespace LemoineTools.Tools.BulkExport
         {
             var outer = new StackPanel();
 
-            // Filename pattern — token vocabulary matches the export mode so only valid
-            // tokens are ever offered (sheet tokens for sheets, view tokens for views).
-            AddSectionLabel(outer, ViewsMode ? AppStrings.T("export.bulkExport.labels.patternViews") : AppStrings.T("export.bulkExport.labels.patternSheets"));
+            // Two patterns, because one cannot name both a file-per-sheet and a file-per-set:
+            // {SheetNumber} on a 40-sheet file is meaningless. Each box is labelled by WHAT IT
+            // NAMES and carries a live resolved example — the example, not the label, is what
+            // makes two stacked TokenInputs unmistakable. Whichever box cannot apply at the
+            // current granularity is hidden outright, never shown disabled.
+            bool setBoxApplies  = _granularity != PdfGranularity.PerSheet && _pdfOn;
+            bool itemBoxApplies = (_granularity == PdfGranularity.PerSheet && _pdfOn)
+                                  || _dwgOn || _nwcOn || _ifcOn;
 
-            var patternTokens = NamingTokenRegistry.TokensFor(
-                ViewsMode ? TokenEntity.View : TokenEntity.Sheet, hasSource: false);
-            _tokenInput      = new TokenInput(patternTokens,
-                                                     ViewsMode ? ViewDefaultPattern : SheetDefaultPattern);
-            _tokenInput.Text = ActivePattern;
-            outer.Children.Add(_tokenInput);
-
-            var preview = new TextBlock
+            if (setBoxApplies)
             {
-                TextWrapping = TextWrapping.Wrap,
-                FontStyle    = FontStyles.Italic,
-                Margin       = new Thickness(0, 4, 0, 0),
-            };
-            preview.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-            preview.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            preview.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            UpdatePreview(preview);
-            outer.Children.Add(preview);
+                AddSectionLabel(outer, AppStrings.T("export.bulkExport.sets.setPatternLabel"));
 
-            _tokenInput.TextChanged += (s, e) =>
-            {
-                ActivePattern = _tokenInput.Text;
-                UpdatePreview(preview);
-                Fire();
-            };
+                var setTokens = NamingTokenRegistry.TokensFor(TokenEntity.Any, hasSource: false, SetTokenDefs());
+                var setInput  = new TokenInput(setTokens, SetDefaultPattern) { Text = _setPattern };
+                outer.Children.Add(setInput);
 
-            // Print set filename note (shown when print sets are selected)
-            if (HasActivePrintSets())
-            {
-                var packNote = new TextBlock
+                var setEx = ExampleLine();
+                UpdateSetExample(setEx);
+                outer.Children.Add(setEx);
+
+                setInput.TextChanged += (s, e) =>
                 {
-                    Text         = AppStrings.T("export.bulkExport.labels.printSetFilenameNote"),
-                    TextWrapping = TextWrapping.Wrap,
-                    FontStyle    = FontStyles.Italic,
-                    Margin       = new Thickness(0, 6, 0, 0),
+                    _setPattern = setInput.Text;
+                    UpdateSetExample(setEx);
+                    Fire();
                 };
-                packNote.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-                packNote.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-                packNote.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-                outer.Children.Add(packNote);
+            }
+
+            if (itemBoxApplies)
+            {
+                if (setBoxApplies) AddDivider(outer);
+
+                AddSectionLabel(outer, AppStrings.T("export.bulkExport.sets.itemPatternLabel",
+                    ViewsMode ? AppStrings.T("export.bulkExport.words.view") : AppStrings.T("export.bulkExport.words.sheet")));
+
+                var patternTokens = NamingTokenRegistry.TokensFor(
+                    ViewsMode ? TokenEntity.View : TokenEntity.Sheet, hasSource: false, ItemTokenDefs());
+                _tokenInput      = new TokenInput(patternTokens,
+                                                         ViewsMode ? ViewDefaultPattern : SheetDefaultPattern);
+                _tokenInput.Text = ActivePattern;
+                outer.Children.Add(_tokenInput);
+
+                var preview = ExampleLine();
+                UpdatePreview(preview);
+                outer.Children.Add(preview);
+
+                _tokenInput.TextChanged += (s, e) =>
+                {
+                    ActivePattern = _tokenInput.Text;
+                    UpdatePreview(preview);
+                    Fire();
+                };
             }
 
             AddDivider(outer);
@@ -861,6 +691,10 @@ namespace LemoineTools.Tools.BulkExport
             }
             var ctx = new TokenContext();
             foreach (var kvp in tokens) ctx.Computed[kvp.Key] = kvp.Value;
+            var sampleSet = _sets.FirstOrDefault(s => s.Members.Count > 0);
+            ctx.Computed["SetName"] = sampleSet?.Name ?? AppStrings.T("export.bulkExport.sets.sampleSetName");
+            ctx.Computed["SetSeq"]  = "01";
+            ctx.Computed["Seq"]     = "001";
             string resolved = TokenResolver.Resolve(ActivePattern, ctx);
             preview.Text = AppStrings.T("export.bulkExport.labels.preview", SanitiseFilenamePreview(resolved), PreviewExtension());
         }
@@ -1083,33 +917,9 @@ namespace LemoineTools.Tools.BulkExport
 
             AddDivider(outer);
 
-            // COMBINE ─────────────────────────────────────────────────────────
-            AddSectionLabel(outer, AppStrings.T("export.bulkExport.labels.secCombine"));
-
-            var combineToggle = new ToggleSwitches();
-            combineToggle.SetItems(new List<ToggleItem>
-            {
-                new ToggleItem { Id = "combine", Label = AppStrings.T("export.bulkExport.labels.combineLabel"), DefaultOn = _combinePdf },
-            });
-            combineToggle.StateChanged += state => { state.TryGetValue("combine", out _combinePdf); Fire(); };
-            outer.Children.Add(combineToggle);
-
-            if (HasActivePrintSets())
-            {
-                var packCombineNote = new TextBlock
-                {
-                    Text         = AppStrings.T("export.bulkExport.labels.printSetCombineNote"),
-                    TextWrapping = TextWrapping.Wrap,
-                    FontStyle    = FontStyles.Italic,
-                    Margin       = new Thickness(0, 2, 0, 0),
-                };
-                packCombineNote.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-                packCombineNote.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-                packCombineNote.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-                outer.Children.Add(packCombineNote);
-            }
-
-            AddDivider(outer);
+            // Granularity (one PDF per sheet / per set / for everything) lives on the Sets step,
+            // next to the sets it operates on — one control, one place. The step summary below
+            // repeats it so the collapsed PDF row still shows it.
 
             // ADVANCED ────────────────────────────────────────────────────────
             AddSectionLabel(outer, AppStrings.T("export.bulkExport.labels.secAdvanced"));
@@ -1208,6 +1018,26 @@ namespace LemoineTools.Tools.BulkExport
             splitToggle.StateChanged += state => { state.TryGetValue("split", out _splitByFormat); Fire(); };
             outer.Children.Add(splitToggle);
 
+            var subToggle = new ToggleSwitches();
+            subToggle.SetItems(new List<ToggleItem>
+            {
+                new ToggleItem { Id = "setsub", Label = AppStrings.T("export.bulkExport.sets.subfolderLabel"),
+                                 Desc = AppStrings.T("export.bulkExport.sets.subfolderDesc"), DefaultOn = _setSubfolders },
+            });
+            subToggle.StateChanged += state => { state.TryGetValue("setsub", out _setSubfolders); Fire(); };
+            outer.Children.Add(subToggle);
+
+            AddDivider(outer);
+
+            // Re-exporting used to overwrite the previous issue in silence — name de-duplication
+            // was per-run only and never looked at the disk. Overwrite stays the default (it is
+            // what Revit does), but the count is now raised as a warning on the review step.
+            AddSectionLabel(outer, AppStrings.T("export.bulkExport.sets.existingHeader"));
+            var existingOptions = new[] { "Overwrite", "Skip", "Add suffix" };
+            AddLabeledComboBox(outer, AppStrings.T("export.bulkExport.sets.existingLabel"),
+                existingOptions, GetIndex(existingOptions, _existingFileAction),
+                val => { _existingFileAction = val; Fire(); });
+
             return outer;
         }
 
@@ -1241,7 +1071,7 @@ namespace LemoineTools.Tools.BulkExport
         {
             ["sheets"]  = _selectedIds.Count == 0 ? "—" : AppStrings.T("export.bulkExport.review.sheetsValue", _selectedIds.Count),
             ["formats"] = GetActiveFormats(),
-            ["packs"]   = HasActivePrintSets() ? AppStrings.T("export.bulkExport.review.printSetsValue", _selectedPrintSetIds.Count) : AppStrings.T("export.bulkExport.review.printSetsNone"),
+            ["packs"]   = AppStrings.T("export.bulkExport.review.setsValue", _sets.Count, GranularityLabel()),
             ["quality"] = _pdfOn ? AppStrings.T("export.bulkExport.review.qualityValue", _colorDepth, _rasterQuality) : AppStrings.T("export.bulkExport.review.qualityPdfOff"),
             ["pattern"] = string.IsNullOrEmpty(ActivePattern) ? "—" : ActivePattern,
             ["folder"]  = _outputFolder.Length == 0 ? "—"
@@ -1258,11 +1088,23 @@ namespace LemoineTools.Tools.BulkExport
         {
             get
             {
-                if (ViewsMode || !(_nwcOn || _ifcOn)) return null;
-                var fmts = new List<string>();
-                if (_nwcOn) fmts.Add("NWC");
-                if (_ifcOn) fmts.Add("IFC");
-                return AppStrings.T("export.bulkExport.review.warnSheetsMode", string.Join(" & ", fmts));
+                var warnings = new List<string>();
+
+                if (!ViewsMode && (_nwcOn || _ifcOn))
+                {
+                    var fmts = new List<string>();
+                    if (_nwcOn) fmts.Add("NWC");
+                    if (_ifcOn) fmts.Add("IFC");
+                    warnings.Add(AppStrings.T("export.bulkExport.review.warnSheetsMode", string.Join(" & ", fmts)));
+                }
+
+                // Once named sets exist, a forgotten item would otherwise ship as a surprise
+                // "Unassigned" file in the deliverable.
+                int loose = UnassignedIds().Count;
+                if (_sets.Count > 0 && loose > 0 && _unassignedEnabled)
+                    warnings.Add(AppStrings.T("export.bulkExport.sets.unassignedWarn", loose));
+
+                return warnings.Count == 0 ? null : string.Join("  ", warnings);
             }
         }
 
@@ -1271,7 +1113,7 @@ namespace LemoineTools.Tools.BulkExport
             switch (stepId)
             {
                 case "S1": return _selectedIds.Count > 0;
-                case "S2": return true;
+                case "S2": return true;   // sets are optional — an ungrouped selection is one set
                 case "S3": return _pdfOn || _dwgOn || _nwcOn || _ifcOn;
                 case "S4": return true;   // PDF settings
                 case "S5": return true;   // DWG settings
@@ -1288,13 +1130,13 @@ namespace LemoineTools.Tools.BulkExport
             {
                 case "S1": return _selectedIds.Count == 0 ? "—"
                     : AppStrings.T("export.bulkExport.summaries.s1", _selectedIds.Count, _exportMode.ToLower());
-                case "S2": return HasActivePrintSets()
-                    ? AppStrings.T("export.bulkExport.summaries.s2PrintSets", _selectedPrintSetIds.Count)
-                    : AppStrings.T("export.bulkExport.summaries.s2Individual");
+                case "S2": return _sets.Count == 0
+                    ? AppStrings.T("export.bulkExport.summaries.s2Individual", GranularityLabel())
+                    : AppStrings.T("export.bulkExport.summaries.s2Sets", _sets.Count, _selectedIds.Count, GranularityLabel());
                 case "S3": return GetActiveFormats() == "—"
                     ? AppStrings.T("export.bulkExport.summaries.s3None")
                     : AppStrings.T("export.bulkExport.summaries.s3", GetActiveFormats(), ActivePattern);
-                case "S4": return AppStrings.T("export.bulkExport.summaries.s4", _hiddenLines.Split(' ')[0], _rasterQuality, _colorDepth, _pdfPlacement.Split(' ')[0]);
+                case "S4": return AppStrings.T("export.bulkExport.summaries.s4", _hiddenLines.Split(' ')[0], _rasterQuality, _colorDepth, GranularityLabel());
                 case "S5": return string.IsNullOrEmpty(_dwgSetup) ? AppStrings.T("export.bulkExport.summaries.s5Default") : _dwgSetup;
                 case "S6": return AppStrings.T("export.bulkExport.summaries.s6", _nwcCoordinates, _nwcParameters);
                 case "S7": return _ifcVersion;
@@ -1334,7 +1176,10 @@ namespace LemoineTools.Tools.BulkExport
             s.NwcFacetingFactor            = _nwcFacetingFactor;
             s.ExportIfc                    = _ifcOn;
             s.IfcVersion                   = _ifcVersion;
-            s.CombinePdf                   = _combinePdf;
+            s.PdfGranularity               = _granularity.ToString();
+            s.SetFilenamePattern           = _setPattern;
+            s.SetSubfolders                = _setSubfolders;
+            s.ExistingFileAction           = _existingFileAction;
             s.PdfPaperPlacement            = _pdfPlacement;
             s.HiddenLinesVector            = _hiddenLines == "Vector Processing";
             s.DwgExportSetupName           = _dwgSetup;
@@ -1346,8 +1191,8 @@ namespace LemoineTools.Tools.BulkExport
             s.ReplaceHalftoneWithThinLines = _replaceHalftone;
             s.Save();
 
-            _handler.Sets                     = BuildRunSets();
-            _handler.Granularity              = RunGranularity();
+            _handler.Sets                     = BuildRunSetsFromModel();
+            _handler.Granularity              = _granularity;
             _handler.SetFilenamePattern       = _setPattern;
             _handler.SetSubfolders            = _setSubfolders;
             _handler.ExistingFileAction       = _existingFileAction;
@@ -1564,7 +1409,7 @@ namespace LemoineTools.Tools.BulkExport
         //  Shared UI helpers
         // ═════════════════════════════════════════════════════════════════════
 
-        private Button BuildModeButton(string label, bool active)
+        internal Button BuildModeButton(string label, bool active)
         {
             var b = new Button
             {
@@ -1582,7 +1427,7 @@ namespace LemoineTools.Tools.BulkExport
             return b;
         }
 
-        private static void ApplyModeButtonStyle(Button b, bool active)
+        internal static void ApplyModeButtonStyle(Button b, bool active)
         {
             if (active)
             {
@@ -1604,7 +1449,7 @@ namespace LemoineTools.Tools.BulkExport
             ApplyModeButtonStyle(b, !aActive);
         }
 
-        private static void AddSectionLabel(System.Windows.Controls.Panel parent, string text)
+        internal static void AddSectionLabel(System.Windows.Controls.Panel parent, string text)
         {
             var lbl = new TextBlock
             {
@@ -1632,7 +1477,7 @@ namespace LemoineTools.Tools.BulkExport
             parent.Children.Add(lbl);
         }
 
-        private static TextBlock Dim(string text)
+        internal static TextBlock Dim(string text)
         {
             var tb = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, FontStyle = FontStyles.Italic, Margin = new Thickness(0, 0, 0, 8) };
             tb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
@@ -1641,7 +1486,7 @@ namespace LemoineTools.Tools.BulkExport
             return tb;
         }
 
-        private static void AddDivider(System.Windows.Controls.Panel parent)
+        internal static void AddDivider(System.Windows.Controls.Panel parent)
         {
             var sep = new System.Windows.Shapes.Rectangle { Height = 1, Margin = new Thickness(0, 10, 0, 10) };
             sep.SetResourceReference(System.Windows.Shapes.Rectangle.FillProperty, "LemoineBorder");
@@ -1687,7 +1532,6 @@ namespace LemoineTools.Tools.BulkExport
             return fmts.Count > 0 ? string.Join(", ", fmts) : "—";
         }
 
-        private bool HasActivePrintSets() => _selectedPrintSetIds.Count > 0;
 
         private static int GetIndex(string[] items, string value)
         {

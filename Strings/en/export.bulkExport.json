@@ -6,13 +6,13 @@
   "title": "Bulk Export",
   "runLabel": "Export in Revit →",
   "steps": {
-    "S1": "Select Sheets / Views", "S2": "Print Sets", "S3": "Filename & Formats",
+    "S1": "Select Sheets / Views", "S2": "Sets & Order", "S3": "Filename & Formats",
     "S4": "PDF Settings", "S5": "DWG Settings", "S6": "NWC Settings", "S7": "IFC Settings",
     "S8": "Output", "S9": "Review & Run"
   },
   "summaries": {
     "s1": "{0} {1} selected",
-    "s2PrintSets": "{0} print set(s)", "s2Individual": "Individual export",
+    "s2Sets": "{0} sets · {1} items · {2}", "s2Individual": "No sets · {0}",
     "s3None": "No formats selected", "s3": "{0} — {1}",
     "s4": "{0} · {1} · {2} · {3}",
     "s5Default": "Default DWG setup",
@@ -21,20 +21,11 @@
   },
   "labels": {
     "showAllViews": "Show all non-template views",
-    "printSetsNote": "Optional — leave every print set unchecked to export the Step 1 selection individually with the filename pattern from Step 3. A checked print set is combined into one PDF (its own members, in Revit's saved order) and exported as individual DWGs; NWC/IFC are per-view and always export from the Step 1 selection.",
     "noPrintSets": "No print sets found in this project.",
-    "saveAsPrintSet": "SAVE CURRENT SELECTION AS A NEW PRINT SET",
-    "savePrintSetBtn": "Save",
-    "saveAsPrintSetHint": "Saves the Step 1 selection as a named Revit print set (View/Sheet Set), so it's available here and in Revit's own File ▸ Print dialog going forward.",
-    "printSetRow": "{0}  ({1} item(s))",
-    "printSetPatternOverride": "FILENAME PATTERN OVERRIDE (blank = use Step 3's pattern)",
     "printSetInherit": "Use global",
     "printSetOn": "On",
     "printSetOff": "Off",
-    "patternSheets": "FILENAME PATTERN (SHEETS)",
-    "patternViews": "FILENAME PATTERN (VIEWS)",
     "preview": "Preview: {0}{1}",
-    "printSetFilenameNote": "A checked print set's combined PDF is named after the print set (or its own pattern override, if set). The pattern above applies to DWG exports, individual PDF exports, and any print set without an override.",
     "secFormats": "FORMATS",
     "descPdf": "Vector PDF via Revit engine",
     "descDwg": "AutoCAD DWG via Revit export",
@@ -50,9 +41,6 @@
     "lblColorDepth": "Color Depth",
     "lblRasterQuality": "Raster Quality",
     "lblHiddenLines": "Hidden Line Views",
-    "secCombine": "COMBINE",
-    "combineLabel": "Combine into one PDF",
-    "printSetCombineNote": "Each checked print set is always exported as its own combined PDF regardless of this setting.",
     "secAdvanced": "ADVANCED",
     "advViewLinks": "View links in blue",
     "advViewLinksDesc": "Render linked Revit views with a blue tint in the PDF.",
@@ -91,10 +79,10 @@
     "splitLabel": "Split output into subfolders by file format"
   },
   "review": {
-    "itemSheets": "Sheets / Views", "itemFormats": "Formats", "itemPacks": "Print Sets",
+    "itemSheets": "Sheets / Views", "itemFormats": "Formats", "itemPacks": "Sets",
     "itemQuality": "Quality", "itemPattern": "Filename Pattern", "itemFolder": "Output Folder",
     "sheetsValue": "{0} selected",
-    "printSetsValue": "{0} print set(s)", "printSetsNone": "None — individual export",
+    "setsValue": "{0} set(s) · {1}",
     "qualityValue": "{0} · {1}", "qualityPdfOff": "PDF disabled",
     "warnSheetsMode": "{0} exports 3D views only and needs Views mode — it will be skipped while you're in Sheets mode."
   },
@@ -105,12 +93,85 @@
     "items": "items",
     "unnamedSet": "the selection"
   },
-  // Set-persistence (Extensible Storage) messages.
+  // Sets: the Step 1 target bar, the Step 2 editor, and set persistence.
   "sets": {
     "noPersistFamily":   "Sets cannot be saved in a family document — they stay in this window only.",
     "noPersistLinked":   "Sets cannot be saved into a linked model — they stay in this window only.",
     "noPersistReadOnly": "This model is read-only, so sets cannot be saved into it — they stay in this window only.",
-    "saveFailed":        "Could not save the sets into this model: {0}"
+    "saveFailed":        "Could not save the sets into this model: {0}",
+    "saved":             "Saved {0} set(s) into this model.",
+    "unsaved":           "unsaved changes",
+    "loadDropped":       "{0} stored set member(s) no longer exist in this model and were dropped.",
+
+    // Step 1 — target bar
+    "addingTo":          "ADDING TO",
+    "noSet":             "(no set)",
+    "newSet":            "+ New set",
+    "defaultName":       "Set {0}",
+    "itemCount":         "{0} items",
+    "unassignedCount":   "{0} unassigned",
+    "assignHint":        "Checking an item files it into the set shown above. Changing the target does not move items already checked.",
+
+    // Step 2 — output granularity
+    "outputAs":          "OUTPUT AS",
+    "perSheet":          "One PDF\nper sheet",
+    "perSet":            "One PDF\nper set",
+    "singleFile":        "One PDF\nfor everything",
+    "perSheetShort":     "one PDF per sheet",
+    "perSetShort":       "one PDF per set",
+    "singleFileShort":   "one PDF for everything",
+
+    // Step 2 — set cards
+    "noSetsHint":        "No sets yet — everything selected exports as one group. Add a set, or auto-group, to split the run.",
+    "enableTip":         "Include this set in the export.",
+    "sort":              "Sort",
+    "sortBrowser":       "Browser",
+    "sortSheetNo":       "Sheet no.",
+    "sortName":          "Name",
+    "sortReverse":       "Reverse",
+    "dragTip":           "Drag to reorder — this order is the page order in a combined PDF.",
+    "moreMembers":       "…{0} more — use Sort to reorder in bulk",
+    "optionsHeader":     "SET OPTIONS",
+    "optName":           "Name",
+    "optPattern":        "Pattern override",
+    "optSubfolder":      "Subfolder",
+    "saveAsPrintSet":    "Save as print set",
+    "duplicate":         "Duplicate",
+    "delete":            "Delete",
+    "copySuffix":        " copy",
+
+    // Step 2 — unassigned
+    "unassigned":        "Unassigned",
+    "unassignedWarn":    "{0} item(s) are not in any set and will export as “Unassigned”. Move them, or switch that card off.",
+    "moveAllTo":         "Move all → {0}",
+
+    // Step 2 — actions
+    "autoPrefix":        "Auto-group by sheet prefix",
+    "autoFolder":        "Auto-group by browser folder",
+    "autoDone":          "Created {0} set(s) from {1} item(s). Groups smaller than 3 were merged into “Other”.",
+    "autoNothing":       "Nothing selected to group.",
+    "otherGroup":        "Other",
+    "importPrintSet":    "Import a print set",
+    "imported":          "Imported print set “{0}” as a set of {1} item(s).",
+    "allPrintSetsImported": "Every print set in this project is already imported.",
+    "saveSets":          "Save sets",
+
+    // Step 3 — naming
+    "setPatternLabel":   "SET FILENAME — names each set’s combined PDF",
+    "itemPatternLabel":  "ITEM FILENAME — names each exported {0} file",
+    "setExample":        "{0} → {1}.pdf",
+    "sampleSetName":     "Architectural",
+    "tokSetName":        "Set name",
+    "tokSetIndex":       "Set number",
+    "tokSheetCount":     "Items in set",
+    "tokSetCount":       "Number of sets",
+    "tokSetSeq":         "Position in set",
+
+    // Step 8 — output
+    "subfolderLabel":    "Give each set its own subfolder",
+    "subfolderDesc":     "Creates PDF\\Architectural\\ under the output folder.",
+    "existingHeader":    "IF A FILE ALREADY EXISTS",
+    "existingLabel":     "Action"
   },
   "log": {
     "printSetNameRequired":  "Enter a name for the print set before saving.",

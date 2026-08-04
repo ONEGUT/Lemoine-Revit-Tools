@@ -79,12 +79,16 @@ namespace LemoineTools.Commands
                 // Snapshot of the Project Browser organization so the picker mirrors it exactly.
                 var browserTree = BrowserTreeCapture.Capture(doc);
 
-                // Existing print sets (ViewSheetSet elements) for the Print Sets step.
+                // Existing print sets (ViewSheetSet elements) — importable as sets.
                 var printSets = LemoineTools.Tools.BulkExport.BulkExportPrintSetHandler.Collect(doc);
+
+                // The set layout stored in this document. Read on the main thread; a missing or
+                // unreadable layout comes back null and the tool simply opens with no sets.
+                var storedLayout = LemoineTools.Tools.BulkExport.ExportSetStore.Read(doc);
 
                 var vm    = new BulkExportViewModel(
                     App.BulkExportHandler!, App.BulkExportEvent!,
-                    dwgSetupNames, allSheets, allViews, browserTree, printSets);
+                    dwgSetupNames, allSheets, allViews, browserTree, printSets, storedLayout);
 
                 return vm;
             }
