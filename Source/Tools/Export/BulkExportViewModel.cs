@@ -521,6 +521,12 @@ namespace LemoineTools.Tools.BulkExport
             // selecting makes the active set modal state, and this is what keeps it visible.
             picker.RowBadgeProvider = BadgeFor;
 
+            // Publish the handle BEFORE SetTree: SetTree fires SelectionChanged synchronously at
+            // its end, and that handler repaints badges through _picker. Assigning afterwards left
+            // it pointing at the previous (now discarded) picker — or at null on the first build —
+            // so the tree came up with no badges at all.
+            _picker = picker;
+
             picker.SelectionChanged += ids =>
             {
                 var now      = OrderByBrowser(ids);
@@ -536,8 +542,9 @@ namespace LemoineTools.Tools.BulkExport
                 foreach (long id in _pendingAssign) AssignToTarget(id);
                 _pendingAssign.Clear();
 
-                picker.RefreshBadges();
-                // The rail's per-set counts changed; rebuild it rather than patching live handles.
+                // Repaints badges + the rail in place. Must never rebuild Step 1 from here:
+                // SetTree fires this callback at the end of every rebuild, so a rebuild would
+                // re-enter it forever.
                 RefreshSetRail();
                 Fire();
             };
@@ -545,7 +552,6 @@ namespace LemoineTools.Tools.BulkExport
             // so a Sheets↔Views switch clears (no old id is eligible in the new mode) while a
             // "Show all" toggle preserves the views that remain pickable.
             picker.SetTree(_browserTree, BuildEligibleIds((bool)(showAllCb.Tag ?? false)), _selectedIds);
-            _picker = picker;
             return picker;
         }
 

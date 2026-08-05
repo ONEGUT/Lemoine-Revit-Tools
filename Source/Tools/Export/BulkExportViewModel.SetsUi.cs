@@ -38,9 +38,29 @@ namespace LemoineTools.Tools.BulkExport
             dispatcher.BeginInvoke(new Action(() => _refreshStep?.Invoke(stepId)));
         }
 
-        private void RefreshSets()    => PostRefresh("S3");
-        private void RefreshNaming()  => PostRefresh("S2");
-        internal void RefreshSetRail() => PostRefresh("S1");
+        private void RefreshSets()   => PostRefresh("S3");
+        private void RefreshNaming() => PostRefresh("S2");
+
+        /// <summary>
+        /// Repaints the rail and the tree badges WITHOUT rebuilding Step 1.
+        ///
+        /// Rebuilding the step here would be a non-terminating loop: BuildS1 calls SetTree, whose
+        /// contract is to fire SelectionChanged once at the end, and that handler is what asks for
+        /// the rail to refresh. Posting the rebuild made it unbounded rather than re-entrant — the
+        /// dispatcher stayed saturated and the window never became interactive.
+        /// </summary>
+        internal void RefreshSetRail()
+        {
+            if (_railHost != null) _railHost.Child = BuildSetRailContent();
+            _picker?.RefreshBadges();
+        }
+
+        /// <summary>
+        /// Full Step 1 rebuild — only for changes to the SELECTION itself, which the tree can pick
+        /// up no other way. Safe from the loop above because the SelectionChanged it triggers
+        /// routes to <see cref="RefreshSetRail"/>, which never rebuilds.
+        /// </summary>
+        private void RebuildStep1() => PostRefresh("S1");
 
         // ══════════════════════════════════════════════════════════════════════
         //  Step 1 — target-set bar
@@ -61,7 +81,14 @@ namespace LemoineTools.Tools.BulkExport
             frame.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_MD");
             frame.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
             frame.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            frame.Child = BuildSetRailContent();
+            _railHost   = frame;
+            return frame;
+        }
 
+        /// <summary>The rail's interior, rebuilt on its own whenever sets or counts change.</summary>
+        private FrameworkElement BuildSetRailContent()
+        {
             var root = new DockPanel { LastChildFill = true };
 
             // ── Footer actions: creating and saving sets both live here now ───
@@ -154,8 +181,7 @@ namespace LemoineTools.Tools.BulkExport
             ControlStyles.WireBubblingScroll(scroll);   // in-page scroller: bubble at its limits
             root.Children.Add(scroll);
 
-            frame.Child = root;
-            return frame;
+            return root;
         }
 
         private FrameworkElement BuildSetTab(string name, string count, string? accentHex,
@@ -252,7 +278,7 @@ namespace LemoineTools.Tools.BulkExport
             _targetSetId  = set.Id;
 
             SetStatus(AppStrings.T("export.bulkExport.sets.imported", ps.Name, set.Members.Count), isError: false);
-            RefreshSetRail();   // re-seeds the tree with the newly checked sheets
+            RebuildStep1();   // re-seeds the tree with the newly checked sheets
             RefreshSets();
             Fire();
         }

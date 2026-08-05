@@ -38,6 +38,8 @@ namespace LemoineTools.Tools.BulkExport
 
         // Live handles so a change on one step repaints the other without a full rebuild.
         private BrowserTreePicker? _picker;
+        // The rail's stable frame — its child is swapped to repaint without rebuilding Step 1.
+        private Border?            _railHost;
         private TextBlock?         _dirtyLabel;
         // Two status lines, not one: Step 1's rail and Step 3's actions row are both built
         // eagerly, so a single field would be owned by whichever step was constructed last
