@@ -1,6 +1,17 @@
 # Plan — Align Sheet Views: speed optimization + option simplification
 
-Status: **awaiting approval** — no code written yet.
+Status: **implemented**. Three deltas from the plan above, decided during the work:
+
+1. **The per-sheet geometry regen is gone entirely, not reduced** — the prediction in 5a covers
+   the crop resize and annotation crop as well as the scope box, so the only regen left inside the
+   sheet loop is the grid extent-mode one. A run with no grid inheritance now regenerates **once**.
+2. **The roll-up line names its reference sheet when more than one was selected**
+   (`sheetOkRef` / `sheetWithIssuesRef`). Which reference a target matched was previously an
+   `info` line, i.e. invisible — a target aligned to the wrong reference left no trace. Folding it
+   into the existing roll-up closes that without adding a line per sheet.
+3. **`noGrids` is now a `warn`, not an `info`.** It was invisible, which breaks CLAUDE.md's rule
+   that a collector finding zero items has to say so. This is the one intentional change to
+   user-visible log output.
 
 ## Files touched
 
