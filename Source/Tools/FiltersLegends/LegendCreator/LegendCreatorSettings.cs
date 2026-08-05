@@ -258,10 +258,12 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
                 ? seeded.ConvertAll(e => e.Clone())
                 : new List<LegendEntry> { BlankEntry() };
 
-            // Ids come from the seed file, so re-mint them: they key legends stamped inside a
-            // model, and every project seeded from the same file would otherwise share them.
+            // Seed ids are PRESERVED, not re-minted. They key the legend-view stamp inside a
+            // model, so two people working the same model from the same standard must agree
+            // on them — re-minting per project would make each of them see the other's legend
+            // as missing and create a duplicate. Only a seed entry with no id gets one.
             foreach (var e in made.Legends)
-                if (e != null) e.Id = LegendIdGen.New("legend");
+                if (e != null && string.IsNullOrEmpty(e.Id)) e.Id = LegendIdGen.New("legend");
 
             LegendDocScopes.Add(made);
 

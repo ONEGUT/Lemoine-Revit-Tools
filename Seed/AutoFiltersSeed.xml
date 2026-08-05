@@ -1,0 +1,373 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Default Auto Filters library shipped with Lemoine Tools.
+
+     Copied into a project the FIRST time the Filters window is opened there, then that
+     project owns its copy outright - edits never travel back here or sideways into
+     another project. Delete this file to have new projects start blank instead.
+
+     A user-supplied %AppData%\LemoineTools\Seed\AutoFiltersSeed.xml overrides this one.
+
+     Trade and rule Ids are deliberately STABLE across installs: filter ownership is
+     stamped into the model with these ids, so two people working the same model from
+     the same standard recognise each other's filters instead of treating them as
+     orphans. Do not randomise them. -->
+<LemoineAutoFiltersLibrary>
+  <Trades>
+    <Trade Id="DT_MEP" Label="DT - MEP" Color="#005EBD" ExternallyManaged="false">
+      <Rules>
+        <Rule Id="4d51e30b" Enabled="true" Name="Supply Air" MatchType="contains" Parameter="System Classification" CutColor="#005EBD" CutPattern="" OverrideCut="true" CutBgColor="#888888" CutBgPattern="" OverrideCutBg="false" SurfColor="#005EBD" SurfPattern="" OverrideSurf="true" SurfBgColor="#aaaaaa" SurfBgPattern="" OverrideSurfBg="false" LineColor="#000000" OverrideLine="true" LinePattern="Solid" LineWeight="1" Halftone="false" Transparency="0" Visible="true" FilterOn="true" Notes="">
+          <RuleCategories>
+            <Category>OST_DuctCurves</Category>
+            <Category>OST_DuctFitting</Category>
+            <Category>OST_FlexDuctCurves</Category>
+            <Category>OST_DuctTerminal</Category>
+          </RuleCategories>
+          <Match>
+            <Keyword>Supply Air</Keyword>
+          </Match>
+        </Rule>
+        <Rule Id="5cf639f3" Enabled="true" Name="Return Air" MatchType="contains" Parameter="System Classification" CutColor="#FFAAAA" CutPattern="" OverrideCut="true" CutBgColor="#888888" CutBgPattern="" OverrideCutBg="false" SurfColor="#FFAAAA" SurfPattern="" OverrideSurf="true" SurfBgColor="#aaaaaa" SurfBgPattern="" OverrideSurfBg="false" LineColor="#000000" OverrideLine="true" LinePattern="Solid" LineWeight="1" Halftone="false" Transparency="0" Visible="true" FilterOn="true" Notes="">
+          <RuleCategories>
+            <Category>OST_DuctCurves</Category>
+            <Category>OST_DuctFitting</Category>
+            <Category>OST_FlexDuctCurves</Category>
+            <Category>OST_DuctTerminal</Category>
+          </RuleCategories>
+          <Match>
+            <Keyword>Return Air</Keyword>
+          </Match>
+        </Rule>
+        <Rule Id="5fec86bd" Enabled="true" Name="Exhaust Air" MatchType="contains" Parameter="System Classification" CutColor="#815681" CutPattern="" OverrideCut="true" CutBgColor="#888888" CutBgPattern="" OverrideCutBg="false" SurfColor="#815681" SurfPattern="" OverrideSurf="true" SurfBgColor="#aaaaaa" SurfBgPattern="" OverrideSurfBg="false" LineColor="#000000" OverrideLine="true" LinePattern="Solid" LineWeight="1" Halftone="false" Transparency="0" Visible="true" FilterOn="true" Notes="">
+          <RuleCategories>
+            <Category>OST_DuctCurves</Category>
+            <Category>OST_DuctFitting</Category>
+            <Category>OST_DuctTerminal</Category>
+          </RuleCategories>
+          <Match>
+            <Keyword>Exhaust Air</Keyword>
+          </Match>
+        </Rule>
+        <Rule Id="a2a77abb" Enabled="true" Name="Sanitary" MatchType="contains" Parameter="System Classification" CutColor="#1F8100" CutPattern="" OverrideCut="true" CutBgColor="#888888" CutBgPattern="" OverrideCutBg="false" SurfColor="#1F8100" SurfPattern="" OverrideSurf="true" SurfBgColor="#aaaaaa" SurfBgPattern="" OverrideSurfBg="false" LineColor="#000000" OverrideLine="true" LinePattern="Solid" LineWeight="1" Halftone="false" Transparency="0" Visible="true" FilterOn="true" Notes="">
+          <RuleCategories>
+            <Category>OST_PipeCurves</Category>
+          </RuleCategories>
+          <Match>
+            <Keyword>Sanitary</Keyword>
+          </Match>
+        </Rule>
+        <Rule Id="3f895213" Enabled="true" Name="Domestic Cold Water" MatchType="contains" Parameter="System Classification" CutColor="#3FB3D9" CutPattern="" OverrideCut="true" CutBgColor="#888888" CutBgPattern="" OverrideCutBg="false" SurfColor="#3FB3D9" SurfPattern="" OverrideSurf="true" SurfBgColor="#aaaaaa" SurfBgPattern="" OverrideSurfBg="false" LineColor="#000000" OverrideLine="true" LinePattern="Solid" LineWeight="1" Halftone="false" Transparency="0" Visible="true" FilterOn="true" Notes="">
+          <RuleCategories>
+            <Category>OST_PipeCurves</Category>
+          </RuleCategories>
+          <Match>
+            <Keyword>Domestic Cold Water</Keyword>
+          </Match>
+        </Rule>
+        <Rule Id="cc92cab2" Enabled="true" Name="Domestic Hot Water" MatchType="contains" Parameter="System Classification" CutColor="#D93F3F" CutPattern="" OverrideCut="true" CutBgColor="#888888" CutBgPattern="" OverrideCutBg="false" SurfColor="#D93F3F" SurfPattern="" OverrideSurf="true" SurfBgColor="#aaaaaa" SurfBgPattern="" OverrideSurfBg="false" LineColor="#000000" OverrideLine="true" LinePattern="Solid" LineWeight="1" Halftone="false" Transparency="0" Visible="true" FilterOn="true" Notes="">
+          <RuleCategories>
+            <Category>OST_PipeCurves</Category>
+          </RuleCategories>
+          <Match>
+            <Keyword>Domestic Hot Water</Keyword>
+          </Match>
+        </Rule>
+        <Rule Id="0d79fa43" Enabled="true" Name="Other" MatchType="contains" Parameter="System Classification" CutColor="#FFFFFF" CutPattern="" OverrideCut="true" CutBgColor="#888888" CutBgPattern="" OverrideCutBg="false" SurfColor="#FFFFFF" SurfPattern="" OverrideSurf="true" SurfBgColor="#aaaaaa" SurfBgPattern="" OverrideSurfBg="false" LineColor="#000000" OverrideLine="true" LinePattern="Solid" LineWeight="1" Halftone="false" Transparency="0" Visible="true" FilterOn="true" Notes="">
+          <RuleCategories>
+            <Category>OST_PipeCurves</Category>
+          </RuleCategories>
+          <Match>
+            <Keyword>Other</Keyword>
+          </Match>
+        </Rule>
+        <Rule Id="4ba31b46" Enabled="true" Name="Hydronic Supply" MatchType="contains" Parameter="System Classification" CutColor="#AAD4FF" CutPattern="" OverrideCut="true" CutBgColor="#888888" CutBgPattern="" OverrideCutBg="false" SurfColor="#AAD4FF" SurfPattern="" OverrideSurf="true" SurfBgColor="#aaaaaa" SurfBgPattern="" OverrideSurfBg="false" LineColor="#000000" OverrideLine="true" LinePattern="Solid" LineWeight="1" Halftone="false" Transparency="0" Visible="true" FilterOn="true" Notes="">
+          <RuleCategories>
+            <Category>OST_PipeCurves</Category>
+          </RuleCategories>
+          <Match>
+            <Keyword>Hydronic Supply</Keyword>
+          </Match>
+        </Rule>
+        <Rule Id="4b59c80f" Enabled="true" Name="Hydronic Return" MatchType="contains" Parameter="System Classification" CutColor="#FFAABF" CutPattern="" OverrideCut="true" CutBgColor="#888888" CutBgPattern="" OverrideCutBg="false" SurfColor="#FFAABF" SurfPattern="" OverrideSurf="true" SurfBgColor="#aaaaaa" SurfBgPattern="" OverrideSurfBg="false" LineColor="#000000" OverrideLine="true" LinePattern="Solid" LineWeight="1" Halftone="false" Transparency="0" Visible="true" FilterOn="true" Notes="">
+          <RuleCategories>
+            <Category>OST_PipeCurves</Category>
+          </RuleCategories>
+          <Match>
+            <Keyword>Hydronic Return</Keyword>
+          </Match>
+        </Rule>
+        <Rule Id="8d0ea8bb" Enabled="true" Name="Fire Protection Wet" MatchType="contains" Parameter="System Classification" CutColor="#C81414" CutPattern="" OverrideCut="true" CutBgColor="#888888" CutBgPattern="" OverrideCutBg="false" SurfColor="#C81414" SurfPattern="" OverrideSurf="true" SurfBgColor="#aaaaaa" SurfBgPattern="" OverrideSurfBg="false" LineColor="#000000" OverrideLine="true" LinePattern="Solid" LineWeight="1" Halftone="false" Transparency="0" Visible="true" FilterOn="true" Notes="">
+          <RuleCategories>
+            <Category>OST_PipeCurves</Category>
+          </RuleCategories>
+          <Match>
+            <Keyword>Fire Protection Wet</Keyword>
+          </Match>
+        </Rule>
+        <Rule Id="65eee47e" Enabled="true" Name="Vent" MatchType="contains" Parameter="System Classification" CutColor="#94A857" CutPattern="" OverrideCut="true" CutBgColor="#888888" CutBgPattern="" OverrideCutBg="false" SurfColor="#94A857" SurfPattern="" OverrideSurf="true" SurfBgColor="#aaaaaa" SurfBgPattern="" OverrideSurfBg="false" LineColor="#000000" OverrideLine="true" LinePattern="Solid" LineWeight="1" Halftone="false" Transparency="0" Visible="true" FilterOn="true" Notes="">
+          <RuleCategories>
+            <Category>OST_PipeCurves</Category>
+          </RuleCategories>
+          <Match>
+            <Keyword>Vent</Keyword>
+          </Match>
+        </Rule>
+        <Rule Id="1493e290" Enabled="true" Name="Lighting" MatchType="all" Parameter="System Type" CutColor="#F4F406" CutPattern="" OverrideCut="true" CutBgColor="#888888" CutBgPattern="" OverrideCutBg="false" SurfColor="#F4F406" SurfPattern="" OverrideSurf="true" SurfBgColor="#aaaaaa" SurfBgPattern="" OverrideSurfBg="false" LineColor="#000000" OverrideLine="true" LinePattern="Solid" LineWeight="1" Halftone="false" Transparency="0" Visible="true" FilterOn="true" Notes="">
+          <RuleCategories>
+            <Category>OST_LightingDevices</Category>
+            <Category>OST_LightingFixtures</Category>
+          </RuleCategories>
+          <Match />
+        </Rule>
+        <Rule Id="22d9fde1" Enabled="true" Name="Mech Equip" MatchType="all" Parameter="System Type" CutColor="#888888" CutPattern="" OverrideCut="true" CutBgColor="#888888" CutBgPattern="" OverrideCutBg="false" SurfColor="#aaaaaa" SurfPattern="" OverrideSurf="true" SurfBgColor="#aaaaaa" SurfBgPattern="" OverrideSurfBg="false" LineColor="#000000" OverrideLine="true" LinePattern="Solid" LineWeight="1" Halftone="false" Transparency="0" Visible="true" FilterOn="true" Notes="">
+          <RuleCategories>
+            <Category>OST_MechanicalEquipment</Category>
+          </RuleCategories>
+          <Match />
+        </Rule>
+      </Rules>
+      <Categories />
+    </Trade>
+    <Trade Id="ELEC" Label="Electrical" Color="#F4F406" ExternallyManaged="false">
+      <Rules>
+        <Rule Id="b8dad274" Enabled="true" Name="New Rule" MatchType="all" Parameter="System Type" CutColor="#F4F406" CutPattern="&lt;Solid fill&gt;" OverrideCut="true" CutBgColor="#888888" CutBgPattern="" OverrideCutBg="false" SurfColor="#F4F406" SurfPattern="&lt;Solid fill&gt;" OverrideSurf="true" SurfBgColor="#aaaaaa" SurfBgPattern="" OverrideSurfBg="false" LineColor="#000000" OverrideLine="true" LinePattern="Solid" LineWeight="1" Halftone="false" Transparency="0" Visible="true" FilterOn="true" Notes="">
+          <RuleCategories>
+            <Category>OST_CableTrayFitting</Category>
+            <Category>OST_CableTray</Category>
+            <Category>OST_ConduitFitting</Category>
+            <Category>OST_Conduit</Category>
+            <Category>OST_LightingDevices</Category>
+            <Category>OST_LightingFixtures</Category>
+          </RuleCategories>
+          <Match />
+        </Rule>
+      </Rules>
+      <Categories />
+    </Trade>
+    <Trade Id="INSUL" Label="Insulation" Color="#FFFFFF" ExternallyManaged="false">
+      <Rules>
+        <Rule Id="250f67c4" Enabled="true" Name="New Rule" MatchType="all" Parameter="System Type" CutColor="#FFFFFF" CutPattern="&lt;Solid fill&gt;" OverrideCut="true" CutBgColor="#888888" CutBgPattern="" OverrideCutBg="false" SurfColor="#FFFFFF" SurfPattern="" OverrideSurf="true" SurfBgColor="#aaaaaa" SurfBgPattern="" OverrideSurfBg="false" LineColor="#000000" OverrideLine="true" LinePattern="Solid" LineWeight="1" Halftone="false" Transparency="81" Visible="true" FilterOn="true" Notes="">
+          <RuleCategories>
+            <Category>OST_DuctInsulations</Category>
+            <Category>OST_PipeInsulations</Category>
+            <Category>OST_FabricationDuctworkInsulation</Category>
+            <Category>OST_FabricationPipeworkInsulation</Category>
+          </RuleCategories>
+          <Match />
+        </Rule>
+      </Rules>
+      <Categories />
+    </Trade>
+    <Trade Id="DUCT" Label="MDUCT" Color="#815681" ExternallyManaged="false">
+      <Rules>
+        <Rule Id="89d686a0" Enabled="true" Name="Exhaust Air" MatchType="contains" Parameter="System Classification" CutColor="#815681" CutPattern="&lt;Solid fill&gt;" OverrideCut="true" CutBgColor="#888888" CutBgPattern="" OverrideCutBg="false" SurfColor="#815681" SurfPattern="" OverrideSurf="true" SurfBgColor="#aaaaaa" SurfBgPattern="" OverrideSurfBg="false" LineColor="#000000" OverrideLine="true" LinePattern="Solid" LineWeight="1" Halftone="false" Transparency="0" Visible="true" FilterOn="true" Notes="">
+          <RuleCategories>
+            <Category>OST_DuctTerminal</Category>
+          </RuleCategories>
+          <Match>
+            <Keyword>Exhaust Air</Keyword>
+          </Match>
+        </Rule>
+        <Rule Id="ec28a499" Enabled="true" Name="Secondary Supply" MatchType="contains" Parameter="Fabrication Service" CutColor="#005EBD" CutPattern="&lt;Solid fill&gt;" OverrideCut="true" CutBgColor="#888888" CutBgPattern="" OverrideCutBg="false" SurfColor="#005EBD" SurfPattern="&lt;Solid fill&gt;" OverrideSurf="true" SurfBgColor="#aaaaaa" SurfBgPattern="" OverrideSurfBg="false" LineColor="#000000" OverrideLine="true" LinePattern="Solid" LineWeight="1" Halftone="false" Transparency="0" Visible="true" FilterOn="true" Notes="">
+          <RuleCategories>
+            <Category>OST_FabricationDuctwork</Category>
+          </RuleCategories>
+          <Match>
+            <Keyword>Secondary Supply</Keyword>
+          </Match>
+        </Rule>
+        <Rule Id="6f40ecca" Enabled="true" Name="Outside Air 2wg" MatchType="contains" Parameter="Fabrication Service" CutColor="#E78F36" CutPattern="&lt;Solid fill&gt;" OverrideCut="true" CutBgColor="#888888" CutBgPattern="" OverrideCutBg="false" SurfColor="#E78F36" SurfPattern="&lt;Solid fill&gt;" OverrideSurf="true" SurfBgColor="#aaaaaa" SurfBgPattern="" OverrideSurfBg="false" LineColor="#000000" OverrideLine="true" LinePattern="Solid" LineWeight="1" Halftone="false" Transparency="0" Visible="true" FilterOn="true" Notes="">
+          <RuleCategories>
+            <Category>OST_FabricationDuctwork</Category>
+          </RuleCategories>
+          <Match>
+            <Keyword>Outside Air 2wg</Keyword>
+          </Match>
+        </Rule>
+        <Rule Id="b313413d" Enabled="true" Name="Return Air Duct" MatchType="contains" Parameter="Fabrication Service" CutColor="#FFAAAA" CutPattern="&lt;Solid fill&gt;" OverrideCut="true" CutBgColor="#888888" CutBgPattern="" OverrideCutBg="false" SurfColor="#FFAAAA" SurfPattern="&lt;Solid fill&gt;" OverrideSurf="true" SurfBgColor="#aaaaaa" SurfBgPattern="" OverrideSurfBg="false" LineColor="#000000" OverrideLine="true" LinePattern="Solid" LineWeight="1" Halftone="false" Transparency="0" Visible="true" FilterOn="true" Notes="">
+          <RuleCategories>
+            <Category>OST_FabricationDuctwork</Category>
+          </RuleCategories>
+          <Match>
+            <Keyword>Return Air Duct</Keyword>
+          </Match>
+        </Rule>
+        <Rule Id="2ac75dc1" Enabled="true" Name="Exhaust Air 3wg" MatchType="contains" Parameter="Fabrication Service" CutColor="#815681" CutPattern="&lt;Solid fill&gt;" OverrideCut="true" CutBgColor="#888888" CutBgPattern="" OverrideCutBg="false" SurfColor="#815681" SurfPattern="&lt;Solid fill&gt;" OverrideSurf="true" SurfBgColor="#aaaaaa" SurfBgPattern="" OverrideSurfBg="false" LineColor="#000000" OverrideLine="true" LinePattern="Solid" LineWeight="1" Halftone="false" Transparency="0" Visible="true" FilterOn="true" Notes="">
+          <RuleCategories>
+            <Category>OST_FabricationDuctwork</Category>
+          </RuleCategories>
+          <Match>
+            <Keyword>Exhaust Air 3wg</Keyword>
+          </Match>
+        </Rule>
+        <Rule Id="d6f0eb69" Enabled="true" Name="Exhaust Air 2wg" MatchType="contains" Parameter="Fabrication Service" CutColor="#815681" CutPattern="&lt;Solid fill&gt;" OverrideCut="true" CutBgColor="#888888" CutBgPattern="" OverrideCutBg="false" SurfColor="#815681" SurfPattern="&lt;Solid fill&gt;" OverrideSurf="true" SurfBgColor="#aaaaaa" SurfBgPattern="" OverrideSurfBg="false" LineColor="#000000" OverrideLine="true" LinePattern="Solid" LineWeight="1" Halftone="false" Transparency="0" Visible="true" FilterOn="true" Notes="">
+          <RuleCategories>
+            <Category>OST_FabricationDuctwork</Category>
+          </RuleCategories>
+          <Match>
+            <Keyword>Exhaust Air 2wg</Keyword>
+          </Match>
+        </Rule>
+        <Rule Id="ab31b0e3" Enabled="true" Name="Supply Air" MatchType="contains" Parameter="System Classification" CutColor="#005EBD" CutPattern="&lt;Solid fill&gt;" OverrideCut="true" CutBgColor="#888888" CutBgPattern="" OverrideCutBg="false" SurfColor="#005EBD" SurfPattern="" OverrideSurf="true" SurfBgColor="#aaaaaa" SurfBgPattern="" OverrideSurfBg="false" LineColor="#000000" OverrideLine="true" LinePattern="Solid" LineWeight="1" Halftone="false" Transparency="0" Visible="true" FilterOn="true" Notes="">
+          <RuleCategories>
+            <Category>OST_DuctTerminal</Category>
+            <Category>OST_FlexDuctCurves</Category>
+          </RuleCategories>
+          <Match>
+            <Keyword>Supply Air</Keyword>
+          </Match>
+        </Rule>
+        <Rule Id="87e743d6" Enabled="true" Name="Return Air" MatchType="contains" Parameter="System Classification" CutColor="#FFAAAA" CutPattern="&lt;Solid fill&gt;" OverrideCut="true" CutBgColor="#888888" CutBgPattern="" OverrideCutBg="false" SurfColor="#FFAAAA" SurfPattern="" OverrideSurf="true" SurfBgColor="#aaaaaa" SurfBgPattern="" OverrideSurfBg="false" LineColor="#000000" OverrideLine="true" LinePattern="Solid" LineWeight="1" Halftone="false" Transparency="0" Visible="true" FilterOn="true" Notes="">
+          <RuleCategories>
+            <Category>OST_DuctTerminal</Category>
+            <Category>OST_FlexDuctCurves</Category>
+          </RuleCategories>
+          <Match>
+            <Keyword>Return Air</Keyword>
+          </Match>
+        </Rule>
+        <Rule Id="117df04f" Enabled="true" Name="Exhaust Air 2wg (combined)" MatchType="contains" Parameter="Fabrication Service" CutColor="#815681" CutPattern="&lt;Solid fill&gt;" OverrideCut="true" CutBgColor="#888888" CutBgPattern="" OverrideCutBg="false" SurfColor="#815681" SurfPattern="&lt;Solid fill&gt;" OverrideSurf="true" SurfBgColor="#aaaaaa" SurfBgPattern="" OverrideSurfBg="false" LineColor="#000000" OverrideLine="true" LinePattern="Solid" LineWeight="1" Halftone="false" Transparency="0" Visible="true" FilterOn="true" Notes="">
+          <RuleCategories>
+            <Category>OST_FabricationDuctwork</Category>
+          </RuleCategories>
+          <Match>
+            <Keyword>Exhaust Air 2wg</Keyword>
+            <Keyword>Exhaust Air 3wg</Keyword>
+          </Match>
+        </Rule>
+        <Rule Id="bad418ec" Enabled="true" Name="Fire Dampers" MatchType="contains" Parameter="Family Name" CutColor="#C81E1E" CutPattern="" OverrideCut="true" CutBgColor="#888888" CutBgPattern="" OverrideCutBg="false" SurfColor="#C81E1E" SurfPattern="&lt;Solid fill&gt;" OverrideSurf="true" SurfBgColor="#aaaaaa" SurfBgPattern="" OverrideSurfBg="false" LineColor="#000000" OverrideLine="true" LinePattern="Solid" LineWeight="1" Halftone="false" Transparency="0" Visible="true" FilterOn="true" Notes="">
+          <RuleCategories>
+            <Category>OST_DuctAccessory</Category>
+          </RuleCategories>
+          <Match>
+            <Keyword>Fire</Keyword>
+          </Match>
+        </Rule>
+      </Rules>
+      <Categories />
+    </Trade>
+    <Trade Id="MPIPE" Label="MPIPE" Color="#AAD4FF" ExternallyManaged="false">
+      <Rules>
+        <Rule Id="0e9bcf90" Enabled="true" Name="Chilled Water Supply" MatchType="contains" Parameter="Fabrication Service" CutColor="#AAD4FF" CutPattern="&lt;Solid fill&gt;" OverrideCut="true" CutBgColor="#888888" CutBgPattern="" OverrideCutBg="false" SurfColor="#AAD4FF" SurfPattern="" OverrideSurf="true" SurfBgColor="#aaaaaa" SurfBgPattern="" OverrideSurfBg="false" LineColor="#000000" OverrideLine="true" LinePattern="Solid" LineWeight="1" Halftone="false" Transparency="0" Visible="true" FilterOn="true" Notes="">
+          <RuleCategories>
+            <Category>OST_FabricationPipework</Category>
+          </RuleCategories>
+          <Match>
+            <Keyword>Chilled Water Supply</Keyword>
+          </Match>
+        </Rule>
+        <Rule Id="b8a3ef43" Enabled="true" Name="Condensate Drain (PVC)" MatchType="contains" Parameter="Fabrication Service" CutColor="#53CFDF" CutPattern="&lt;Solid fill&gt;" OverrideCut="true" CutBgColor="#888888" CutBgPattern="" OverrideCutBg="false" SurfColor="#53CFDF" SurfPattern="" OverrideSurf="true" SurfBgColor="#aaaaaa" SurfBgPattern="" OverrideSurfBg="false" LineColor="#000000" OverrideLine="true" LinePattern="Solid" LineWeight="1" Halftone="false" Transparency="0" Visible="true" FilterOn="true" Notes="">
+          <RuleCategories>
+            <Category>OST_FabricationPipework</Category>
+          </RuleCategories>
+          <Match>
+            <Keyword>Condensate Drain (PVC)</Keyword>
+          </Match>
+        </Rule>
+        <Rule Id="a8a956d6" Enabled="true" Name="Chilled Water Return" MatchType="contains" Parameter="Fabrication Service" CutColor="#FFAABF" CutPattern="&lt;Solid fill&gt;" OverrideCut="true" CutBgColor="#888888" CutBgPattern="" OverrideCutBg="false" SurfColor="#FFAABF" SurfPattern="" OverrideSurf="true" SurfBgColor="#aaaaaa" SurfBgPattern="" OverrideSurfBg="false" LineColor="#000000" OverrideLine="true" LinePattern="Solid" LineWeight="1" Halftone="false" Transparency="0" Visible="true" FilterOn="true" Notes="">
+          <RuleCategories>
+            <Category>OST_FabricationPipework</Category>
+          </RuleCategories>
+          <Match>
+            <Keyword>Chilled Water Return</Keyword>
+          </Match>
+        </Rule>
+        <Rule Id="6afade8d" Enabled="true" Name="Refrigerant Liquid" MatchType="contains" Parameter="Fabrication Service" CutColor="#FFAA55" CutPattern="&lt;Solid fill&gt;" OverrideCut="true" CutBgColor="#888888" CutBgPattern="" OverrideCutBg="false" SurfColor="#FFAA55" SurfPattern="" OverrideSurf="true" SurfBgColor="#aaaaaa" SurfBgPattern="" OverrideSurfBg="false" LineColor="#000000" OverrideLine="true" LinePattern="Solid" LineWeight="1" Halftone="false" Transparency="0" Visible="true" FilterOn="true" Notes="">
+          <RuleCategories>
+            <Category>OST_FabricationPipework</Category>
+          </RuleCategories>
+          <Match>
+            <Keyword>Refrigerant Liquid</Keyword>
+          </Match>
+        </Rule>
+        <Rule Id="b7871eed" Enabled="true" Name="Refrigerant Suction" MatchType="contains" Parameter="Fabrication Service" CutColor="#FFAA55" CutPattern="&lt;Solid fill&gt;" OverrideCut="true" CutBgColor="#888888" CutBgPattern="" OverrideCutBg="false" SurfColor="#FFAA55" SurfPattern="" OverrideSurf="true" SurfBgColor="#aaaaaa" SurfBgPattern="" OverrideSurfBg="false" LineColor="#000000" OverrideLine="true" LinePattern="Solid" LineWeight="1" Halftone="false" Transparency="0" Visible="true" FilterOn="true" Notes="">
+          <RuleCategories>
+            <Category>OST_FabricationPipework</Category>
+          </RuleCategories>
+          <Match>
+            <Keyword>Refrigerant Suction</Keyword>
+          </Match>
+        </Rule>
+      </Rules>
+      <Categories />
+    </Trade>
+    <Trade Id="PLUMB" Label="Plumb" Color="#3FB3D9" ExternallyManaged="false">
+      <Rules>
+        <Rule Id="9735ddb7" Enabled="true" Name="01-Domestic Hot Water" MatchType="contains" Parameter="Fabrication Service" CutColor="#D93F3F" CutPattern="&lt;Solid fill&gt;" OverrideCut="true" CutBgColor="#888888" CutBgPattern="" OverrideCutBg="false" SurfColor="#D93F3F" SurfPattern="&lt;Solid fill&gt;" OverrideSurf="true" SurfBgColor="#aaaaaa" SurfBgPattern="" OverrideSurfBg="false" LineColor="#000000" OverrideLine="true" LinePattern="Solid" LineWeight="1" Halftone="false" Transparency="0" Visible="true" FilterOn="true" Notes="">
+          <RuleCategories>
+            <Category>OST_FabricationPipework</Category>
+          </RuleCategories>
+          <Match>
+            <Keyword>01-Domestic Hot Water</Keyword>
+            <Keyword>01-Domestic Hot Water Return</Keyword>
+          </Match>
+        </Rule>
+        <Rule Id="a3fe2f99" Enabled="true" Name="01-Sanitary Waste" MatchType="contains" Parameter="Fabrication Service" CutColor="#1F8100" CutPattern="&lt;Solid fill&gt;" OverrideCut="true" CutBgColor="#888888" CutBgPattern="" OverrideCutBg="false" SurfColor="#1F8100" SurfPattern="" OverrideSurf="true" SurfBgColor="#aaaaaa" SurfBgPattern="" OverrideSurfBg="false" LineColor="#000000" OverrideLine="true" LinePattern="Solid" LineWeight="1" Halftone="false" Transparency="0" Visible="true" FilterOn="true" Notes="">
+          <RuleCategories>
+            <Category>OST_FabricationPipework</Category>
+          </RuleCategories>
+          <Match>
+            <Keyword>01-Sanitary Waste</Keyword>
+            <Keyword>00-Sanitary Waste</Keyword>
+            <Keyword>01-Sump Discharge</Keyword>
+          </Match>
+        </Rule>
+        <Rule Id="07ea4bcb" Enabled="true" Name="01-Sanitary Vent" MatchType="contains" Parameter="Fabrication Service" CutColor="#94A857" CutPattern="&lt;Solid fill&gt;" OverrideCut="true" CutBgColor="#888888" CutBgPattern="" OverrideCutBg="false" SurfColor="#94A857" SurfPattern="" OverrideSurf="true" SurfBgColor="#aaaaaa" SurfBgPattern="" OverrideSurfBg="false" LineColor="#000000" OverrideLine="true" LinePattern="Solid" LineWeight="1" Halftone="false" Transparency="0" Visible="true" FilterOn="true" Notes="">
+          <RuleCategories>
+            <Category>OST_FabricationPipework</Category>
+          </RuleCategories>
+          <Match>
+            <Keyword>01-Sanitary Vent</Keyword>
+            <Keyword>01-Grease Vent</Keyword>
+            <Keyword>00-Sanitary Vent</Keyword>
+            <Keyword>00-Grease Vent</Keyword>
+            <Keyword>01-Sanitary Vent Residential</Keyword>
+          </Match>
+        </Rule>
+        <Rule Id="d1d3e202" Enabled="true" Name="01-Storm Drain Overflow" MatchType="contains" Parameter="Fabrication Service" CutColor="#BD7EAD" CutPattern="&lt;Solid fill&gt;" OverrideCut="true" CutBgColor="#888888" CutBgPattern="" OverrideCutBg="false" SurfColor="#BD7EAD" SurfPattern="" OverrideSurf="true" SurfBgColor="#aaaaaa" SurfBgPattern="" OverrideSurfBg="false" LineColor="#000000" OverrideLine="true" LinePattern="Solid" LineWeight="1" Halftone="false" Transparency="0" Visible="true" FilterOn="true" Notes="">
+          <RuleCategories>
+            <Category>OST_FabricationPipework</Category>
+          </RuleCategories>
+          <Match>
+            <Keyword>01-Storm Drain Overflow</Keyword>
+          </Match>
+        </Rule>
+        <Rule Id="4365c615" Enabled="true" Name="01-Storm Drain" MatchType="contains" Parameter="Fabrication Service" CutColor="#EAAAFF" CutPattern="&lt;Solid fill&gt;" OverrideCut="true" CutBgColor="#888888" CutBgPattern="" OverrideCutBg="false" SurfColor="#EAAAFF" SurfPattern="" OverrideSurf="true" SurfBgColor="#aaaaaa" SurfBgPattern="" OverrideSurfBg="false" LineColor="#000000" OverrideLine="true" LinePattern="Solid" LineWeight="1" Halftone="false" Transparency="0" Visible="true" FilterOn="true" Notes="">
+          <RuleCategories>
+            <Category>OST_FabricationPipework</Category>
+          </RuleCategories>
+          <Match>
+            <Keyword>01-Storm Drain</Keyword>
+            <Keyword>00-Storm Drain</Keyword>
+          </Match>
+        </Rule>
+        <Rule Id="87bf6608" Enabled="true" Name="01-Natural Gas" MatchType="contains" Parameter="Fabrication Service" CutColor="#FFC61A" CutPattern="&lt;Solid fill&gt;" OverrideCut="true" CutBgColor="#888888" CutBgPattern="" OverrideCutBg="false" SurfColor="#FFC61A" SurfPattern="" OverrideSurf="true" SurfBgColor="#aaaaaa" SurfBgPattern="" OverrideSurfBg="false" LineColor="#000000" OverrideLine="true" LinePattern="Solid" LineWeight="1" Halftone="false" Transparency="0" Visible="true" FilterOn="true" Notes="">
+          <RuleCategories>
+            <Category>OST_FabricationPipework</Category>
+          </RuleCategories>
+          <Match>
+            <Keyword>01-Natural Gas</Keyword>
+          </Match>
+        </Rule>
+        <Rule Id="532b47f1" Enabled="true" Name="00-Grease Waste" MatchType="contains" Parameter="Fabrication Service" CutColor="#36E600" CutPattern="&lt;Solid fill&gt;" OverrideCut="true" CutBgColor="#888888" CutBgPattern="" OverrideCutBg="false" SurfColor="#36E600" SurfPattern="" OverrideSurf="true" SurfBgColor="#aaaaaa" SurfBgPattern="" OverrideSurfBg="false" LineColor="#000000" OverrideLine="true" LinePattern="Solid" LineWeight="1" Halftone="false" Transparency="0" Visible="true" FilterOn="true" Notes="">
+          <RuleCategories>
+            <Category>OST_FabricationPipework</Category>
+          </RuleCategories>
+          <Match>
+            <Keyword>00-Grease Waste</Keyword>
+            <Keyword>01-Grease Waste</Keyword>
+          </Match>
+        </Rule>
+        <Rule Id="e6558cac" Enabled="true" Name="00-Domestic Cold Water" MatchType="contains" Parameter="Fabrication Service" CutColor="#3FB3D9" CutPattern="&lt;Solid fill&gt;" OverrideCut="true" CutBgColor="#888888" CutBgPattern="" OverrideCutBg="false" SurfColor="#3FB3D9" SurfPattern="&lt;Solid fill&gt;" OverrideSurf="true" SurfBgColor="#aaaaaa" SurfBgPattern="" OverrideSurfBg="false" LineColor="#000000" OverrideLine="true" LinePattern="Solid" LineWeight="1" Halftone="false" Transparency="0" Visible="true" FilterOn="true" Notes="">
+          <RuleCategories>
+            <Category>OST_FabricationPipework</Category>
+          </RuleCategories>
+          <Match>
+            <Keyword>00-Domestic Cold Water</Keyword>
+            <Keyword>01-Domestic Cold Water</Keyword>
+          </Match>
+        </Rule>
+      </Rules>
+      <Categories />
+    </Trade>
+  </Trades>
+</LemoineAutoFiltersLibrary>

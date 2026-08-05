@@ -348,8 +348,11 @@ namespace LemoineTools.Tools.AutoFilters
             if (seed?.Trades != null && seed.Trades.Count > 0)
             {
                 made.Trades = DeepCopy(seed.Trades);
-                // Seed ids are shared by every project seeded from the same file. Trade and
-                // rule ids key filter-ownership stamps inside models, so re-mint them here.
+                // Seed trade/rule ids are PRESERVED across projects and installs. They key the
+                // ownership stamp written onto each filter, so two people working the same
+                // model from the same standard recognise each other's filters instead of
+                // treating them as orphans. This only repairs ids the seed left empty or
+                // duplicated; it never randomises a good one.
                 EnsureUniqueTradeIds(made.Trades);
             }
             TradeDocScopes.Add(made);

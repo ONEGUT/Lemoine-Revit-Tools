@@ -157,6 +157,16 @@
     </None>
   </ItemGroup>
 
+  <!-- Default libraries copied into a project the first time a tool is opened there.
+       Read at runtime by SeedLibrary from a Seed\ folder next to the DLL, so they ship
+       loose and editable like Strings\. A user-supplied copy in
+       %AppData%\LemoineTools\Seed\ takes precedence over these. -->
+  <ItemGroup>
+    <None Update="Seed\**\*.xml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
   <!-- Revit family embedded in the DLL, loaded at runtime by CeilingHeatmap -->
   <ItemGroup>
     <EmbeddedResource Include="Source\Resources\RevitFamilys\Ceiling Tag.rfa" />
