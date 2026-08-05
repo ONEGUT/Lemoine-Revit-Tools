@@ -34,10 +34,9 @@ Every `Note(...)` call in S1, S2 and S3 goes, and the `Note()` helper with it.
 That is 8 note blocks. The `Hint()` helper stays — its two uses are empty-state
 messages ("No sheets were found in this project"), not descriptive chrome.
 
-**One decision for you:** `ReviewNote` on S4 is the same class of text (a dim
-paragraph explaining how matching works). My recommendation is to remove it too,
-for consistency. `ReviewWarning` stays — it is a caution about model changes, not
-a description.
+`ReviewNote` on S4 goes too — it is the same class of text (a dim paragraph
+explaining how matching works). `ReviewWarning` stays: it is a caution about
+model changes, not a description.
 
 ## 3. View-title alignment always on
 
@@ -70,58 +69,115 @@ See `plan-align-sheet-views-optimization.png` for the rendered mockup.
 `doc.Regenerate()` dominates: it recomputes the whole model, and the current code
 calls it **once per matched viewport pair** in two places.
 
-### 5a. Regen count
-
 Current, for `S` target sheets × `P` matched pairs each:
 
 ```
-per sheet   1 (scope/crop geometry)
+per sheet   1 (scope/crop geometry, so the align phase can read the new crop)
           + P (TrimGrids — after the extent-mode switches)
           + P (MirrorElbows — after AddLeader)
 run end     3 (placement baseline, after line lengths, after title offsets)
           = S·(1 + 2P) + 3
 ```
 
-Proposed — restructure each sheet into two phases with **one** regen between them,
-and defer every elbow position to the single run-end regen:
+### 5a. Predict the post-inheritance crop instead of regenerating to read it
+
+The per-sheet geometry regen exists for one reason: `TryAlign` reads
+`view.CropBox` **live**, so the crop has to be recomputed after a scope box or a
+crop resize is written. But every one of those writes has a result we can derive
+without asking Revit — and `SetBoxCenter` is absolute ("go to X"), so a stale
+read can never accumulate error the way a relative move would.
+
+Working through `TargetBoxCentre`, which needs `SourceAnchorOnSheet(src)`
+(captured source values only — no live read), `local` (the source anchor in
+target crop-local coords) and `(fx, fy)` (the target's footprint centre):
+
+**Scope box inherited.** After assignment the target's crop covers the scope
+box's footprint — the same world footprint the source's crop already covers,
+since the source carries that scope box. A footprint has one centre, so
+`AnchorWorld(src)` lands exactly on the target's crop centre:
+`local.X = (min.X+max.X)/2`, `local.Y = (min.Y+max.Y)/2`. Substituting into
+`FootprintCentre`, the whole offset collapses to
 
 ```
-Phase A (per sheet, no regen): scope box + crop size writes,
-                               grid visibility reconcile, bubble mirrors,
-                               grid extent-mode switches, source-curve reads
-   ── doc.Regenerate() ── (only if Phase A changed something)
-Phase B (per sheet, no regen): align viewports, write grid curves,
-                               AddLeader for new elbows, crop visibility
-run end: MatchTitleLineLengths for all pairs
-   ── doc.Regenerate() ──   (one, for the whole run)
-         AlignTitleOffsets + position every pending elbow
-          = S·1 + 1
+local.X − fx = −(annoRight − annoLeft) / 2
+local.Y − fy = −(annoTop   − annoBottom) / 2
 ```
 
-50 sheets × 4 pairs with grid inheritance on: **453 regens → 51**.
-A plain alignment with no inheritance ticked: **3 → 1**.
+— which depends only on the annotation-crop offsets, and those are either the
+ones we just wrote from the source or the ones captured before the run. **Nothing
+live is needed.** (This holds for an anti-parallel view direction too — the
+crop-local frames mirror, but the shared normal means the anchor's depth
+component maps to target-local Z, never to X/Y.)
 
-This keeps every ordering rule CLAUDE.md documents: extent mode switched before
-the curve is validated/written with a regen in between; `AddLeader` regenerated
-before the leader is positioned; `LabelLineLength` regenerated before
-`GetLabelOutline` is read. It only stops repeating those regens per pair.
+**Crop size inherited, no scope box.** We compute `nb.Min`/`nb.Max` ourselves,
+keeping the target's own crop centre, and a resize does not touch the crop
+`Transform`. So `local` is what the *captured* `Transform` gives, and the crop
+centre is the captured one. Both already in hand.
 
-*Not doing:* batching Phase A across **all** sheets for a 2-regen total run. That
-would leave a cancelled run with crop changes written but viewports unaligned —
-per-sheet keeps each sheet self-consistent.
+**No inheritance.** Everything comes from `CaptureSheet` unchanged.
 
-### 5b. Delete the placement-verification pass
+So `TryAlign` stops fetching the target `View` and its `CropBox` altogether — two
+API calls saved per pair on top of the regen — and the **per-sheet geometry regen
+disappears entirely**.
 
-`CapturePlacement` / `ReportPlacement` / `TryOutlineBox` and the four
-`MatchedPair.Placed*` fields are pure diagnostics. They cost one extra regen plus
-a `GetBoxOutline()` per pair per phase (three phases), and they move nothing.
+### 5b. Verify the predictions once, at the end, and correct what missed
 
-⚠ **This is a real, if small, loss:** the `placementMoved` warn line is visible
-today. The bug it was built to catch was the *correction* pass that used to sit
-here, and that was already deleted — nothing remaining can reintroduce it. Say
-the word if you'd rather keep the report and pay the regen.
+Assume the writes land, then check. After the single run-end regen, re-read each
+aligned view's real crop and annotation crop, recompute the centre, and compare
+against what was predicted. A mismatch beyond tolerance gets a fresh absolute
+`SetBoxCenter` with the true value — exact, because the call is "go to X" — and a
+warn line naming the sheet and view.
 
-### 5c. Cache the source view's grids across targets
+Cost is one `View` + `CropBox` + annotation read per pair, once per run, and no
+extra regen unless a correction actually fires. Corrections run **before**
+`AlignTitleOffsets`, since moving a box drags its title with it.
+
+### 5c. Delete the placement-verification passes
+
+`CapturePlacement` / `ReportPlacement` / `TryOutlineBox`, the four
+`MatchedPair.Placed*` fields and the `placement*` strings come out, as you asked.
+They cost a regen plus a `GetBoxOutline()` per pair per phase across three phases
+and move nothing. The prediction check in 5b is a different animal and replaces
+them: it verifies the placement against the maths rather than reporting whether a
+box centre drifted since it was written.
+
+### 5d. Resulting regen schedule
+
+```
+per target sheet (no regen unless grid inheritance is on):
+  Phase A  scope box / crop size / annotation crop / crop visibility writes
+           grids: visibility reconcile, bubble mirrors, extent-mode switches
+  ── regen ──  ONLY if grid extent-mode switches were queued for this sheet
+  Phase B  write this sheet's grid curves
+           predicted SetBoxCenter for every pair      ← no live crop read
+           LabelLineLength writes, AddLeader for elbows
+  roll-up + progress
+
+── regen #1 (one, whole run) ──
+  verify predicted centres → correct + report mismatches
+── regen #2 (only if a correction fired) ──
+  AlignTitleOffsets, position every pending elbow
+```
+
+| Run | Today | Proposed |
+|---|---|---|
+| 50 sheets × 4 views, no inheritance | 3 | **1** |
+| 50 sheets × 4 views, scope box + crop size | 53 | **1** |
+| 50 sheets × 4 views, + grid inheritance | 453 | **51** |
+
+Every ordering rule CLAUDE.md documents still holds: extent mode switched before
+the curve is written with a regen between; `AddLeader` regenerated before the
+leader is positioned; boxes moved and `LabelLineLength` written before
+`GetLabelOutline` is read.
+
+*Offered, not taken:* batching the grid mode-switch regen across all sheets too
+would put even the grid run at 2 regens. It would push every grid warning
+(blocked, rejected, unbound, target-only…) past the per-sheet roll-up lines, so a
+sheet's problems would no longer print above the line that points at them. That
+is a quality cost, so I've kept grids at one regen per sheet — say the word if
+you want the trade.
+
+### 5e. Cache the source view's grids across targets
 
 `TrimGrids` runs `new FilteredElementCollector(doc, sourceView.Id).OfClass(typeof(Grid))`
 per pair. A view-scoped collector forces Revit to compute that view's visible
@@ -131,7 +187,7 @@ per-grid source read (extent type, curves, bubble state, leaders).
 Cache per source view id for the run: the grid list and each grid's source-side
 state. The target-side collector stays — each pair has a distinct target view.
 
-### 5d. Hoist the per-grid visibility reconcile
+### 5f. Hoist the per-grid visibility reconcile
 
 `ReconcileVisibility` currently runs, **for every grid**: `Category.GetCategory(doc, …)`,
 `doc.IsWorkshared`, a full walk of `tv.GetFilters()` with a `doc.GetElement` +
@@ -144,27 +200,24 @@ Hoist to once per view pair: resolve the Grids category once per run, read
 in the target, present-and-not-hidden in the source, and name the Grids category.
 Only that short list gets a per-grid `PassesFilter`. Same verdicts, same log lines.
 
-### 5e. Stop re-reading state already in hand
+### 5g. Stop re-reading state already in hand
 
 - `UsesViewSpecific` / `DisplayedCurve` / the `m0`/`m1` capture call
   `GetDatumExtentTypeInView` ~6–8× per grid per pair. Read each end's mode once
   per (grid, view) and pass it down.
 - `MirrorElbows` → `LeaderPlaneDelta` re-reads both views' displayed curves,
   which Pass 1 already computed. Carry them forward.
-- `TargetBoxCentre` re-reads the target's annotation crop live for every pair.
-  Only needed when crop-size inheritance actually rewrote that view — otherwise
-  reuse the values captured in `CaptureSheet`.
 - Skip the source-sheet scoring list allocation when only one source sheet is
   selected (the common case).
 
-### 5f. Drop two API calls whose results are ignored
+### 5h. Drop two API calls whose results are ignored
 
 `IsCurveValidInView` and `IsLeaderValid` are both called, logged on a negative,
 and then the write is attempted regardless — CLAUDE.md documents both as
 advisory-only for exactly this reason. They cost one API call per grid end and
 produce a diagnostics line no one can act on. Removing them changes no behaviour.
 
-### 5g. Delete the dead `info` logging
+### 5i. Delete the dead `info` logging
 
 `Log()` drops every `"info"` line unless `PreviewOnly` is set. With preview gone,
 **all 36 info calls are unconditionally dead** — but their `AppStrings.T(...)`
@@ -177,7 +230,7 @@ still warns when a grid pass changed nothing, and `viewTitlesSome` still warns o
 a title failure. The per-sheet roll-up, all warnings, all failures and the final
 `done` line are untouched.
 
-### 5h. Dead members removed
+### 5j. Dead members removed
 
 `VpEntry.CropActive` (assigned, never read), `MatchedPair.IntendedCentre`
 (written, never read), `noteNoCrop` (an info line about a view with no active
