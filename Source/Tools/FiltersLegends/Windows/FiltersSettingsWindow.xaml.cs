@@ -458,10 +458,18 @@ namespace LemoineTools.Framework
 
                 var expected = AutoFiltersSettings.ComputeExpectedFilterNames(_filterTrades);
 
-                // Drift check against what THIS document owns. With no document open there is
-                // nothing to compare, so fall back to the edit flag alone rather than assuming
-                // drift and firing a pointless run.
+                // Drift check against what THIS document owns.
+                //
+                // A document that owns NO Lemoine filters has not drifted — it has never used
+                // this tool. Treating "owns nothing" as drift made merely opening and closing
+                // this window in a fresh project create every filter in the library there,
+                // which is exactly the leak the per-document rework exists to stop. Drift means
+                // "this project has our filters AND they no longer match", nothing else.
+                //
+                // With no document open (_fOwnedFilterNames is null) there is nothing to
+                // compare either, so the edit flag alone decides.
                 bool documentDrifted = _fOwnedFilterNames != null
+                                    && _fOwnedFilterNames.Count > 0
                                     && !expected.SetEquals(_fOwnedFilterNames);
 
                 if ((dirty || documentDrifted) && expected.Count > 0)
