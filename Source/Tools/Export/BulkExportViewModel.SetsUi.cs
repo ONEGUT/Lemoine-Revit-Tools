@@ -12,6 +12,7 @@ using WpfTextBox    = System.Windows.Controls.TextBox;
 using WpfVisibility = System.Windows.Visibility;
 using WpfBrushes    = System.Windows.Media.Brushes;
 using WpfRectangle  = System.Windows.Shapes.Rectangle;
+using RevitElementId = Autodesk.Revit.DB.ElementId;
 
 namespace LemoineTools.Tools.BulkExport
 {
@@ -770,7 +771,7 @@ namespace LemoineTools.Tools.BulkExport
             }
 
             handler.Name      = set.Name;
-            handler.MemberIds = set.Members.Select(m => new ElementId(m.IdValue)).ToList();
+            handler.MemberIds = set.Members.Select(m => new RevitElementId(m.IdValue)).ToList();
             handler.OnCreated = sets => OnUi(() =>
             {
                 _availablePrintSets = sets;
