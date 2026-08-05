@@ -24,123 +24,236 @@ namespace LemoineTools.Tools.BulkExport
     /// </summary>
     public partial class BulkExportViewModel
     {
-        private void RefreshS2() => _refreshStep?.Invoke("S2");
+        // The sets step is S3 since naming moved ahead of it.
+        //
+        // Posted rather than called inline: several of these fire from a click handler on a
+        // control that lives inside the very step being rebuilt, and RefreshStepContent swaps
+        // that content out from under the handler. BeginInvoke lets the handler finish first.
+        // Guarded for dispatcher shutdown — a window closing mid-refresh would otherwise throw
+        // on its own STA thread, which is a hard Revit crash rather than a logged exception.
+        private void PostRefresh(string stepId)
+        {
+            var dispatcher = System.Windows.Threading.Dispatcher.CurrentDispatcher;
+            if (dispatcher.HasShutdownStarted || dispatcher.HasShutdownFinished) return;
+            dispatcher.BeginInvoke(new Action(() => _refreshStep?.Invoke(stepId)));
+        }
+
+        private void RefreshSets()    => PostRefresh("S3");
+        private void RefreshNaming()  => PostRefresh("S2");
+        internal void RefreshSetRail() => PostRefresh("S1");
 
         // ══════════════════════════════════════════════════════════════════════
         //  Step 1 — target-set bar
         // ══════════════════════════════════════════════════════════════════════
 
         /// <summary>
-        /// "Adding to [set] ▾ — N items · + New set". Checking a sheet files it into this set.
-        /// Full width with the set's own accent as a leading rule so it reads as active state,
-        /// not as a filter tucked in a corner.
+        /// The set rail: one tab per set down the left of the tree, plus every Revit print set in
+        /// the project listed automatically underneath. Clicking a set makes it the target for
+        /// anything checked next; clicking a print set imports it AND checks its sheets.
+        ///
+        /// A rail rather than the previous dropdown because the active set is a persistent mode —
+        /// a dropdown hid every set but one, which is the modal-state problem this whole design
+        /// exists to avoid.
         /// </summary>
-        internal FrameworkElement BuildTargetBar()
+        internal FrameworkElement BuildSetRail()
         {
-            var card = new Border
+            var frame = new Border { BorderThickness = new Thickness(1) };
+            frame.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_MD");
+            frame.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
+            frame.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+
+            var root = new DockPanel { LastChildFill = true };
+
+            // ── Footer actions: creating and saving sets both live here now ───
+            var actions = new StackPanel { Margin = new Thickness(5, 4, 5, 5) };
+
+            var newBtn = ControlStyles.BuildSmallButton(AppStrings.T("export.bulkExport.sets.newSet"));
+            newBtn.Margin = new Thickness(0, 0, 0, 3);
+            newBtn.HorizontalAlignment = HorizontalAlignment.Stretch;
+            newBtn.Click += (s, e) => PromptNewSet();
+            actions.Children.Add(newBtn);
+
+            var saveBtn = ControlStyles.BuildSmallButton(AppStrings.T("export.bulkExport.sets.saveSets"));
+            saveBtn.HorizontalAlignment = HorizontalAlignment.Stretch;
+            saveBtn.Click += (s, e) => SaveSets();
+            actions.Children.Add(saveBtn);
+
+            _dirtyLabel = new TextBlock
             {
-                BorderThickness = new Thickness(1),
-                Padding         = new Thickness(0, 5, 8, 5),
-                Margin          = new Thickness(0, 0, 0, 8),
+                FontStyle    = FontStyles.Italic,
+                TextWrapping = TextWrapping.Wrap,
+                Margin       = new Thickness(1, 3, 0, 0),
             };
-            card.SetResourceReference(Border.CornerRadiusProperty,  "LemoineRadius_Card");
-            card.SetResourceReference(Border.BackgroundProperty,    "LemoineRaised");
-            card.SetResourceReference(Border.BorderBrushProperty,   "LemoineBorder");
+            _dirtyLabel.SetResourceReference(TextBlock.ForegroundProperty, "LemoineAccent");
+            _dirtyLabel.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            _dirtyLabel.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            actions.Children.Add(_dirtyLabel);
+            UpdateDirtyLabel();
+
+            var railStatus = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(1, 3, 0, 0) };
+            railStatus.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            railStatus.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            railStatus.Visibility = WpfVisibility.Collapsed;
+            _railStatus = railStatus;
+            actions.Children.Add(railStatus);
+
+            DockPanel.SetDock(actions, Dock.Bottom);
+            root.Children.Add(actions);
+
+            // ── Tabs ──────────────────────────────────────────────────────────
+            var stack = new StackPanel { Margin = new Thickness(4, 4, 4, 0) };
+
+            stack.Children.Add(BuildSetTab(
+                AppStrings.T("export.bulkExport.sets.allItems"),
+                AppStrings.T("export.bulkExport.sets.countBare", UnassignedIds().Count),
+                accentHex: null, active: _targetSetId == null, dim: false,
+                onClick: () => { _targetSetId = null; RefreshSetRail(); Fire(); }));
+
+            foreach (var set in _sets)
+            {
+                var captured = set;   // ⚠ capture per iteration, never the loop variable
+                stack.Children.Add(BuildSetTab(
+                    set.Name,
+                    AppStrings.T("export.bulkExport.sets.countBare", set.Members.Count),
+                    set.AccentHex, active: _targetSetId == set.Id, dim: false,
+                    onClick: () => { _targetSetId = captured.Id; RefreshSetRail(); Fire(); }));
+            }
+
+            // Revit print sets are listed automatically — no import button, no walking a list.
+            var known = new HashSet<string>(_sets.Select(x => x.Name), StringComparer.OrdinalIgnoreCase);
+            var importable = _availablePrintSets.Where(ps => !known.Contains(ps.Name)).ToList();
+            if (importable.Count > 0)
+            {
+                var hdr = new TextBlock
+                {
+                    Text   = AppStrings.T("export.bulkExport.sets.printSetsHeader"),
+                    Margin = new Thickness(4, 8, 0, 3),
+                };
+                hdr.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+                hdr.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+                hdr.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+                stack.Children.Add(hdr);
+
+                foreach (var ps in importable)
+                {
+                    var captured = ps;
+                    stack.Children.Add(BuildSetTab(
+                        ps.Name,
+                        AppStrings.T("export.bulkExport.sets.countBare", ps.MemberIds.Count),
+                        accentHex: null, active: false, dim: true,
+                        onClick: () => ImportPrintSet(captured)));
+                }
+            }
+
+            var scroll = new ScrollViewer
+            {
+                VerticalScrollBarVisibility   = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                Content = stack,
+            };
+            ControlStyles.WireBubblingScroll(scroll);   // in-page scroller: bubble at its limits
+            root.Children.Add(scroll);
+
+            frame.Child = root;
+            return frame;
+        }
+
+        private FrameworkElement BuildSetTab(string name, string count, string? accentHex,
+                                             bool active, bool dim, Action onClick)
+        {
+            var tab = new Border
+            {
+                BorderThickness = new Thickness(0, 0, 0, 0),
+                Padding         = new Thickness(0, 4, 6, 4),
+                Margin          = new Thickness(0, 0, 0, 2),
+                Cursor          = Cursors.Hand,
+            };
+            tab.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Card");
 
             var row = new DockPanel { LastChildFill = true };
 
-            _targetRule = new WpfRectangle { Width = 4, Margin = new Thickness(0, 0, 8, 0) };
-            DockPanel.SetDock(_targetRule, Dock.Left);
-            row.Children.Add(_targetRule);
+            var rule = new WpfRectangle { Width = 3, Margin = new Thickness(0, 0, 6, 0) };
+            if (accentHex != null)
+                rule.Fill = BrushHelper.BrushFromHex(accentHex, System.Windows.Media.Colors.Gray);
+            else
+                rule.SetResourceReference(WpfRectangle.FillProperty, active ? "LemoineAccent" : "LemoineBorder");
+            DockPanel.SetDock(rule, Dock.Left);
+            row.Children.Add(rule);
+
+            var cnt = new TextBlock { Text = count, VerticalAlignment = VerticalAlignment.Center };
+            cnt.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            cnt.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+            cnt.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            DockPanel.SetDock(cnt, Dock.Right);
+            row.Children.Add(cnt);
 
             var lbl = new TextBlock
             {
-                Text              = AppStrings.T("export.bulkExport.sets.addingTo"),
+                Text              = name,
                 VerticalAlignment = VerticalAlignment.Center,
-                Margin            = new Thickness(0, 0, 8, 0),
+                TextTrimming      = TextTrimming.CharacterEllipsis,
+                FontWeight        = active ? FontWeights.SemiBold : FontWeights.Normal,
+                FontStyle         = dim ? FontStyles.Italic : FontStyles.Normal,
             };
-            lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            lbl.SetResourceReference(TextBlock.ForegroundProperty,
+                active ? "LemoineAccent" : dim ? "LemoineTextDim" : "LemoineText");
             lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            DockPanel.SetDock(lbl, Dock.Left);
+            lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
             row.Children.Add(lbl);
 
-            var newBtn = ControlStyles.BuildSmallButton(AppStrings.T("export.bulkExport.sets.newSet"));
-            newBtn.Click += (s, e) => PromptNewSet();
-            DockPanel.SetDock(newBtn, Dock.Right);
-            row.Children.Add(newBtn);
-
-            _targetCount = new TextBlock
+            if (active)
             {
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin            = new Thickness(8, 0, 8, 0),
-            };
-            _targetCount.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            _targetCount.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            _targetCount.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            DockPanel.SetDock(_targetCount, Dock.Right);
-            row.Children.Add(_targetCount);
-
-            // The set chooser itself — a themed combo listing "(no set)" plus every named set.
-            var combo = new ComboBox
-            {
-                IsEditable        = false,
-                MaxDropDownHeight = 220,
-                VerticalAlignment = VerticalAlignment.Center,
-                MinWidth          = 150,
-            };
-            combo.SetResourceReference(ComboBox.BackgroundProperty, "LemoineSelectBg");
-            combo.SetResourceReference(ComboBox.ForegroundProperty, "LemoineText");
-            combo.SetResourceReference(ComboBox.FontFamilyProperty, "LemoineUiFont");
-            combo.SetResourceReference(ComboBox.FontSizeProperty,   "LemoineFS_MD");
-            ControlStyles.WireComboWheelBubbling(combo);
-
-            string noSet = AppStrings.T("export.bulkExport.sets.noSet");
-            var items = new List<string> { noSet };
-            items.AddRange(_sets.Select(s => s.Name));
-            combo.ItemsSource   = items;
-            combo.SelectedIndex = _targetSetId == null
-                ? 0
-                : Math.Max(0, _sets.FindIndex(s => s.Id == _targetSetId) + 1);
-
-            combo.SelectionChanged += (s, e) =>
-            {
-                int idx = combo.SelectedIndex;
-                // Deliberately does NOT retarget already-checked rows: a retroactive bulk move on
-                // a dropdown change is exactly the invisible mistake this model is prone to.
-                _targetSetId = idx <= 0 || idx - 1 >= _sets.Count ? null : _sets[idx - 1].Id;
-                UpdateTargetBar();
-                Fire();
-            };
-            row.Children.Add(combo);
-
-            card.Child = row;
-            UpdateTargetBar();
-            return card;
-        }
-
-        private void UpdateTargetBar()
-        {
-            var target = TargetSet();
-            if (_targetRule != null)
-            {
-                if (target != null)
-                    _targetRule.Fill = BrushHelper.BrushFromHex(target.AccentHex, System.Windows.Media.Colors.Gray);
-                else
-                    _targetRule.SetResourceReference(WpfRectangle.FillProperty, "LemoineBorder");
+                tab.SetResourceReference(Border.BackgroundProperty, "LemoineAccentDim");
             }
-            if (_targetCount != null)
-                _targetCount.Text = target == null
-                    ? AppStrings.T("export.bulkExport.sets.unassignedCount", UnassignedIds().Count)
-                    : AppStrings.T("export.bulkExport.sets.itemCount", target.Members.Count);
+            else
+            {
+                // ⚠ direct assignment — "Transparent" is not a resource key, and a null
+                // background would make only the glyphs hit-testable.
+                tab.Background = WpfBrushes.Transparent;
+                MotionEffects.WireHover(tab, normalBgKey: null, hoverBgKey: "LemoineSelectBg");
+            }
+
+            tab.ToolTip = dim ? AppStrings.T("export.bulkExport.sets.importTip") : null;
+            tab.Child   = row;
+            tab.MouseLeftButtonDown += (s, e) => { e.Handled = true; onClick(); };
+            return tab;
         }
 
         private void PromptNewSet()
         {
             var set = NewSet(AppStrings.T("export.bulkExport.sets.defaultName", _sets.Count + 1));
             _targetSetId = set.Id;
-            _refreshStep?.Invoke("S1");
-            RefreshS2();
+            RefreshSetRail();
+            RefreshSets();
+            Fire();
+        }
+
+        /// <summary>
+        /// Turns a Revit print set into an export set and checks every sheet it contains, so
+        /// picking a set is one click rather than a click plus re-finding its sheets in the tree.
+        /// Membership arrives in Project Browser order — ViewSheetSet.Views has no order of its own.
+        /// </summary>
+        internal void ImportPrintSet(PrintSetInfo ps)
+        {
+            var ids = OrderByBrowser(ps.MemberIds.Select(id => id.Value).Where(_idToName.ContainsKey));
+            if (ids.Count == 0)
+            {
+                SetStatus(AppStrings.T("export.bulkExport.sets.importEmpty", ps.Name), isError: true);
+                return;
+            }
+
+            var set = NewSet(ps.Name);
+            foreach (long id in ids)
+            {
+                RemoveFromAllSets(id);
+                set.Members.Add(MakeMember(id));
+            }
+            _selectedIds  = OrderByBrowser(_selectedIds.Concat(ids).Distinct());
+            _targetSetId  = set.Id;
+
+            SetStatus(AppStrings.T("export.bulkExport.sets.imported", ps.Name, set.Members.Count), isError: false);
+            RefreshSetRail();   // re-seeds the tree with the newly checked sheets
+            RefreshSets();
             Fire();
         }
 
@@ -148,15 +261,11 @@ namespace LemoineTools.Tools.BulkExport
         //  Step 2 — Sets & Order
         // ══════════════════════════════════════════════════════════════════════
 
-        internal FrameworkElement BuildS2Sets()
+        internal FrameworkElement BuildSetsAndOrder()
         {
             PruneSetsToSelection();
 
             var outer = new StackPanel();
-
-            // ── Output as ─────────────────────────────────────────────────────
-            AddSectionLabel(outer, AppStrings.T("export.bulkExport.sets.outputAs"));
-            outer.Children.Add(BuildGranularityRow());
 
             // ── Named set cards (drag-reorderable) ────────────────────────────
             var setPanel = new StackPanel { Margin = new Thickness(0, 8, 0, 0) };
@@ -164,7 +273,7 @@ namespace LemoineTools.Tools.BulkExport
             {
                 ListReorder.Move(_sets, from, to);
                 _setsDirty = true;
-                RefreshS2();
+                RefreshSets();
                 Fire();
             });
             for (int i = 0; i < _sets.Count; i++)
@@ -189,7 +298,7 @@ namespace LemoineTools.Tools.BulkExport
             status.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
             status.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             status.Visibility = WpfVisibility.Collapsed;
-            _setStatus = status;
+            _setsStatus = status;
             outer.Children.Add(status);
 
             return outer;
@@ -213,8 +322,9 @@ namespace LemoineTools.Tools.BulkExport
                 ApplyModeButtonStyle(perSet,   g == PdfGranularity.PerSet);
                 ApplyModeButtonStyle(single,   g == PdfGranularity.SingleFile);
                 _setsDirty = true;
-                // Step 3 hides whichever naming box cannot apply at this granularity.
-                _refreshStep?.Invoke("S3");
+                // The naming boxes and every set card's resolved filename both depend on this.
+                RefreshNaming();
+                RefreshSets();
                 Fire();
             }
             perSheet.Click += (s, e) => Pick(PdfGranularity.PerSheet);
@@ -314,10 +424,24 @@ namespace LemoineTools.Tools.BulkExport
             name.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
             header.Children.Add(name);
 
+            // What this set will actually be called on disk, using the pattern from the naming
+            // step. This is why the naming step now comes first — the answer did not exist yet
+            // when sets were edited before it.
+            var outName = new TextBlock
+            {
+                Text         = SetOutputPreview(set),
+                TextWrapping = TextWrapping.Wrap,
+                Margin       = new Thickness(20, 0, 10, 7),
+            };
+            outName.SetResourceReference(TextBlock.ForegroundProperty, "LemoineGreen");
+            outName.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+            outName.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            stack.Children.Add(outName);
+
             void Toggle()
             {
                 if (!_expandedSets.Remove(set.Id)) _expandedSets.Add(set.Id);
-                RefreshS2();
+                RefreshSets();
             }
             caret.MouseLeftButtonDown += (s, e) => { e.Handled = true; Toggle(); };
             name.MouseLeftButtonDown  += (s, e) => { e.Handled = true; Toggle(); };
@@ -371,7 +495,7 @@ namespace LemoineTools.Tools.BulkExport
             {
                 var b = ControlStyles.BuildSmallButton(label);
                 b.Margin = new Thickness(0, 0, 4, 0);
-                b.Click += (s, e) => { SortMembers(set, mode); _setsDirty = true; RefreshS2(); Fire(); };
+                b.Click += (s, e) => { SortMembers(set, mode); _setsDirty = true; RefreshSets(); Fire(); };
                 sortRow.Children.Add(b);
             }
             AddSort(AppStrings.T("export.bulkExport.sets.sortBrowser"), "Browser");
@@ -386,7 +510,7 @@ namespace LemoineTools.Tools.BulkExport
             {
                 ListReorder.Move(set.Members, from, to);
                 _setsDirty = true;
-                RefreshS2();
+                RefreshSets();
                 Fire();
             });
 
@@ -458,7 +582,7 @@ namespace LemoineTools.Tools.BulkExport
             // Name
             var nameBox = ThemedBox(set.Name);
             nameBox.TextChanged += (s, e) => { set.Name = nameBox.Text; _setsDirty = true; Fire(); };
-            nameBox.LostFocus   += (s, e) => { RefreshS2(); _refreshStep?.Invoke("S1"); };
+            nameBox.LostFocus   += (s, e) => { RefreshSets(); RefreshSetRail(); };
             panel.Children.Add(LabeledRow(AppStrings.T("export.bulkExport.sets.optName"), nameBox));
 
             // Pattern override
@@ -510,8 +634,8 @@ namespace LemoineTools.Tools.BulkExport
                 copy.Members   = new List<ExportSetMember>();
                 _sets.Add(copy);
                 _setsDirty = true;
-                RefreshS2();
-                _refreshStep?.Invoke("S1");
+                RefreshSets();
+                RefreshSetRail();
                 Fire();
             };
             actions.Children.Add(dup);
@@ -526,8 +650,8 @@ namespace LemoineTools.Tools.BulkExport
                 _expandedSets.Remove(set.Id);
                 if (_targetSetId == set.Id) _targetSetId = null;
                 _setsDirty = true;
-                RefreshS2();
-                _refreshStep?.Invoke("S1");
+                RefreshSets();
+                RefreshSetRail();
                 Fire();
             };
             actions.Children.Add(del);
@@ -560,7 +684,7 @@ namespace LemoineTools.Tools.BulkExport
             {
                 set(v == on ? true : v == off ? false : (bool?)null);
                 _setsDirty = true;
-                RefreshS2();
+                RefreshSets();
                 Fire();
             };
             row.Children.Add(sel);
@@ -594,8 +718,8 @@ namespace LemoineTools.Tools.BulkExport
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin            = new Thickness(0, 0, 8, 0),
             };
-            cb.Checked   += (s, e) => { _unassignedEnabled = true;  RefreshS2(); Fire(); };
-            cb.Unchecked += (s, e) => { _unassignedEnabled = false; RefreshS2(); Fire(); };
+            cb.Checked   += (s, e) => { _unassignedEnabled = true;  RefreshSets(); Fire(); };
+            cb.Unchecked += (s, e) => { _unassignedEnabled = false; RefreshSets(); Fire(); };
             DockPanel.SetDock(cb, Dock.Left);
             head.Children.Add(cb);
 
@@ -652,8 +776,8 @@ namespace LemoineTools.Tools.BulkExport
                         }
                         SortMembers(captured, "Browser");
                         _setsDirty = true;
-                        RefreshS2();
-                        _refreshStep?.Invoke("S1");
+                        RefreshSets();
+                        RefreshSetRail();
                         Fire();
                     };
                     moveRow.Children.Add(b);
@@ -671,11 +795,6 @@ namespace LemoineTools.Tools.BulkExport
         {
             var wrap = new WrapPanel { Margin = new Thickness(0, 8, 0, 0) };
 
-            var newBtn = ControlStyles.BuildSmallButton(AppStrings.T("export.bulkExport.sets.newSet"));
-            newBtn.Margin = new Thickness(0, 0, 4, 4);
-            newBtn.Click += (s, e) => PromptNewSet();
-            wrap.Children.Add(newBtn);
-
             var byPrefix = ControlStyles.BuildSmallButton(AppStrings.T("export.bulkExport.sets.autoPrefix"));
             byPrefix.Margin = new Thickness(0, 0, 4, 4);
             byPrefix.Click += (s, e) => RunAutoGroup("Prefix");
@@ -686,26 +805,17 @@ namespace LemoineTools.Tools.BulkExport
             byFolder.Click += (s, e) => RunAutoGroup("Folder");
             wrap.Children.Add(byFolder);
 
-            var importBtn = ControlStyles.BuildSmallButton(AppStrings.T("export.bulkExport.sets.importPrintSet"));
-            importBtn.Margin = new Thickness(0, 0, 4, 4);
-            importBtn.Click += (s, e) => ImportNextPrintSet();
-            wrap.Children.Add(importBtn);
-
-            var saveBtn = ControlStyles.BuildSmallButton(AppStrings.T("export.bulkExport.sets.saveSets"));
-            saveBtn.Margin = new Thickness(0, 0, 8, 4);
-            saveBtn.Click += (s, e) => SaveSets();
-            wrap.Children.Add(saveBtn);
-
-            _dirtyLabel = new TextBlock
+            var hint = new TextBlock
             {
+                Text              = AppStrings.T("export.bulkExport.sets.manageOnStep1"),
                 FontStyle         = FontStyles.Italic,
                 VerticalAlignment = VerticalAlignment.Center,
+                TextWrapping      = TextWrapping.Wrap,
             };
-            _dirtyLabel.SetResourceReference(TextBlock.ForegroundProperty, "LemoineAccent");
-            _dirtyLabel.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            _dirtyLabel.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            wrap.Children.Add(_dirtyLabel);
-            UpdateDirtyLabel();
+            hint.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            hint.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            hint.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            wrap.Children.Add(hint);
 
             return wrap;
         }
@@ -721,39 +831,8 @@ namespace LemoineTools.Tools.BulkExport
             ApplyAutoGroups(mode, minSize: 3);
             SetStatus(AppStrings.T("export.bulkExport.sets.autoDone", _sets.Count, _selectedIds.Count), isError: false);
             _targetSetId = null;
-            RefreshS2();
-            _refreshStep?.Invoke("S1");
-            Fire();
-        }
-
-        // Imports the first print set not already present as a set. Kept as a plain button rather
-        // than a dropdown: a Popup with StaysOpen=false crashes Revit, and repeated presses walk
-        // the list without needing one.
-        private void ImportNextPrintSet()
-        {
-            var existing = new HashSet<string>(_sets.Select(s => s.Name), StringComparer.OrdinalIgnoreCase);
-            var next = _availablePrintSets.FirstOrDefault(ps => !existing.Contains(ps.Name));
-            if (next == null)
-            {
-                SetStatus(_availablePrintSets.Count == 0
-                    ? AppStrings.T("export.bulkExport.labels.noPrintSets")
-                    : AppStrings.T("export.bulkExport.sets.allPrintSetsImported"), isError: true);
-                return;
-            }
-
-            var set = NewSet(next.Name);
-            // A print set's own membership is unordered (ViewSheetSet.Views is a ViewSet), so
-            // impose browser order on the way in.
-            var ids = OrderByBrowser(next.MemberIds.Select(id => id.Value).Where(_idToName.ContainsKey));
-            foreach (long id in ids)
-            {
-                RemoveFromAllSets(id);
-                set.Members.Add(MakeMember(id));
-            }
-            _selectedIds = OrderByBrowser(_selectedIds.Concat(ids).Distinct());
-            SetStatus(AppStrings.T("export.bulkExport.sets.imported", next.Name, set.Members.Count), isError: false);
-            RefreshS2();
-            _refreshStep?.Invoke("S1");
+            RefreshSets();
+            RefreshSetRail();
             Fire();
         }
 

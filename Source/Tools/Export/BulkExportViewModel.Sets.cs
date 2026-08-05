@@ -7,6 +7,7 @@ using System.Windows.Controls;
 using Autodesk.Revit.DB;
 using LemoineTools.Framework;
 using LemoineTools.Framework.Controls;
+using LemoineTools.Framework.Naming;
 
 using WpfVisibility = System.Windows.Visibility;
 
@@ -37,10 +38,12 @@ namespace LemoineTools.Tools.BulkExport
 
         // Live handles so a change on one step repaints the other without a full rebuild.
         private BrowserTreePicker? _picker;
-        private TextBlock?         _targetCount;
-        private System.Windows.Shapes.Rectangle? _targetRule;
         private TextBlock?         _dirtyLabel;
-        private TextBlock?         _setStatus;
+        // Two status lines, not one: Step 1's rail and Step 3's actions row are both built
+        // eagerly, so a single field would be owned by whichever step was constructed last
+        // and a Step 1 action would report into Step 3's hidden block.
+        private TextBlock?         _railStatus;
+        private TextBlock?         _setsStatus;
 
         // Which set cards are expanded — held on the ViewModel, not the visual tree, or every
         // navigation back to Step 2 collapses everything the user just opened.
@@ -278,11 +281,16 @@ namespace LemoineTools.Tools.BulkExport
 
         private void SetStatus(string text, bool isError)
         {
-            var status = _setStatus;
-            if (status == null) return;
-            status.Text = text;
-            status.SetResourceReference(TextBlock.ForegroundProperty, isError ? "LemoineRed" : "LemoineTextDim");
-            status.Visibility = WpfVisibility.Visible;
+            Show(_railStatus);
+            Show(_setsStatus);
+
+            void Show(TextBlock? status)
+            {
+                if (status == null) return;
+                status.Text = text;
+                status.SetResourceReference(TextBlock.ForegroundProperty, isError ? "LemoineRed" : "LemoineTextDim");
+                status.Visibility = WpfVisibility.Visible;
+            }
         }
 
         private void UpdateDirtyLabel()
@@ -290,6 +298,66 @@ namespace LemoineTools.Tools.BulkExport
             if (_dirtyLabel == null) return;
             _dirtyLabel.Text       = _setsDirty ? AppStrings.T("export.bulkExport.sets.unsaved") : "";
             _dirtyLabel.Visibility = _setsDirty ? WpfVisibility.Visible : WpfVisibility.Collapsed;
+        }
+
+        /// <summary>
+        /// What this set produces on disk, resolved through the naming step's patterns. Mirrors
+        /// the handler's own resolution so the card cannot promise a name the run will not use;
+        /// per-sheet granularity produces many files, so it shows the count and one example.
+        /// </summary>
+        internal string SetOutputPreview(ExportSet set)
+        {
+            int index = Math.Max(1, _sets.IndexOf(set) + 1);
+
+            if (_granularity == PdfGranularity.PerSheet)
+            {
+                string first = set.Members.Count > 0
+                    ? ResolveItemPreview(set, set.Members[0], 1)
+                    : AppStrings.T("export.bulkExport.sets.noMembers");
+                return AppStrings.T("export.bulkExport.sets.previewPerSheet", set.Members.Count, first);
+            }
+
+            string pattern = string.IsNullOrWhiteSpace(set.PatternOverride) ? _setPattern : set.PatternOverride!;
+            var ctx = new TokenContext();
+            ctx.Computed["SetName"]       = set.Name;
+            ctx.Computed["SetIndex"]      = index.ToString("D2");
+            ctx.Computed["SetCount"]      = Math.Max(1, _sets.Count).ToString();
+            ctx.Computed["SheetCount"]    = set.Members.Count.ToString();
+            ctx.Computed["ProjectNumber"] = _previewProjectNumber;
+            ctx.Computed["ProjectName"]   = _previewProjectName;
+            ctx.Computed["Year"]          = DateTime.Now.Year.ToString();
+            ctx.Computed["Month"]         = DateTime.Now.Month.ToString("D2");
+            ctx.Computed["Day"]           = DateTime.Now.Day.ToString("D2");
+
+            string name = SanitiseFilenamePreview(TokenResolver.Resolve(pattern, ctx));
+            if (!name.Any(char.IsLetterOrDigit)) name = SanitiseFilenamePreview(set.Name);
+
+            return _granularity == PdfGranularity.SingleFile
+                ? AppStrings.T("export.bulkExport.sets.previewSingleFile", name)
+                : AppStrings.T("export.bulkExport.sets.previewPerSet", name);
+        }
+
+        private string ResolveItemPreview(ExportSet set, ExportSetMember member, int setSeq)
+        {
+            var ctx = new TokenContext();
+            string label  = member.Label ?? "";
+            int    dash   = label.IndexOf(" — ", StringComparison.Ordinal);
+            ctx.Computed["SheetNumber"]   = dash >= 0 ? label.Substring(0, dash) : label;
+            ctx.Computed["SheetName"]     = dash >= 0 ? label.Substring(dash + 3) : label;
+            ctx.Computed["ViewName"]      = label;
+            ctx.Computed["ViewType"]      = member.IsSheet ? "Sheet" : "View";
+            ctx.Computed["SetName"]       = set.Name;
+            ctx.Computed["SetSeq"]        = setSeq.ToString("D2");
+            ctx.Computed["Seq"]           = setSeq.ToString("D3");
+            ctx.Computed["ProjectNumber"] = _previewProjectNumber;
+            ctx.Computed["ProjectName"]   = _previewProjectName;
+            ctx.Computed["Year"]          = DateTime.Now.Year.ToString();
+            ctx.Computed["Month"]         = DateTime.Now.Month.ToString("D2");
+            ctx.Computed["Day"]           = DateTime.Now.Day.ToString("D2");
+
+            string pattern = string.IsNullOrWhiteSpace(set.PatternOverride) ? ActivePattern : set.PatternOverride!;
+            string name    = SanitiseFilenamePreview(TokenResolver.Resolve(pattern, ctx));
+            return name.Any(char.IsLetterOrDigit) ? name + ".pdf" : label;
         }
 
         // ══════════════════════════════════════════════════════════════════════

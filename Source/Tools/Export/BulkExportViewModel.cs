@@ -70,8 +70,8 @@ namespace LemoineTools.Tools.BulkExport
         public StepDefinition[] Steps => new[]
         {
             new StepDefinition("S1", AppStrings.T("export.bulkExport.steps.S1"), required: true),
-            new StepDefinition("S2", AppStrings.T("export.bulkExport.steps.S2"),           required: false),
-            new StepDefinition("S3", AppStrings.T("export.bulkExport.steps.S3"),    required: true),
+            new StepDefinition("S2", AppStrings.T("export.bulkExport.steps.S2"),    required: true),
+            new StepDefinition("S3", AppStrings.T("export.bulkExport.steps.S3"),           required: false),
             new StepDefinition("S4", AppStrings.T("export.bulkExport.steps.S4"),          required: false),
             new StepDefinition("S5", AppStrings.T("export.bulkExport.steps.S5"),          required: false),
             new StepDefinition("S6", AppStrings.T("export.bulkExport.steps.S6"),          required: false),
@@ -219,9 +219,14 @@ namespace LemoineTools.Tools.BulkExport
         // whatever the hash happens to yield. Every selection is sorted through this map.
         internal readonly Dictionary<long, int> _browserRank = new Dictionary<long, int>();
 
-        // ── Preview (token preview in S3) ─────────────────────────────────────
+        // ── Preview (token preview on the naming step) ────────────────────────
         private string _previewSheetNumber = "A101";
         private string _previewSheetName   = "Ground Floor";
+
+        // Real project info, captured on the main thread at launch. The previews resolve the
+        // same tokens the run will, so a set card's filename is the filename — not a sample.
+        private readonly string _previewProjectNumber;
+        private readonly string _previewProjectName;
 
         // ── Revit wiring ──────────────────────────────────────────────────────
         private readonly BulkExportEventHandler? _handler;
@@ -236,8 +241,12 @@ namespace LemoineTools.Tools.BulkExport
             List<View>               allViews,
             BrowserTree       browserTree,
             List<PrintSetInfo>? availablePrintSets = null,
-            ExportSetLayout?    storedLayout       = null)
+            ExportSetLayout?    storedLayout       = null,
+            string              projectNumber      = "",
+            string              projectName        = "")
         {
+            _previewProjectNumber = projectNumber;
+            _previewProjectName   = projectName;
             _handler       = handler;
             _event         = externalEvent;
             _dwgSetupNames = dwgSetupNames;
@@ -331,8 +340,8 @@ namespace LemoineTools.Tools.BulkExport
             ctx.Computed["SetIndex"]      = "01";
             ctx.Computed["SetCount"]      = Math.Max(1, _sets.Count).ToString();
             ctx.Computed["SheetCount"]    = count.ToString();
-            ctx.Computed["ProjectNumber"] = "2024-001";
-            ctx.Computed["ProjectName"]   = "Sample Project";
+            ctx.Computed["ProjectNumber"] = _previewProjectNumber;
+            ctx.Computed["ProjectName"]   = _previewProjectName;
             ctx.Computed["Year"]          = DateTime.Now.Year.ToString();
             ctx.Computed["Month"]         = DateTime.Now.Month.ToString("D2");
             ctx.Computed["Day"]           = DateTime.Now.Day.ToString("D2");
@@ -412,8 +421,8 @@ namespace LemoineTools.Tools.BulkExport
             switch (stepId)
             {
                 case "S1": return BuildS1();
-                case "S2": return BuildS2Sets();
-                case "S3": return BuildS3();
+                case "S2": return BuildFilenameFormats();
+                case "S3": return BuildSetsAndOrder();
                 case "S4": return BuildS4Pdf();
                 case "S5": return BuildS5Dwg();
                 case "S6": return BuildS6Nwc();
@@ -468,11 +477,24 @@ namespace LemoineTools.Tools.BulkExport
             outer.Tag = showAllCb;
             outer.Children.Add(showAllCb);
 
-            outer.Children.Add(BuildTargetBar());
+            // Sets are a tab rail down the left of the tree, not a bar above it: the active set
+            // is a persistent mode, and a rail shows every set (and every importable Revit print
+            // set) at once instead of hiding them behind a dropdown.
+            var split = new WpfGrid { Height = 340, Tag = "multiselect" };
+            split.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(158) });
+            split.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(8) });
+            split.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+            var rail = BuildSetRail();
+            WpfGrid.SetColumn(rail, 0);
+            split.Children.Add(rail);
 
             var multiSelect = BuildTreePicker(showAllCb);
-            multiSelect.Tag = "multiselect";
-            outer.Children.Add(multiSelect);
+            multiSelect.Height = double.NaN;   // fill the row instead of its own fixed 300
+            WpfGrid.SetColumn(multiSelect, 2);
+            split.Children.Add(multiSelect);
+
+            outer.Children.Add(split);
 
             var assignHint = new TextBlock
             {
@@ -515,7 +537,8 @@ namespace LemoineTools.Tools.BulkExport
                 _pendingAssign.Clear();
 
                 picker.RefreshBadges();
-                UpdateTargetBar();
+                // The rail's per-set counts changed; rebuild it rather than patching live handles.
+                RefreshSetRail();
                 Fire();
             };
             // Carry the current selection forward — SetTree keeps only the ids still eligible,
@@ -541,9 +564,21 @@ namespace LemoineTools.Tools.BulkExport
             if (showAllCb != null)
                 showAllCb.Visibility = _exportMode == "Views" ? WpfVisibility.Visible : WpfVisibility.Collapsed;
 
+            var split = new WpfGrid { Height = 340, Tag = "multiselect" };
+            split.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(158) });
+            split.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(8) });
+            split.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+            var rail = BuildSetRail();
+            WpfGrid.SetColumn(rail, 0);
+            split.Children.Add(rail);
+
             var newPicker = BuildTreePicker(showAllCb ?? new CheckBox { Tag = false });
-            newPicker.Tag = "multiselect";
-            outer.Children.Add(newPicker);
+            newPicker.Height = double.NaN;
+            WpfGrid.SetColumn(newPicker, 2);
+            split.Children.Add(newPicker);
+
+            outer.Children.Add(split);
             // BuildTreePicker's end-of-SetTree callback already re-seeded _selectedIds with
             // the surviving selection and fired validation; nothing to clear here.
             Fire();
@@ -578,9 +613,13 @@ namespace LemoineTools.Tools.BulkExport
         // ── S3 — Filename & Formats ───────────────────────────────────────────
         // Pattern + format toggles only. Each format's own options live in its dedicated
         // step (S4 PDF, S5 DWG, S6 NWC, S7 IFC), shown only when that format is enabled.
-        private FrameworkElement BuildS3()
+        private FrameworkElement BuildFilenameFormats()
         {
             var outer = new StackPanel();
+
+            AddSectionLabel(outer, AppStrings.T("export.bulkExport.sets.outputAs"));
+            outer.Children.Add(BuildGranularityRow());
+            AddDivider(outer);
 
             // Two patterns, because one cannot name both a file-per-sheet and a file-per-set:
             // {SheetNumber} on a 40-sheet file is meaningless. Each box is labelled by WHAT IT
@@ -689,8 +728,8 @@ namespace LemoineTools.Tools.BulkExport
                 {
                     ["ViewName"]      = "Level 1 - Lighting",
                     ["ViewType"]      = "FloorPlan",
-                    ["ProjectNumber"] = "2024-001",
-                    ["ProjectName"]   = "Sample Project",
+                    ["ProjectNumber"] = _previewProjectNumber,
+                    ["ProjectName"]   = _previewProjectName,
                     ["Year"]          = DateTime.Now.Year.ToString(),
                     ["Month"]         = DateTime.Now.Month.ToString("D2"),
                     ["Day"]           = DateTime.Now.Day.ToString("D2"),
@@ -704,8 +743,8 @@ namespace LemoineTools.Tools.BulkExport
                     ["SheetName"]     = _previewSheetName,
                     ["Revision"]      = "3",
                     ["IssueDate"]     = DateTime.Now.ToString("M/d/yy"),
-                    ["ProjectNumber"] = "2024-001",
-                    ["ProjectName"]   = "Sample Project",
+                    ["ProjectNumber"] = _previewProjectNumber,
+                    ["ProjectName"]   = _previewProjectName,
                     ["Year"]          = DateTime.Now.Year.ToString(),
                     ["Month"]         = DateTime.Now.Month.ToString("D2"),
                     ["Day"]           = DateTime.Now.Day.ToString("D2"),
@@ -1135,8 +1174,8 @@ namespace LemoineTools.Tools.BulkExport
             switch (stepId)
             {
                 case "S1": return _selectedIds.Count > 0;
-                case "S2": return true;   // sets are optional — an ungrouped selection is one set
-                case "S3": return _pdfOn || _dwgOn || _nwcOn || _ifcOn;
+                case "S2": return _pdfOn || _dwgOn || _nwcOn || _ifcOn;
+                case "S3": return true;   // sets are optional — an ungrouped selection is one set
                 case "S4": return true;   // PDF settings
                 case "S5": return true;   // DWG settings
                 case "S6": return true;   // NWC settings
@@ -1152,12 +1191,12 @@ namespace LemoineTools.Tools.BulkExport
             {
                 case "S1": return _selectedIds.Count == 0 ? "—"
                     : AppStrings.T("export.bulkExport.summaries.s1", _selectedIds.Count, _exportMode.ToLower());
-                case "S2": return _sets.Count == 0
-                    ? AppStrings.T("export.bulkExport.summaries.s2Individual", GranularityLabel())
-                    : AppStrings.T("export.bulkExport.summaries.s2Sets", _sets.Count, _selectedIds.Count, GranularityLabel());
-                case "S3": return GetActiveFormats() == "—"
-                    ? AppStrings.T("export.bulkExport.summaries.s3None")
-                    : AppStrings.T("export.bulkExport.summaries.s3", GetActiveFormats(), ActivePattern);
+                case "S2": return GetActiveFormats() == "—"
+                    ? AppStrings.T("export.bulkExport.summaries.s2None")
+                    : AppStrings.T("export.bulkExport.summaries.s2", GetActiveFormats(), GranularityLabel());
+                case "S3": return _sets.Count == 0
+                    ? AppStrings.T("export.bulkExport.summaries.s3Individual", GranularityLabel())
+                    : AppStrings.T("export.bulkExport.summaries.s3Sets", _sets.Count, _selectedIds.Count, GranularityLabel());
                 case "S4": return AppStrings.T("export.bulkExport.summaries.s4", _hiddenLines.Split(' ')[0], _rasterQuality, _colorDepth, GranularityLabel());
                 case "S5": return string.IsNullOrEmpty(_dwgSetup) ? AppStrings.T("export.bulkExport.summaries.s5Default") : _dwgSetup;
                 case "S6": return AppStrings.T("export.bulkExport.summaries.s6", _nwcCoordinates, _nwcParameters);

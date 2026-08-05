@@ -86,9 +86,16 @@ namespace LemoineTools.Commands
                 // unreadable layout comes back null and the tool simply opens with no sets.
                 var storedLayout = LemoineTools.Tools.BulkExport.ExportSetStore.Read(doc);
 
+                // Real project info for the filename previews — read here because the previews
+                // resolve the same tokens the run does, and a sample value would make a set card
+                // promise a name the export will not produce.
+                string projNumber = doc.ProjectInformation?.get_Parameter(BuiltInParameter.PROJECT_NUMBER)?.AsString() ?? "";
+                string projName   = doc.ProjectInformation?.get_Parameter(BuiltInParameter.PROJECT_NAME)?.AsString()   ?? "";
+
                 var vm    = new BulkExportViewModel(
                     App.BulkExportHandler!, App.BulkExportEvent!,
-                    dwgSetupNames, allSheets, allViews, browserTree, printSets, storedLayout);
+                    dwgSetupNames, allSheets, allViews, browserTree, printSets, storedLayout,
+                    projNumber, projName);
 
                 return vm;
             }
