@@ -19,7 +19,7 @@ using WpfBrushes    = System.Windows.Media.Brushes;
 
 namespace LemoineTools.Tools.BulkExport
 {
-    public class BulkExportViewModel : IStepFlowTool, IReviewableTool, IConditionalSteps, IStepAware, IRunResult, IToolCleanup
+    public partial class BulkExportViewModel : IStepFlowTool, IReviewableTool, IConditionalSteps, IStepAware, IRunResult, IToolCleanup
     {
         // Run strip: "files" during the run, per-format breakdown ("30 PDF · 30 DWG") on completion.
         public string? ResultNoun => "files";
