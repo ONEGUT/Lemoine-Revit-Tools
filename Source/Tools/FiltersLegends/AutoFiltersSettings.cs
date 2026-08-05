@@ -309,10 +309,68 @@ namespace LemoineTools.Tools.AutoFilters
         /// </summary>
         [XmlAttribute] public bool   OverwriteFilterDefinition { get; set; } = false;
 
+        // ── Trade library: one per project ───────────────────────────────────
+        //
+        // A trade library describes the filters a MODEL should carry, so it belongs to that
+        // model, not to the machine. Held once for the whole install, every project inherited
+        // whatever the last one was set up with — including the externally-managed trades that
+        // Ceiling Heatmap and Ceiling Grids rebuild from a specific model's ceiling types and
+        // height bands, which are model facts by definition.
+        //
+        // A project's first touch seeds it from the static seed library (SeedLibrary), or
+        // starts blank when there is none. After that the project owns its copy: edits never
+        // travel back to the seed or sideways into another project.
+        //
+        // The Trades property keeps its name, type and behaviour, so all 44 call sites are
+        // unchanged; only the storage behind it is keyed by document.
+
+        [XmlArray("TradeDocScopes"), XmlArrayItem("Doc")]
+        public List<TradeDocScope> TradeDocScopes { get; set; } = new List<TradeDocScope>();
+
+        /// <summary>Trade bucket for the active document, seeded on first touch.</summary>
+        private TradeDocScope TradeScope()
+        {
+            if (TradeDocScopes == null) TradeDocScopes = new List<TradeDocScope>();
+
+            string k = DocumentKey.Current ?? "";
+            foreach (var d in TradeDocScopes)
+                if (d != null && string.Equals(d.Key, k, StringComparison.OrdinalIgnoreCase))
+                {
+                    d.Touched = DateTime.UtcNow.Ticks;
+                    return d;
+                }
+
+            var made = new TradeDocScope { Key = k, Touched = DateTime.UtcNow.Ticks, Seeded = true };
+            // Seed ONCE, on creation. Re-seeding an existing bucket would overwrite the
+            // project's own edits with the office standard every time it was opened.
+            var seed = SeedLibrary.TryLoad<FilterLibraryDto>(
+                SeedLibrary.AutoFiltersSeedFile, FilterLibraryDto.RootElement);
+            if (seed?.Trades != null && seed.Trades.Count > 0)
+            {
+                made.Trades = DeepCopy(seed.Trades);
+                // Seed ids are shared by every project seeded from the same file. Trade and
+                // rule ids key filter-ownership stamps inside models, so re-mint them here.
+                EnsureUniqueTradeIds(made.Trades);
+            }
+            TradeDocScopes.Add(made);
+
+            while (TradeDocScopes.Count > DocScoped.MaxDocuments)
+            {
+                int oldest = 0;
+                for (int i = 1; i < TradeDocScopes.Count; i++)
+                    if (TradeDocScopes[i].Touched < TradeDocScopes[oldest].Touched) oldest = i;
+                TradeDocScopes.RemoveAt(oldest);
+            }
+            return made;
+        }
+
         /// <summary>The ordered list of trade configurations that make up the full filter schema.</summary>
-        [XmlArray("Trades")]
-        [XmlArrayItem("Trade")]
-        public List<FilterTradeConfig> Trades { get; set; } = new List<FilterTradeConfig>();
+        [XmlIgnore]
+        public List<FilterTradeConfig> Trades
+        {
+            get => TradeScope().Trades;
+            set => TradeScope().Trades = value ?? new List<FilterTradeConfig>();
+        }
 
         // NOTE: there is deliberately no CreatedFilterNames manifest here.
         // Which filters this tool owns is a per-DOCUMENT fact; recording it in this
@@ -1297,16 +1355,26 @@ namespace LemoineTools.Tools.AutoFilters
                     using (var r = new StreamReader(FilePath))
                     {
                         var s = (AutoFiltersSettings)xs.Deserialize(r)!;
-                        if (s.Trades == null) s.Trades = new List<FilterTradeConfig>();
+                        if (s.TradeDocScopes == null) s.TradeDocScopes = new List<TradeDocScope>();
                         MigrateToV3(s);
-                        // Repair any duplicate/empty trade Ids left by older bulk-create runs.
-                        if (EnsureUniqueTradeIds(s.Trades)) s.Save();
+                        // Repair duplicate/empty trade Ids left by older bulk-create runs. Walk
+                        // the buckets directly rather than the Trades accessor: the accessor
+                        // resolves (and would seed) only the ACTIVE document, and this repair
+                        // has to reach every project's library, not just the open one.
+                        bool repaired = false;
+                        foreach (var bucket in s.TradeDocScopes)
+                            if (bucket != null && EnsureUniqueTradeIds(bucket.Trades)) repaired = true;
+                        if (repaired) s.Save();
                         return s;
                     }
                 }
             }
             catch (Exception __lex) { DiagnosticsLog.Swallowed("AutoFiltersSettings.Load", __lex); }
-            var fresh = new AutoFiltersSettings { Trades = BuildDefaultTrades() };
+            // No machine-wide default trade set: libraries are per project now, and a new
+            // project is seeded from SeedLibrary (or starts blank) on first touch. Filling
+            // this in would put the same trades back into every project — the exact leak
+            // the per-project rework removes.
+            var fresh = new AutoFiltersSettings();
             fresh.Save();
             return fresh;
         }
@@ -1320,7 +1388,12 @@ namespace LemoineTools.Tools.AutoFilters
         {
             if (s.Version >= 3) return;
 
-            foreach (var trade in s.Trades)
+            // Walk the buckets, not the Trades accessor: the accessor resolves (and would
+            // seed) only the active document, while this migration has to reach every
+            // project's library.
+            foreach (var trade in (s.TradeDocScopes ?? new List<TradeDocScope>())
+                                      .Where(b => b != null)
+                                      .SelectMany(b => b.Trades ?? new List<FilterTradeConfig>()))
             {
                 if (trade.Categories == null || trade.Categories.Count == 0) continue;
 
@@ -1369,15 +1442,17 @@ namespace LemoineTools.Tools.AutoFilters
             error = null;
             try
             {
-                var xs = new XmlSerializer(typeof(AutoFiltersSettings));
+                // Imports the FLAT library format written by ExportTo. Replaces THIS project's
+                // trade library only — libraries are per document, so an import can no longer
+                // overwrite every project at once.
+                var xs = new XmlSerializer(typeof(FilterLibraryDto));
                 using (var r = new StreamReader(path))
                 {
-                    var s = (AutoFiltersSettings)xs.Deserialize(r)!;
-                    if (s.Trades == null) s.Trades = new List<FilterTradeConfig>();
-                    MigrateToV3(s);
-                    EnsureUniqueTradeIds(s.Trades);
-                    _instance = s;
-                    _instance.Save();
+                    var dto = xs.Deserialize(r) as FilterLibraryDto;
+                    var trades = dto?.Trades ?? new List<FilterTradeConfig>();
+                    EnsureUniqueTradeIds(trades);
+                    Instance.Trades = trades;
+                    Instance.Save();
                 }
                 return true;
             }
@@ -1393,9 +1468,13 @@ namespace LemoineTools.Tools.AutoFilters
         /// <param name="trades">The trade list to export.</param>
         public static void ExportTo(string path, List<FilterTradeConfig> trades)
         {
-            var s = new AutoFiltersSettings { Trades = trades };
-            var xs = new XmlSerializer(typeof(AutoFiltersSettings));
-            using (var w = new StreamWriter(path)) xs.Serialize(w, s);
+            // Writes the FLAT library format — a plain trade list with no document scoping.
+            // Serializing AutoFiltersSettings itself would emit the per-document buckets, so
+            // an exported file (or a template, or a seed) would carry one machine's document
+            // keys into everyone else's install.
+            var dto = new FilterLibraryDto { Trades = trades ?? new List<FilterTradeConfig>() };
+            var xs  = new XmlSerializer(typeof(FilterLibraryDto));
+            using (var w = new StreamWriter(path)) xs.Serialize(w, dto);
         }
 
         // ── Template store ────────────────────────────────────────────────────
@@ -1421,27 +1500,38 @@ namespace LemoineTools.Tools.AutoFilters
         /// </summary>
         public static List<FilterTradeConfig>? TryLoadTrades(string path)
         {
-            var xs = new XmlSerializer(typeof(AutoFiltersSettings));
+            var xs = new XmlSerializer(typeof(FilterLibraryDto));
             using (var r = new StreamReader(path))
             {
-                var s = (AutoFiltersSettings)xs.Deserialize(r)!;
-                if (s.Trades == null) s.Trades = new List<FilterTradeConfig>();
-                MigrateToV3(s);
-                return s.Trades;
+                var dto = xs.Deserialize(r) as FilterLibraryDto;
+                return dto?.Trades ?? new List<FilterTradeConfig>();
             }
         }
 
-        /// <summary>Deep-copies the trade list via XML round-trip for safe live editing.</summary>
+        /// <summary>
+        /// Deep-copies a trade list via XML round-trip, for safe live editing and for copying
+        /// the seed into a project. Routes through the FLAT library format so no document
+        /// scoping is involved — round-tripping AutoFiltersSettings would mint a bucket for
+        /// the active document on every copy.
+        /// </summary>
         public static List<FilterTradeConfig> DeepCopy(List<FilterTradeConfig> src)
         {
             if (src == null || src.Count == 0) return new List<FilterTradeConfig>();
-            var xs = new XmlSerializer(typeof(AutoFiltersSettings));
-            using (var ms = new System.IO.MemoryStream())
+            try
             {
-                xs.Serialize(ms, new AutoFiltersSettings { Trades = src });
-                ms.Position = 0;
-                return ((AutoFiltersSettings)xs.Deserialize(ms)!).Trades
-                    ?? new List<FilterTradeConfig>();
+                var xs = new XmlSerializer(typeof(FilterLibraryDto));
+                using (var ms = new MemoryStream())
+                {
+                    xs.Serialize(ms, new FilterLibraryDto { Trades = src });
+                    ms.Position = 0;
+                    return (xs.Deserialize(ms) as FilterLibraryDto)?.Trades
+                           ?? new List<FilterTradeConfig>();
+                }
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Error("AutoFiltersSettings: deep-copy trades", ex);
+                return new List<FilterTradeConfig>();
             }
         }
 
@@ -1568,5 +1658,41 @@ namespace LemoineTools.Tools.AutoFilters
             };
         }
 
+    }
+
+    /// <summary>
+    /// One project's trade library. Public for XmlSerializer — a non-public root type throws
+    /// at serializer construction and, because that call sits in a try/catch, fails SILENTLY
+    /// and strands every setting on its default (see CLAUDE.md).
+    /// </summary>
+    /// <summary>
+    /// A trade library with no document scoping: the format used for export, templates and
+    /// the static seed library. Keeping this separate from <see cref="AutoFiltersSettings"/>
+    /// is what stops a shared file carrying one machine's document keys. Public for
+    /// XmlSerializer (a non-public root fails silently — see CLAUDE.md).
+    /// </summary>
+    [XmlRoot(FilterLibraryDto.RootElement)]
+    public sealed class FilterLibraryDto
+    {
+        public const string RootElement = "LemoineAutoFiltersLibrary";
+
+        [XmlArray("Trades"), XmlArrayItem("Trade")]
+        public List<FilterTradeConfig> Trades { get; set; } = new List<FilterTradeConfig>();
+    }
+
+    public sealed class TradeDocScope
+    {
+        /// <summary>Document identity from <see cref="LemoineTools.Framework.DocumentKey"/>.
+        /// Empty = the no-document slot.</summary>
+        [XmlAttribute] public string Key { get; set; } = "";
+
+        /// <summary>Ticks at last touch, for least-recently-used eviction.</summary>
+        [XmlAttribute] public long Touched { get; set; }
+
+        /// <summary>True once the seed has been applied, so it is never re-applied over edits.</summary>
+        [XmlAttribute] public bool Seeded { get; set; }
+
+        [XmlArray("Trades"), XmlArrayItem("Trade")]
+        public List<FilterTradeConfig> Trades { get; set; } = new List<FilterTradeConfig>();
     }
 }

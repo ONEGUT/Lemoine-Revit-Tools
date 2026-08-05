@@ -218,9 +218,78 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
     [XmlRoot("LegendCreatorSettings")]
     public sealed class LegendCreatorSettings
     {
-        // ── New multi-legend storage ─────────────────────────────────────────
-        [XmlArray("Legends"), XmlArrayItem("Legend")]
-        public List<LegendEntry> Legends { get; set; } = new List<LegendEntry>();
+        // ── Legend library: one per project ──────────────────────────────────
+        //
+        // Legends describe what a MODEL should carry, so they belong to that model. Held once
+        // for the whole install, every project showed the legends built for the last one.
+        //
+        // A project's first touch seeds from the static seed library (SeedLibrary); with no
+        // seed it starts with a single blank legend, because this window's own invariant is
+        // "never leave the window with zero legends". After that the project owns its copy.
+        //
+        // The Legends property keeps its name and shape, so all 20 call sites are unchanged.
+
+        [XmlArray("LegendDocScopes"), XmlArrayItem("Doc")]
+        public List<LegendDocScope> LegendDocScopes { get; set; } = new List<LegendDocScope>();
+
+        /// <summary>Legend bucket for the active document, seeded on first touch.</summary>
+        private LegendDocScope LegendScope()
+        {
+            if (LegendDocScopes == null) LegendDocScopes = new List<LegendDocScope>();
+
+            string k = DocumentKey.Current ?? "";
+            foreach (var d in LegendDocScopes)
+                if (d != null && string.Equals(d.Key, k, StringComparison.OrdinalIgnoreCase))
+                {
+                    d.Touched = DateTime.UtcNow.Ticks;
+                    return d;
+                }
+
+            var made = new LegendDocScope { Key = k, Touched = DateTime.UtcNow.Ticks, Seeded = true };
+
+            // Seed ONCE, on creation — re-seeding would overwrite the project's own edits.
+            var seed = SeedLibrary.TryLoad<LegendLibraryDto>(
+                SeedLibrary.LegendSeedFile, LegendLibraryDto.RootElement);
+            var seeded = seed?.Legends;
+
+            // Clone per entry: there is no DeepCopy overload for a list of entries, and the
+            // seed must never be aliased into a project's own library.
+            made.Legends = seeded != null && seeded.Count > 0
+                ? seeded.ConvertAll(e => e.Clone())
+                : new List<LegendEntry> { BlankEntry() };
+
+            // Ids come from the seed file, so re-mint them: they key legends stamped inside a
+            // model, and every project seeded from the same file would otherwise share them.
+            foreach (var e in made.Legends)
+                if (e != null) e.Id = LegendIdGen.New("legend");
+
+            LegendDocScopes.Add(made);
+
+            while (LegendDocScopes.Count > DocScoped.MaxDocuments)
+            {
+                int oldest = 0;
+                for (int i = 1; i < LegendDocScopes.Count; i++)
+                    if (LegendDocScopes[i].Touched < LegendDocScopes[oldest].Touched) oldest = i;
+                LegendDocScopes.RemoveAt(oldest);
+            }
+            return made;
+        }
+
+        /// <summary>An empty legend slot — the blank starting point when there is no seed.</summary>
+        private static LegendEntry BlankEntry() => new LegendEntry
+        {
+            Id             = LegendIdGen.New("legend"),
+            Layout         = new LegendLayoutConfig(),
+            Rows           = new List<LegendRowConfig>(),
+            PreviewVisible = true,
+        };
+
+        [XmlIgnore]
+        public List<LegendEntry> Legends
+        {
+            get => LegendScope().Legends;
+            set => LegendScope().Legends = value ?? new List<LegendEntry>();
+        }
 
         // ── Legacy single-legend fields (read from old XML, never written) ───
         // ShouldSerializeXxx() returning false prevents XmlSerializer from emitting
@@ -300,89 +369,50 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
             return DefaultSeed();
         }
 
-        // If no Legends list was found (old file format), migrate the top-level
-        // Layout + Rows into a single LegendEntry.
+        /// <summary>
+        /// Repairs every project's library after load. Walks the buckets directly rather than
+        /// the Legends accessor: the accessor resolves (and would seed) only the active
+        /// document, while these repairs must reach every project.
+        ///
+        /// The old top-level Layout + Rows migration is gone with the machine-wide library —
+        /// legends are per project now, and a project is seeded from SeedLibrary on first touch.
+        /// </summary>
         private void Normalize()
         {
-            if (Legends.Count == 0)
-            {
-                var entry = new LegendEntry
-                {
-                    Id             = LegendIdGen.New("legend"),
-                    Layout         = LegacyLayout ?? new LegendLayoutConfig(),
-                    Rows           = LegacyRows   ?? new List<LegendRowConfig>(),
-                    PreviewVisible = LegacyPreviewVisible,
-                };
-                entry.Layout.Normalize();
-                Legends.Add(entry);
-            }
-            else
-            {
-                foreach (var e in Legends)
-                    e.Layout?.Normalize();
-            }
+            if (LegendDocScopes == null) LegendDocScopes = new List<LegendDocScope>();
 
-            // Re-mint entry ids left over from the old generator (and the hardcoded
-            // "legend_seed_1" that shipped identically to every install). These ids are now
-            // the key binding an entry to a legend stamped inside a shared model, so a value
-            // that is identical across installs would make two users resolve to each other's
-            // views. Safe to do unconditionally: an entry carrying a legacy id predates
-            // stamping, so no document link can be broken by re-minting it.
             int reIded = 0;
-            foreach (var e in Legends)
+            foreach (var bucket in LegendDocScopes)
             {
-                if (e == null || !LegendIdGen.IsLegacyId(e.Id)) continue;
-                e.Id = LegendIdGen.New("legend");
-                reIded++;
+                if (bucket?.Legends == null) continue;
+                foreach (var e in bucket.Legends)
+                {
+                    if (e == null) continue;
+                    e.Layout?.Normalize();
+
+                    // Re-mint ids from the old generator (and the hardcoded "legend_seed_1"
+                    // that shipped identically to every install). These ids key legends
+                    // stamped inside a shared model, so a value identical across installs
+                    // would make two users resolve to each other's views.
+                    if (LegendIdGen.IsLegacyId(e.Id))
+                    {
+                        e.Id = LegendIdGen.New("legend");
+                        reIded++;
+                    }
+                }
             }
             if (reIded > 0)
                 DiagnosticsLog.Info("LegendCreatorSettings",
                     $"Re-minted {reIded} legend entry id(s) from the pre-GUID scheme.");
         }
 
-        public static LegendCreatorSettings DefaultSeed() => new LegendCreatorSettings
-        {
-            Legends = new List<LegendEntry>
-            {
-                new LegendEntry
-                {
-                    // Minted, never hardcoded: this id binds the entry to a legend stamped
-                    // inside a shared model, so a constant would be identical on every install.
-                    Id = LegendIdGen.New("legend"),
-                    Layout = new LegendLayoutConfig
-                    {
-                        Title    = "Filter Legend",
-                        Subtitle = "",
-                        ViewScale = 48,
-                        SwatchW = 0.25, SwatchH = 0.13, FontPt = 9,
-                        RowGap = 0.30, ColGap = 0.30, SwatchLabelGap = 0.08,
-                    },
-                    PreviewVisible = true,
-                    Rows = new List<LegendRowConfig>
-                    {
-                        new LegendRowConfig
-                        {
-                            Id = "r_seed_1",
-                            Groups = new List<LegendGroupConfig>
-                            {
-                                new LegendGroupConfig
-                                {
-                                    Id = "g_seed_1",
-                                    Title = "ARCHITECTURAL",
-                                    SourceTradeId = "",
-                                    Blocks = new List<LegendBlockConfig>
-                                    {
-                                        new LegendBlockConfig { Id="b_seed_1", Name="Example 1", Color="#8c8c8c", Kind="square", Fill="solid",  Custom=true, Visible=true },
-                                        new LegendBlockConfig { Id="b_seed_2", Name="Example 2", Color="#8c8c8c", Kind="square", Fill="hatch",  Custom=true, Visible=true },
-                                        new LegendBlockConfig { Id="b_seed_3", Name="Example 3", Color="#8c8c8c", Kind="square", Fill="dots",   Custom=true, Visible=true },
-                                    },
-                                },
-                            },
-                        },
-                    },
-                },
-            },
-        };
+        /// <summary>
+        /// A fresh settings file. Deliberately EMPTY: legends are per project, and each project
+        /// is seeded from SeedLibrary — or a single blank legend — on first touch. Returning a
+        /// populated library here would put the same legends into every project, which is the
+        /// leak the per-project rework removes.
+        /// </summary>
+        public static LegendCreatorSettings DefaultSeed() => new LegendCreatorSettings();
 
         // ── DeepCopy helpers ─────────────────────────────────────────────────
         public static List<LegendRowConfig> DeepCopy(List<LegendRowConfig> rows)
@@ -460,5 +490,41 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
             if (tail.Length == 32) return false;
             return true;
         }
+    }
+
+    /// <summary>
+    /// One project's legend library. Public for XmlSerializer — a non-public root type throws
+    /// at serializer construction and fails silently inside the surrounding try/catch,
+    /// stranding every setting on its default (see CLAUDE.md).
+    /// </summary>
+    /// <summary>
+    /// A legend library with no document scoping: the format used for the static seed file.
+    /// Keeping it separate from <see cref="LegendCreatorSettings"/> is what stops a shared
+    /// seed carrying one machine's document keys. Public for XmlSerializer (a non-public
+    /// root fails silently — see CLAUDE.md).
+    /// </summary>
+    [XmlRoot(LegendLibraryDto.RootElement)]
+    public sealed class LegendLibraryDto
+    {
+        public const string RootElement = "LemoineLegendLibrary";
+
+        [XmlArray("Legends"), XmlArrayItem("Legend")]
+        public List<LegendEntry> Legends { get; set; } = new List<LegendEntry>();
+    }
+
+    public sealed class LegendDocScope
+    {
+        /// <summary>Document identity from <see cref="LemoineTools.Framework.DocumentKey"/>.
+        /// Empty = the no-document slot.</summary>
+        [XmlAttribute] public string Key { get; set; } = "";
+
+        /// <summary>Ticks at last touch, for least-recently-used eviction.</summary>
+        [XmlAttribute] public long Touched { get; set; }
+
+        /// <summary>True once the seed has been applied, so it is never re-applied over edits.</summary>
+        [XmlAttribute] public bool Seeded { get; set; }
+
+        [XmlArray("Legends"), XmlArrayItem("Legend")]
+        public List<LegendEntry> Legends { get; set; } = new List<LegendEntry>();
     }
 }
