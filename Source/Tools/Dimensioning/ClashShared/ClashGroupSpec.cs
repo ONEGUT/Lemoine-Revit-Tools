@@ -17,10 +17,17 @@ namespace LemoineTools.Tools.Dimensioning
         /// <summary>OST_* BuiltInCategory strings — used in Categories mode.</summary>
         public List<string> Categories { get; set; } = new List<string>();
 
+        // These name elements, links and worksets INSIDE one model. They are safe as plain
+        // fields because the whole definition is per project now (ClashDefinitionDocScope) —
+        // a definition never travels to another model, so its selections cannot either.
+        // Do not add a second layer of document scoping here.
+
         /// <summary>Directly-picked element ids — used in Elements mode (parallel to ElemLinkIds).</summary>
+        [XmlArray("ElemIds"), XmlArrayItem("Id")]
         public List<long> ElemIds { get; set; } = new List<long>();
 
         /// <summary>Link-instance ids parallel to ElemIds (0 = host document).</summary>
+        [XmlArray("ElemLinkIds"), XmlArrayItem("Id")]
         public List<long> ElemLinkIds { get; set; } = new List<long>();
 
         /// <summary>
@@ -29,6 +36,7 @@ namespace LemoineTools.Tools.Dimensioning
         /// (the default, and every definition saved before the flag existed), an empty list
         /// means "scan every available document, including links added later".
         /// </summary>
+        [XmlArray("SourceLinkIds"), XmlArrayItem("Id")]
         public List<long> SourceLinkIds { get; set; } = new List<long>();
 
         /// <summary>
@@ -44,10 +52,10 @@ namespace LemoineTools.Tools.Dimensioning
         /// <summary>
         /// Per-source-document workset exclusions (one entry per document that has any
         /// unchecked workset). Stored as EXCLUSIONS so the default — an empty list — means
-        /// "include every workset", leaving existing saved definitions unchanged. Applies to
-        /// Rules and Categories modes (mirrors <see cref="SourceLinkIds"/>); Elements mode picks
-        /// exact elements and ignores it.
+        /// "include every workset". Applies to Rules and Categories modes (mirrors
+        /// <see cref="SourceLinkIds"/>); Elements mode picks exact elements and ignores it.
         /// </summary>
+        [XmlArray("WorksetFilters"), XmlArrayItem("Filter")]
         public List<ClashWorksetFilter> WorksetFilters { get; set; } = new List<ClashWorksetFilter>();
     }
 

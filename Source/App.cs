@@ -27,6 +27,9 @@ namespace LemoineTools
         internal static Framework.ReloadHandler? ReloadHandler { get; private set; }
         internal static ExternalEvent?                ReloadEvent   { get; private set; }
 
+        internal static Framework.Project.ProjectLibrarySaveHandler? ProjectLibraryHandler { get; private set; }
+        internal static ExternalEvent?                ProjectLibraryEvent { get; private set; }
+
         internal static CeilingGridEventHandler? ProjectHandler   { get; private set; }
         internal static ExternalEvent?           ProjectEvent     { get; private set; }
         internal static CeilingGridEventHandler? ReprojectHandler { get; private set; }
@@ -183,6 +186,9 @@ namespace LemoineTools
             // Load user-facing text for the saved language (English fallback) before any window opens.
             AppStrings.Load(AppSettings.Instance.Language);
 
+            // Tidy superseded files in %AppData%\LemoineTools. Never throws.
+            Framework.LegacyFileCleanup.RunOnce();
+
             // Surface Revit's transaction failures and modal dialogs into the running tool's
             // Output log (and suppress warning dialogs). Both handlers no-op unless a Lemoine
             // run is active, so non-Lemoine work is never affected.
@@ -191,6 +197,24 @@ namespace LemoineTools
 
             ReloadHandler = new Framework.ReloadHandler();
             ReloadEvent   = ExternalEvent.Create(ReloadHandler);
+
+            // Commits trade / legend / clash libraries into the document. Named
+            // ProjectLibrary*, not Project*, so it is not mistaken for the Ceiling Grid
+            // projection handler below.
+            ProjectLibraryHandler = new Framework.Project.ProjectLibrarySaveHandler();
+            ProjectLibraryEvent   = ExternalEvent.Create(ProjectLibraryHandler);
+
+            // Each library tells ProjectLibraries how to receive its own section, so the
+            // framework type never has to reference the tools' settings classes.
+            Framework.Project.ProjectLibraries.Register(
+                Framework.Project.ProjectLibraryStore.SectionFilters,
+                xml => AutoFiltersSettings.LoadProjectLibrary(xml));
+            Framework.Project.ProjectLibraries.Register(
+                Framework.Project.ProjectLibraryStore.SectionLegends,
+                xml => LegendCreatorSettings.LoadProjectLibrary(xml));
+            Framework.Project.ProjectLibraries.Register(
+                Framework.Project.ProjectLibraryStore.SectionClash,
+                xml => LemoineTools.Tools.Dimensioning.ClashDefinitionsSettings.LoadProjectLibrary(xml));
 
             ProjectHandler   = new CeilingGridEventHandler();
             ProjectEvent     = ExternalEvent.Create(ProjectHandler);

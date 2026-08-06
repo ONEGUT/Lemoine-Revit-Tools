@@ -22,6 +22,14 @@ namespace LemoineTools.Commands
         public Result Execute(ExternalCommandData commandData,
                               ref string message, ElementSet elements)
         {
+            // Keep the project-scoped settings key fresh: commands run on the Revit main
+            // thread with the document in hand, tool windows do not.
+            DocumentKey.SetCurrent(commandData.Application.ActiveUIDocument?.Document);
+            // Libraries live in the .rvt so they travel with the project and every team
+            // member sees the same ones. Pull this document's in before any window opens.
+            LemoineTools.Framework.Project.ProjectLibraries.LoadForDocument(
+                commandData.Application.ActiveUIDocument?.Document);
+
             // Bring an existing window to front.
             if (_window != null)
             {

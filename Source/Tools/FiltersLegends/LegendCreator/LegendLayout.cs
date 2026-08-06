@@ -12,18 +12,23 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
     /// </summary>
     public static class LegendTextTypeSizes
     {
-        private static Dictionary<long, double> _capInByType = new Dictionary<long, double>();
+        // Keyed by TextNoteType NAME, not ElementId: the legend entry that selects a style
+        // is stored machine-wide and reused across projects, where an ElementId means
+        // nothing but a name still resolves.
+        private static Dictionary<string, double> _capInByType =
+            new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
 
-        /// <summary>Replaces the cached map. Pass type id (value) → cap height in paper inches.</summary>
-        public static void Set(Dictionary<long, double>? map)
-            => _capInByType = map ?? new Dictionary<long, double>();
+        /// <summary>Replaces the cached map. Pass type NAME → cap height in paper inches.</summary>
+        public static void Set(Dictionary<string, double>? map)
+            => _capInByType = map ?? new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>
-        /// Cap height (paper inches) for a role's chosen TextNoteType id, or the font-point
-        /// fallback when the id is unset (-1) or the type size is unknown.
+        /// Cap height (paper inches) for a role's chosen TextNoteType name, or the font-point
+        /// fallback when the name is unset or not present in the current document.
         /// </summary>
-        public static double CapInches(long typeId, int fallbackPt)
-            => typeId >= 0 && _capInByType.TryGetValue(typeId, out double c) && c > 0
+        public static double CapInches(string? typeName, int fallbackPt)
+            => !string.IsNullOrEmpty(typeName)
+               && _capInByType.TryGetValue(typeName!, out double c) && c > 0
                 ? c
                 : LegendLayout.PointsToInches(fallbackPt);
     }

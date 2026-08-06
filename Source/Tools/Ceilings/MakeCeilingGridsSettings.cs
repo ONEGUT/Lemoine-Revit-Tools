@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Xml.Serialization;
 using LemoineTools.Framework;
@@ -15,7 +16,16 @@ namespace LemoineTools.Tools.Ceilings
 
         public MakeCeilingGridsSettings() { }
 
-        public string OutputFolder             { get; set; } = "";
+        // Per document — see BulkExportSettings.OutputFolder for the rationale.
+        [XmlArray("OutputFolders"), XmlArrayItem("Folder")]
+        public List<DocScopedValue> OutputFolders { get; set; } = new List<DocScopedValue>();
+
+        [XmlIgnore]
+        public string OutputFolder
+        {
+            get => DocScoped.Get(OutputFolders, DocumentKey.Current);
+            set => DocScoped.Set(OutputFolders, DocumentKey.Current, value);
+        }
         public bool   UseCeilingGridsSubfolder { get; set; } = false;
 
         private static string FilePath

@@ -22,6 +22,14 @@ namespace LemoineTools.Commands
 
         public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
         {
+            // Keep the project-scoped settings key fresh: commands run on the Revit main
+            // thread with the document in hand, tool windows do not.
+            DocumentKey.SetCurrent(commandData.Application.ActiveUIDocument?.Document);
+            // Libraries live in the .rvt so they travel with the project and every team
+            // member sees the same ones. Pull this document's in before any window opens.
+            LemoineTools.Framework.Project.ProjectLibraries.LoadForDocument(
+                commandData.Application.ActiveUIDocument?.Document);
+
             // Bring an existing window to front.
             if (_window != null)
             {
@@ -44,6 +52,10 @@ namespace LemoineTools.Commands
             // here on the main thread; the window threads never touch the Revit API.
             var viewTemplates  = new List<LemoineTools.Tools.AutoFilters.ViewTemplateEntry>();
             var activeViewName = "";
+            // Names of the filters THIS document records as ours, read from the ownership
+            // stamp on each element. Replaces the old machine-wide CreatedFilterNames
+            // manifest, which described whichever project last ran.
+            var ownedFilterNames = new List<string>();
 
             var doc = commandData.Application.ActiveUIDocument?.Document;
             if (doc != null)
@@ -92,6 +104,15 @@ namespace LemoineTools.Commands
                     viewTemplates.Count > 0
                         ? $"Captured {viewTemplates.Count} view template(s) for the apply-target picker."
                         : "No view templates found in this document — apply targets will list the active view only.");
+
+                ownedFilterNames.AddRange(
+                    LemoineTools.Tools.AutoFilters.AutoFilterOwnerSchema.ReadAll(doc)
+                        .Select(r => r.Name));
+
+                DiagnosticsLog.Info("OpenFiltersSettings",
+                    ownedFilterNames.Count > 0
+                        ? $"Captured {ownedFilterNames.Count} Lemoine-owned filter(s) in this document."
+                        : "No Lemoine-owned filters found in this document.");
             }
 
             // Open window on dedicated STA thread
@@ -103,6 +124,7 @@ namespace LemoineTools.Commands
                 win = new FiltersSettingsWindow();
                 win.SetPatternLists(fillNames, lineNames);
                 win.SetViewTemplates(viewTemplates, activeViewName);
+                win.SetOwnedFilterNames(ownedFilterNames);
                 win.Closed += (s, e) =>
                 {
                     _window = null;

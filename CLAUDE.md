@@ -382,6 +382,28 @@ Every user-facing display string and run-log output line is externalized, not ha
 
 ---
 
+## Settings Storage — Which Tier a Value Belongs To
+
+`%AppData%\LemoineTools\*.xml` is **machine-wide and shared by every project**. The test for anything you persist: *does this value name something inside one specific model?* If yes — an `ElementId`, a workset id, a link-instance id, an "which of these did I create" manifest — it must **never** go in a settings file as-is. That mistake shipped four times (Auto Filters' `CreatedFilterNames`, Legend Creator's `RevitViewId` + text-type ids, Clash Definitions' element picks, output folders) and its worst form silently **deleted model elements** belonging to another project.
+
+Two mechanisms, in order of preference:
+
+- **Stamp the element** (`AutoFilterOwnerSchema`, `LegendLinkSchema`, plus the five older provenance schemas). Use whenever the tool *created* something to stamp. The document becomes authoritative, lookup runs document→settings, and a deleted element simply stops appearing — self-reconciling, no orphan sweep. Stamps are written **inside the run's existing transaction**, never afterwards.
+- **`DocumentKey` + a per-document bucket** (`DocScoped` / `DocScopedValue`, `ClashGroupDocScope`) when there is no created element to stamp. Stays in `%AppData%`, so it writes nothing to the `.rvt` — no dirty-document prompt, no undo entry, no workset checkout. Cap buckets LRU.
+
+Rules that fall out of this:
+
+- **`DocumentKey.SetCurrent(doc)` is the first line of every command's `Execute`.** Commands run on the Revit main thread with the document; tool windows run on their own STA thread and cannot resolve it. Identity order is cloud path → central path → `PathName`; a cloud model's `PathName` is a per-machine local cache and a workshared model must key on **central** so collaborators agree.
+- **Never compare ownership by name alone across users.** A filter stamped for a trade absent from the running user's library is *not theirs to delete* — name-only comparison lets one user of a shared model destroy another's work. Compare on the stamped owner, and exclude externally-managed trades by construction.
+- **Read project data on the main thread at command launch and hand it to the ViewModel** (`SetOwnedFilterNames`, `SetLegendLinks`) — the same capture pattern as `BrowserTreeCapture` / `CaptureFilterableCategories`. Report a zero-result capture explicitly.
+- **Ids used as document keys must be GUIDs.** `LegendIdGen` once produced `{prefix}_{Ticks % 100000}_{n}` off a counter reset each Revit restart, and the seed entry was hardcoded `legend_seed_1` on every install — fine while ids only indexed one user's own file, destructive once they key elements inside a shared model.
+- A machine-wide DTO can be split without touching call sites: keep the property name and shape, mark it `[XmlIgnore]`, and back it with a per-document bucket. Removing a property is also **backwards-compatible on load** — `XmlSerializer` ignores unknown elements, so old files degrade rather than fail.
+- **Only `StepFlowWindow` invokes `IToolCleanup.OnWindowClosed`** (`StepFlowWindow.xaml.cs:156`). `LegendSettingsWindow`, `FiltersSettingsWindow`, `ClashDefinitionsWindow` and `GlobalSettingsWindow` are bespoke `Window`s — do not hang persistence on that interface for them, and note Clash Definitions is pick-only with **no run transaction at all**.
+
+**Unverified:** none of the ES schemas calls `SchemaBuilder.SetVendorId`, and every `Finish()` sits inside `try/catch → DiagnosticsLog.Swallowed`. If Revit requires a vendor id, every stamp in the plugin is failing silently. Confirm on a Windows/Revit run before relying on stamped ownership.
+
+---
+
 ## Memory & Lifetime Discipline
 
 Discovered auditing why tools held RAM after running.

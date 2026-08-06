@@ -73,6 +73,23 @@ namespace LemoineTools.Framework
             _fActiveViewName = activeViewName ?? "";
         }
 
+        /// <summary>
+        /// Filter names the ACTIVE DOCUMENT records as created by this tool, captured on the
+        /// Revit main thread by the launching command. Used on close to decide whether the
+        /// document has drifted from the trade library and needs a create pass.
+        ///
+        /// This replaces a machine-wide manifest that described whichever project last ran,
+        /// so the drift check compared this project's settings against another project's
+        /// filters. Null means "no document was open" — distinct from an empty list, which
+        /// means the document genuinely owns none.
+        /// </summary>
+        internal void SetOwnedFilterNames(IEnumerable<string>? ownedFilterNames)
+        {
+            _fOwnedFilterNames = ownedFilterNames?.ToList();
+        }
+
+        private List<string>? _fOwnedFilterNames;
+
         private int FTargetCount => (_fTargetActiveView ? 1 : 0) + _fTargetTemplateNames.Count;
 
         // Refuses to leave zero targets selected — ApplyTradesToView falls back to the active
@@ -437,13 +454,39 @@ namespace LemoineTools.Framework
                 {
                     AutoFiltersSettings.Instance.Trades = _filterTrades;
                     AutoFiltersSettings.Instance.Save();
+
+                    // The trade library belongs to the PROJECT, so it is written into the
+                    // .rvt as well. Without this it would live only in this user's %AppData%
+                    // and a colleague opening the model would never see it.
+                    try
+                    {
+                        LemoineTools.Framework.Project.ProjectLibraries.Save(
+                            LemoineTools.Framework.Project.ProjectLibraryStore.SectionFilters,
+                            AutoFiltersSettings.SerializeProjectLibrary());
+                    }
+                    catch (Exception __plex)
+                    {
+                        DiagnosticsLog.Swallowed("Save project library on close", __plex);
+                    }
                 }
 
-                var expected     = AutoFiltersSettings.ComputeExpectedFilterNames(_filterTrades);
-                bool manifestStale = !expected.SetEquals(
-                    AutoFiltersSettings.Instance.CreatedFilterNames ?? new List<string>());
+                var expected = AutoFiltersSettings.ComputeExpectedFilterNames(_filterTrades);
 
-                if ((dirty || manifestStale) && expected.Count > 0)
+                // Drift check against what THIS document owns.
+                //
+                // A document that owns NO Lemoine filters has not drifted — it has never used
+                // this tool. Treating "owns nothing" as drift made merely opening and closing
+                // this window in a fresh project create every filter in the library there,
+                // which is exactly the leak the per-document rework exists to stop. Drift means
+                // "this project has our filters AND they no longer match", nothing else.
+                //
+                // With no document open (_fOwnedFilterNames is null) there is nothing to
+                // compare either, so the edit flag alone decides.
+                bool documentDrifted = _fOwnedFilterNames != null
+                                    && _fOwnedFilterNames.Count > 0
+                                    && !expected.SetEquals(_fOwnedFilterNames);
+
+                if ((dirty || documentDrifted) && expected.Count > 0)
                 {
                     // Only refresh the definitions of rules whose category/parameter/match
                     // definition actually changed in the menu — every other existing filter is

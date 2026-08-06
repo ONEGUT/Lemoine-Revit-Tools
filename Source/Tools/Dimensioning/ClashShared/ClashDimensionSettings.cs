@@ -50,33 +50,12 @@ namespace LemoineTools.Tools.Dimensioning
         [XmlArray("Group2Categories")] [XmlArrayItem("Cat")]
         public List<string> Group2Categories { get; set; } = new List<string>();
 
-        [XmlArray("Group1ElemIds")] [XmlArrayItem("Id")]
-        public List<long> Group1ElemIds { get; set; } = new List<long>();
-        [XmlArray("Group1ElemLinkIds")] [XmlArrayItem("Id")]
-        public List<long> Group1ElemLinkIds { get; set; } = new List<long>();
-        [XmlArray("Group2ElemIds")] [XmlArrayItem("Id")]
-        public List<long> Group2ElemIds { get; set; } = new List<long>();
-        [XmlArray("Group2ElemLinkIds")] [XmlArrayItem("Id")]
-        public List<long> Group2ElemLinkIds { get; set; } = new List<long>();
-
-        [XmlArray("Group1SourceLinkIds")] [XmlArrayItem("Id")]
-        public List<long> Group1SourceLinkIds { get; set; } = new List<long>();
-        [XmlArray("Group2SourceLinkIds")] [XmlArrayItem("Id")]
-        public List<long> Group2SourceLinkIds { get; set; } = new List<long>();
-
-        [XmlArray("GridIds")] [XmlArrayItem("Id")]
-        public List<long> GridIds { get; set; } = new List<long>();
-
-        [XmlArray("FloorIds")] [XmlArrayItem("Id")]
-        public List<long> FloorIds { get; set; } = new List<long>();
-
-        // Parallel link-instance ID for each GridId/FloorId entry.
-        // 0 = host document; >0 = RevitLinkInstance.Id.Value from the host doc.
-        [XmlArray("GridLinkIds")] [XmlArrayItem("Id")]
-        public List<long> GridLinkIds { get; set; } = new List<long>();
-
-        [XmlArray("FloorLinkIds")] [XmlArrayItem("Id")]
-        public List<long> FloorLinkIds { get; set; } = new List<long>();
+        // NOTE: this type deliberately carries NO raw Revit ElementIds.
+        // Ten id lists (Group1/2ElemIds, Group1/2ElemLinkIds, Group1/2SourceLinkIds,
+        // GridIds, FloorIds, GridLinkIds, FloorLinkIds) were removed: nothing ever wrote
+        // them, and an ElementId is meaningless outside the document it came from — this
+        // file is machine-wide and shared by every project. Element picks live on
+        // ClashGroupSpec, keyed per document. Do not reintroduce ids here.
 
         private static string FilePath
         {

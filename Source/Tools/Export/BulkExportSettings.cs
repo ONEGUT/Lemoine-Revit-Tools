@@ -18,7 +18,19 @@ namespace LemoineTools.Tools.BulkExport
         public BulkExportSettings() { }
 
         // ── Output ────────────────────────────────────────────────────────────
-        public string OutputFolder  { get; set; } = "";
+        // Per document: exporting project A then opening project B used to leave the
+        // folder pointing at A, so B's sheets landed in A's delivery folder. The property
+        // keeps its name and shape, so every call site is unchanged; only the storage
+        // behind it is now keyed by document.
+        [XmlArray("OutputFolders"), XmlArrayItem("Folder")]
+        public List<DocScopedValue> OutputFolders { get; set; } = new List<DocScopedValue>();
+
+        [XmlIgnore]
+        public string OutputFolder
+        {
+            get => DocScoped.Get(OutputFolders, DocumentKey.Current);
+            set => DocScoped.Set(OutputFolders, DocumentKey.Current, value);
+        }
         public bool   SplitByFormat { get; set; } = true;
 
         // ── Filename ──────────────────────────────────────────────────────────

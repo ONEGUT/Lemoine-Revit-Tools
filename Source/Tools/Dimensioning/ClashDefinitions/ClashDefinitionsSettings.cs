@@ -22,9 +22,91 @@ namespace LemoineTools.Tools.Dimensioning
         /// <summary>Parameterless ctor required by <see cref="XmlSerializer"/>.</summary>
         public ClashDefinitionsSettings() { }
 
-        [XmlArray("Definitions")]
-        [XmlArrayItem("Definition")]
-        public List<ClashDefinition> Definitions { get; set; } = new List<ClashDefinition>();
+        // ── Clash library: one per project, never seeded ─────────────────────
+        //
+        // A clash definition names the elements, links and worksets of one specific model:
+        // which two groups to test, which documents to scan, which worksets to exclude. None
+        // of that is portable, so the whole library is per project and a new project starts
+        // EMPTY. There is deliberately no seed — unlike trades and legends there is no
+        // meaningful office-standard clash definition to start from, and inheriting one would
+        // silently point a new project's scan at another project's selections.
+
+        [XmlArray("DefinitionDocScopes"), XmlArrayItem("Doc")]
+        public List<ClashDefinitionDocScope> DefinitionDocScopes { get; set; } =
+            new List<ClashDefinitionDocScope>();
+
+        /// <summary>
+        /// Replaces the active document's clash library with what is stored IN THE DOCUMENT.
+        /// Clash is never seeded, so an empty payload correctly leaves the project empty.
+        /// </summary>
+        public static void LoadProjectLibrary(string? xml)
+        {
+            if (string.IsNullOrWhiteSpace(xml)) return;
+            try
+            {
+                var xs = new XmlSerializer(typeof(List<ClashDefinition>));
+                using (var sr = new StringReader(xml))
+                    Instance.Scope().Definitions =
+                        (xs.Deserialize(sr) as List<ClashDefinition>) ?? new List<ClashDefinition>();
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Error("ClashDefinitionsSettings: read project clash library", ex);
+            }
+        }
+
+        /// <summary>Serializes the active document's clash library for storage in the document.</summary>
+        public static string SerializeProjectLibrary()
+        {
+            try
+            {
+                var xs = new XmlSerializer(typeof(List<ClashDefinition>));
+                using (var sw = new StringWriter())
+                {
+                    xs.Serialize(sw, Instance.Definitions);
+                    return sw.ToString();
+                }
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Error("ClashDefinitionsSettings: serialize project clash library", ex);
+                return "";
+            }
+        }
+
+        /// <summary>Definition bucket for the active document, created empty on first touch.</summary>
+        internal ClashDefinitionDocScope Scope()
+        {
+            if (DefinitionDocScopes == null) DefinitionDocScopes = new List<ClashDefinitionDocScope>();
+
+            string k = DocumentKey.Current ?? "";
+            foreach (var d in DefinitionDocScopes)
+                if (d != null && string.Equals(d.Key, k, StringComparison.OrdinalIgnoreCase))
+                {
+                    d.Touched = DateTime.UtcNow.Ticks;
+                    return d;
+                }
+
+            var made = new ClashDefinitionDocScope { Key = k, Touched = DateTime.UtcNow.Ticks };
+            DefinitionDocScopes.Add(made);
+
+            while (DefinitionDocScopes.Count > DocScoped.MaxDocuments)
+            {
+                int oldest = 0;
+                for (int i = 1; i < DefinitionDocScopes.Count; i++)
+                    if (DefinitionDocScopes[i].Touched < DefinitionDocScopes[oldest].Touched) oldest = i;
+                DefinitionDocScopes.RemoveAt(oldest);
+            }
+            return made;
+        }
+
+        /// <summary>This project's clash definitions. Keeps its name and shape for call sites.</summary>
+        [XmlIgnore]
+        public List<ClashDefinition> Definitions
+        {
+            get => Scope().Definitions;
+            set => Scope().Definitions = value ?? new List<ClashDefinition>();
+        }
 
         // ── Library operations ────────────────────────────────────────────────
 
@@ -74,13 +156,15 @@ namespace LemoineTools.Tools.Dimensioning
         public static List<ClashDefinition> DeepCopy(List<ClashDefinition> src)
         {
             if (src == null || src.Count == 0) return new List<ClashDefinition>();
-            var xs = new XmlSerializer(typeof(ClashDefinitionsSettings));
+            // Serialize the LIST, not the settings root: round-tripping the root would mint a
+            // document bucket on the way out and read one back on the way in, making a plain
+            // copy depend on which document happens to be active.
+            var xs = new XmlSerializer(typeof(List<ClashDefinition>));
             using (var ms = new MemoryStream())
             {
-                xs.Serialize(ms, new ClashDefinitionsSettings { Definitions = src });
+                xs.Serialize(ms, src);
                 ms.Position = 0;
-                return ((ClashDefinitionsSettings)xs.Deserialize(ms)!).Definitions
-                    ?? new List<ClashDefinition>();
+                return (List<ClashDefinition>)xs.Deserialize(ms)! ?? new List<ClashDefinition>();
             }
         }
 
@@ -141,13 +225,9 @@ namespace LemoineTools.Tools.Dimensioning
                 }
             }
 
-            // True first run (no file yet): seed one definition from the old Clash
-            // Dimension settings so the library isn't empty and existing group/marking
-            // choices carry over.
-            var seeded = new ClashDefinitionsSettings();
-            try { seeded.Definitions.Add(SeedFromClashDimension()); }
-            catch (Exception ex) { DiagnosticsLog.Swallowed("ClashDefinitionsSettings: seed from ClashDimension", ex); }
-            return seeded;
+            // No file yet: start empty. Definitions are per project and never seeded — see
+            // the note on DefinitionDocScopes.
+            return new ClashDefinitionsSettings();
         }
 
         // Copies an unreadable settings file aside so a parse failure never costs the
@@ -163,46 +243,26 @@ namespace LemoineTools.Tools.Dimensioning
             catch (Exception ex) { DiagnosticsLog.Swallowed("ClashDefinitions: backup corrupt settings", ex); }
         }
 
-        /// <summary>
-        /// Builds a starter definition from the last-used Clash Dimension settings so the
-        /// library opens with something usable rather than empty.
-        /// </summary>
-        private static ClashDefinition SeedFromClashDimension()
-        {
-            var s = ClashDimensionSettings.Instance;
-
-            ClashGroupSpec Group(string mode, List<string> rules, List<string> cats,
-                                  List<long> elemIds, List<long> elemLinks, List<long> srcLinks) =>
-                new ClashGroupSpec
-                {
-                    Mode          = mode,
-                    RuleKeys      = new List<string>(rules     ?? new List<string>()),
-                    Categories    = new List<string>(cats      ?? new List<string>()),
-                    ElemIds       = new List<long>(elemIds     ?? new List<long>()),
-                    ElemLinkIds   = new List<long>(elemLinks   ?? new List<long>()),
-                    SourceLinkIds = new List<long>(srcLinks    ?? new List<long>()),
-                };
-
-            return new ClashDefinition
-            {
-                Id               = "C" + Guid.NewGuid().ToString("N").Substring(0, 7),
-                Name             = "Imported from Clash Dimension",
-                Group1           = Group(s.Group1Mode, s.Group1RuleKeys, s.Group1Categories,
-                                         s.Group1ElemIds, s.Group1ElemLinkIds, s.Group1SourceLinkIds),
-                Group2           = Group(s.Group2Mode, s.Group2RuleKeys, s.Group2Categories,
-                                         s.Group2ElemIds, s.Group2ElemLinkIds, s.Group2SourceLinkIds),
-                ToleranceMm      = s.ToleranceMm,
-                FillStyle        = s.FillStyle,
-                FallbackColorHex = s.FallbackColorHex,
-                CrossLineTypeName = s.CrossLineTypeName,
-                DimTarget        = s.DimTarget,
-                ClearPrevious    = s.ClearPrevious,
-                MaxClashes       = s.MaxClashes,
-            };
-        }
-
         // Export/import was removed as dead code: it had no call sites, and its import was a
         // full library REPLACE — wiring it to a button later would have silently destroyed the
         // user's saved definitions. Re-add as merge-by-id if the feature is ever wanted.
+    }
+
+    /// <summary>
+    /// One project's clash definitions. Public for XmlSerializer — a non-public root type
+    /// throws at serializer construction and fails silently inside the surrounding try/catch,
+    /// stranding every setting on its default (see CLAUDE.md).
+    /// </summary>
+    public sealed class ClashDefinitionDocScope
+    {
+        /// <summary>Document identity from <see cref="LemoineTools.Framework.DocumentKey"/>.
+        /// Empty = the no-document slot.</summary>
+        [XmlAttribute] public string Key { get; set; } = "";
+
+        /// <summary>Ticks at last touch, for least-recently-used eviction.</summary>
+        [XmlAttribute] public long Touched { get; set; }
+
+        [XmlArray("Definitions"), XmlArrayItem("Definition")]
+        public List<ClashDefinition> Definitions { get; set; } = new List<ClashDefinition>();
     }
 }
