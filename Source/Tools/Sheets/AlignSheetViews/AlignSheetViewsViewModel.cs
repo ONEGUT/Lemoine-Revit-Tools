@@ -7,6 +7,11 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Framework;
 using LemoineTools.Framework.Controls;
+// This file imports both Autodesk.Revit.DB and the WPF namespaces, so any type name the two
+// could share is aliased rather than left bare.
+using WpfOrientation       = System.Windows.Controls.Orientation;
+using WpfTextAlignment     = System.Windows.TextAlignment;
+using WpfVerticalAlignment = System.Windows.VerticalAlignment;
 
 namespace LemoineTools.Tools.Sheets.AlignSheetViews
 {
@@ -49,14 +54,17 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
         private List<ElementId> _sourceSheetIds = new List<ElementId>();
         private List<ElementId> _targetSheetIds = new List<ElementId>();
         private int             _overlapPercent = 50;
-        private bool            _alignTitles    = true;
-        private bool            _previewOnly    = false;
 
         // Inheritance toggles
         private bool _inheritGrids          = false;
         private bool _inheritScopeBox       = false;
         private bool _inheritCropVisibility = false;
         private bool _inheritCropSize       = false;
+
+        // A scope box governs the crop rectangle it is assigned to, so a view that inherits one
+        // inherits its crop size with it — there is nothing left for a separate crop-size choice to
+        // decide. The checkbox is replaced by a static "inherited" row while scope box is ticked.
+        private bool CropSizeInherited => _inheritCropSize || _inheritScopeBox;
 
         // ── Revit wiring ──────────────────────────────────────────────────────
         private readonly AlignSheetViewsEventHandler? _handler;
@@ -92,6 +100,7 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
         // from the target picker), so S2 must be rebuilt every time it is activated —
         // step content is built once at window construction and would otherwise keep
         // listing whatever was eligible before the source sheets were picked.
+        // S3 is rebuilt on demand instead: ticking "scope box" changes which options exist.
         private Action<string>? _refreshStep;
         public void SetContentRefreshCallback(Action<string> rebuildStepContent) => _refreshStep = rebuildStepContent;
 
@@ -118,7 +127,6 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
         {
             var outer = new StackPanel();
             outer.Children.Add(SectionLabel(AppStrings.T("testing.alignSheetViews.labels.secReference")));
-            outer.Children.Add(Note(AppStrings.T("testing.alignSheetViews.labels.noteReference")));
 
             if (_sheetIds.Count == 0)
             {
@@ -149,7 +157,6 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
         {
             var outer = new StackPanel();
             outer.Children.Add(SectionLabel(AppStrings.T("testing.alignSheetViews.labels.secTargets")));
-            outer.Children.Add(Note(AppStrings.T("testing.alignSheetViews.labels.noteTargets")));
 
             if (_sheetIds.Count == 0)
             {
@@ -200,42 +207,35 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
             };
             stepper.ValueChanged += (s, v) => { _overlapPercent = (int)v; OnValidationChanged(); };
             outer.Children.Add(stepper);
-            outer.Children.Add(Note(AppStrings.T("testing.alignSheetViews.labels.noteOverlap")));
-
-            outer.Children.Add(OptionCheck(
-                AppStrings.T("testing.alignSheetViews.labels.optAlignTitles"), _alignTitles,
-                v => _alignTitles = v));
-            outer.Children.Add(Note(AppStrings.T("testing.alignSheetViews.labels.noteAlignTitles")));
 
             // ── Inherit from source view ──────────────────────────────────────
             outer.Children.Add(SectionLabel2(AppStrings.T("testing.alignSheetViews.labels.secInherit")));
 
             outer.Children.Add(OptionCheck(
                 AppStrings.T("testing.alignSheetViews.labels.optScopeBox"), _inheritScopeBox,
-                v => _inheritScopeBox = v));
-            outer.Children.Add(Note(AppStrings.T("testing.alignSheetViews.labels.noteScopeBox")));
+                v =>
+                {
+                    _inheritScopeBox = v;
+                    // Ticking this absorbs the crop-size choice, so the step has to be rebuilt for
+                    // the checkbox to be swapped for the "inherited" row (and back).
+                    _refreshStep?.Invoke("S3");
+                }));
+
+            if (_inheritScopeBox)
+                outer.Children.Add(ImpliedRow(AppStrings.T("testing.alignSheetViews.labels.impliedCropSize")));
+            else
+                outer.Children.Add(OptionCheck(
+                    AppStrings.T("testing.alignSheetViews.labels.optCropSize"), _inheritCropSize,
+                    v => _inheritCropSize = v));
 
             outer.Children.Add(OptionCheck(
                 AppStrings.T("testing.alignSheetViews.labels.optGrids"), _inheritGrids,
                 v => _inheritGrids = v));
-            outer.Children.Add(Note(AppStrings.T("testing.alignSheetViews.labels.noteGrids")));
 
             outer.Children.Add(OptionCheck(
                 AppStrings.T("testing.alignSheetViews.labels.optCropVis"), _inheritCropVisibility,
                 v => _inheritCropVisibility = v));
-            outer.Children.Add(Note(AppStrings.T("testing.alignSheetViews.labels.noteCropVis")));
 
-            outer.Children.Add(OptionCheck(
-                AppStrings.T("testing.alignSheetViews.labels.optCropSize"), _inheritCropSize,
-                v => _inheritCropSize = v));
-            outer.Children.Add(Note(AppStrings.T("testing.alignSheetViews.labels.noteCropSize")));
-
-            // ── Mode ──────────────────────────────────────────────────────────
-            outer.Children.Add(SectionLabel2(AppStrings.T("testing.alignSheetViews.labels.secMode")));
-            outer.Children.Add(OptionCheck(
-                AppStrings.T("testing.alignSheetViews.labels.optPreview"), _previewOnly,
-                v => _previewOnly = v));
-            outer.Children.Add(Note(AppStrings.T("testing.alignSheetViews.labels.notePreview")));
             return outer;
         }
 
@@ -256,15 +256,50 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
             return cb;
         }
 
+        /// <summary>A read-only row in a checkbox's place, for a setting another option has already
+        /// decided. Not a disabled checkbox: there is nothing here for the user to change.</summary>
+        private static StackPanel ImpliedRow(string text)
+        {
+            var row = new StackPanel
+            {
+                Orientation = WpfOrientation.Horizontal,
+                Margin      = new Thickness(0, 12, 0, 0),
+            };
+
+            var tick = new TextBlock
+            {
+                Text                = char.ConvertFromUtf32(0x2713),   // ✓
+                Width               = 13,
+                TextAlignment       = WpfTextAlignment.Center,
+                VerticalAlignment   = WpfVerticalAlignment.Center,
+            };
+            tick.SetResourceReference(TextBlock.ForegroundProperty, "LemoineAccent");
+            tick.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            tick.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
+            row.Children.Add(tick);
+
+            var label = new TextBlock
+            {
+                Text              = text,
+                Margin            = new Thickness(8, 0, 0, 0),
+                TextWrapping      = TextWrapping.Wrap,
+                VerticalAlignment = WpfVerticalAlignment.Center,
+            };
+            label.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            label.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            label.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
+            row.Children.Add(label);
+
+            return row;
+        }
+
         // ── IReviewableTool ────────────────────────────────────────────────
         public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
             ("source",  AppStrings.T("testing.alignSheetViews.review.itemSource")),
             ("targets", AppStrings.T("testing.alignSheetViews.review.itemTargets")),
             ("overlap", AppStrings.T("testing.alignSheetViews.review.itemOverlap")),
-            ("titles",  AppStrings.T("testing.alignSheetViews.review.itemTitles")),
             ("inherit", AppStrings.T("testing.alignSheetViews.review.itemInherit")),
-            ("mode",    AppStrings.T("testing.alignSheetViews.review.itemMode")),
         };
 
         public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
@@ -278,16 +313,15 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                 ? AppStrings.T("testing.alignSheetViews.review.none")
                 : AppStrings.T("testing.alignSheetViews.review.sheetCount", EffectiveTargetCount),
             ["overlap"] = AppStrings.T("testing.alignSheetViews.review.overlapValue", _overlapPercent),
-            ["titles"]  = _alignTitles ? AppStrings.T("testing.alignSheetViews.review.titlesAligned") : AppStrings.T("testing.alignSheetViews.review.titlesUnchanged"),
             ["inherit"] = InheritSummary,
-            ["mode"]    = _previewOnly ? AppStrings.T("testing.alignSheetViews.review.modePreview") : AppStrings.T("testing.alignSheetViews.review.modeAlign"),
         };
 
         public IList<string>? ReviewChips => null;
-        public string?        ReviewNote  => AppStrings.T("testing.alignSheetViews.review.note");
-        public string?        ReviewWarning => _previewOnly
-            ? null
-            : AppStrings.T("testing.alignSheetViews.review.warning", (_alignTitles ? AppStrings.T("testing.alignSheetViews.review.warnTitles") : ""), (InheritSummary == AppStrings.T("testing.alignSheetViews.inherit.nothing") ? "" : AppStrings.T("testing.alignSheetViews.review.warnInherit", InheritSummary.ToLowerInvariant())));
+        public string?        ReviewNote  => null;
+        public string?        ReviewWarning => AppStrings.T("testing.alignSheetViews.review.warning",
+            InheritSummary == AppStrings.T("testing.alignSheetViews.inherit.nothing")
+                ? ""
+                : AppStrings.T("testing.alignSheetViews.review.warnInherit", InheritSummary.ToLowerInvariant()));
 
         private string InheritSummary
         {
@@ -295,9 +329,9 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
             {
                 var parts = new List<string>();
                 if (_inheritScopeBox)       parts.Add(AppStrings.T("testing.alignSheetViews.inherit.scopeBox"));
+                if (CropSizeInherited)      parts.Add(AppStrings.T("testing.alignSheetViews.inherit.cropSize"));
                 if (_inheritGrids)          parts.Add(AppStrings.T("testing.alignSheetViews.inherit.gridExtents"));
                 if (_inheritCropVisibility) parts.Add(AppStrings.T("testing.alignSheetViews.inherit.cropVisibility"));
-                if (_inheritCropSize)       parts.Add(AppStrings.T("testing.alignSheetViews.inherit.cropSize"));
                 return parts.Count == 0 ? AppStrings.T("testing.alignSheetViews.inherit.nothing") : string.Join(", ", parts);
             }
         }
@@ -337,9 +371,7 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                         : AppStrings.T("testing.alignSheetViews.review.sheetCount", EffectiveSourceCount));
                 case "S2": return EffectiveTargetCount == 0 ? "—" : AppStrings.T("testing.alignSheetViews.review.sheetCount", EffectiveTargetCount);
                 case "S3": return AppStrings.T("testing.alignSheetViews.summaries.s3Overlap", _overlapPercent) +
-                                  (_alignTitles ? AppStrings.T("testing.alignSheetViews.summaries.s3Titles") : "") +
-                                  (InheritSummary == AppStrings.T("testing.alignSheetViews.inherit.nothing") ? "" : AppStrings.T("testing.alignSheetViews.summaries.s3Inherit")) +
-                                  (_previewOnly ? AppStrings.T("testing.alignSheetViews.summaries.s3Preview") : "");
+                                  (InheritSummary == AppStrings.T("testing.alignSheetViews.inherit.nothing") ? "" : AppStrings.T("testing.alignSheetViews.summaries.s3Inherit"));
                 case "S4": return AppStrings.T("testing.alignSheetViews.summaries.S4");
                 default:   return "—";
             }
@@ -358,12 +390,10 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
             _handler.SourceSheetIds        = _sourceSheetIds.ToList();
             _handler.TargetSheetIds        = _targetSheetIds.Where(id => !srcKeys.Contains(id.Value)).ToList();
             _handler.OverlapThreshold      = _overlapPercent / 100.0;
-            _handler.AlignTitles           = _alignTitles;
-            _handler.PreviewOnly           = _previewOnly;
             _handler.InheritScopeBox       = _inheritScopeBox;
             _handler.InheritGridExtents    = _inheritGrids;
             _handler.InheritCropVisibility = _inheritCropVisibility;
-            _handler.InheritCropSize       = _inheritCropSize;
+            _handler.InheritCropSize       = CropSizeInherited;
             _handler.PushLog               = pushLog;
             _handler.OnProgress            = onProgress;
             _handler.OnComplete            = onComplete;
@@ -388,15 +418,6 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
             t.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             t.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             t.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            return t;
-        }
-
-        private static TextBlock Note(string text)
-        {
-            var t = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, FontStyle = FontStyles.Italic, Margin = new Thickness(0, 4, 0, 0) };
-            t.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            t.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            t.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             return t;
         }
 

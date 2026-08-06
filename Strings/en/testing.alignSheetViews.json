@@ -1,7 +1,8 @@
 // testing.alignSheetViews.json — Align Sheet Views tool + run-handler (Log) lines.
-// Command: AlignSheetViewsCommand. NOTE: log-level tone tokens ("info"/"warn"/"fail"/"pass")
-// and the "—" placeholder glyph stay in code. Some run lines are composed from a base
-// template plus a trailing fragment (grids/titles/would-align) — both parts live here.
+// Command: AlignSheetViewsCommand. NOTE: log-level tone tokens ("warn"/"fail"/"pass") and the
+// "—" placeholder glyph stay in code. The run log carries no "info" tone at all: it is one
+// roll-up line per target sheet plus everything that actually went wrong, so every line here
+// is one the user is meant to read.
 {
   "title": "Align Sheet Views",
   "runLabel": "Align Views →",
@@ -10,46 +11,30 @@
   },
   "labels": {
     "secReference": "REFERENCE SHEETS",
-    "noteReference": "Their viewport positions are the ground truth. These sheets are never moved. Each target sheet is aligned to whichever reference sheet matches it best.",
     "noSheets": "No sheets were found in this project.",
     "pickerSource": "Source reference sheets",
     "secTargets": "SHEETS TO ALIGN",
-    // Reference sheets picked in S1 are filtered out of this picker entirely, so the note
-    // no longer has to explain that ticking one here would be ignored.
-    "noteTargets": "Each target sheet's views are moved to overlay their counterparts on the best-matching reference sheet. The reference sheets picked in the previous step are not listed here.",
     "pickerTarget": "Target sheets to align",
     // Shown instead of the picker when every sheet in the project is already a reference sheet.
     "noTargetsLeft": "Every sheet in this project is selected as a reference sheet, so there is nothing left to align. Go back and untick the sheets you want to move.",
     "secOverlap": "FALLBACK MATCH — MINIMUM OVERLAP (%)",
-    "noteOverlap": "Views are matched by shared scope box first (exact). This overlap threshold is the fallback for views with no scope box: how much of a target view's drawn area must overlap a source view to be treated as counterparts. Lower it if counterparts are cropped to different sizes; raise it if unrelated views match.",
-    "optAlignTitles": "Also align view titles (location + line length)",
-    "noteAlignTitles": "Each view title is moved to overlay its source title, and its title line length matched. The line length is applied before the viewports settle (writing it shifts the viewport), and the title position last, since a title is positioned relative to its viewport.",
     "secInherit": "INHERIT FROM SOURCE VIEW",
     "optScopeBox": "Scope box assignment",
-    "noteScopeBox": "Assign the source view's scope box to each matched target view. Applied FIRST — before alignment — because a scope box rewrites the crop the alignment reads.",
     "optGrids": "Grid extents, heads and elbows",
-    "noteGrids": "Match each target grid to the source view: per-view (2D) extents so gridlines start and stop in the same place, plus head/tail bubble visibility and any elbows dragged onto the heads.",
     "optCropVis": "Crop region visibility",
-    "noteCropVis": "Match whether the crop-region boundary is shown or hidden, to the source view.",
     "optCropSize": "Crop size + annotation crop",
-    "noteCropSize": "Match the target's crop size and annotation-crop margins to the source. For views that also inherit a scope box, the scope box governs the crop, so only annotation-crop margins are applied.",
-    "secMode": "MODE",
-    "optPreview": "Preview only — report matches and errors without moving any viewport",
-    "notePreview": "Run this first to confirm every target sheet has a clean set of counterparts before committing any moves."
+    // Replaces optCropSize while "Scope box assignment" is ticked: the scope box governs the
+    // crop rectangle, so there is no separate crop-size decision left to make.
+    "impliedCropSize": "Crop size inherited from the scope box"
   },
   "review": {
     "itemSource": "Reference Sheets", "itemTargets": "Target Sheets", "itemOverlap": "Fallback Overlap",
-    "itemTitles": "View Titles", "itemInherit": "Inherit", "itemMode": "Mode",
+    "itemInherit": "Inherit",
     "none": "— (none selected)",
     "sheetCount": "{0} sheet(s)",
     "overlapValue": "{0}% minimum (scope box matched first)",
-    "titlesAligned": "Aligned (location + line length)",
-    "titlesUnchanged": "Left unchanged",
-    "modePreview": "Preview only (no moves)",
-    "modeAlign": "Align viewports",
-    "note": "Each target sheet is aligned to the reference sheet it matches best. Views are paired by shared scope box first, crop-region overlap otherwise, then the target viewport is moved so the two register. Missing or ambiguous counterparts are reported, never moved.",
-    "warning": "Target viewports{0}{1} will be modified on every selected sheet.",
-    "warnTitles": " and their view titles",
+    // View titles are always aligned, so the clause is part of the sentence rather than a fragment.
+    "warning": "Target viewports and their view titles{0} will be modified on every selected sheet.",
     "warnInherit": " (plus inherited {0})"
   },
   "inherit": {
@@ -62,71 +47,51 @@
   "summaries": {
     "s1Single": "1 selected",
     "s3Overlap": "overlap {0}%",
-    "s3Titles": "  |  titles",
     "s3Inherit": "  |  inherit",
-    "s3Preview": "  |  preview",
     "S4": "Ready to run"
   },
   "log": {
     "noDoc":              "No active project — open a document and try again.",
     "noSourceSheets":     "No valid source sheets — open a document and pick at least one reference sheet.",
     "sourceNoViews":      "Source '{0}' has no placeable views with a crop box — ignored as a reference.",
-    "sourceRefViews":     "Source '{0}': {1} reference view(s).",
     "noSourcesWithViews": "None of the selected source sheets carry placeable views — nothing to align to.",
     "noTargets":          "No valid target sheets (a sheet listed as both source and target is treated as a source).",
-    "previewOnly":        "Preview only — reporting matches; no viewports will be moved.",
     "issuesRecorded":     "{0} non-fatal issue(s) recorded — see diagnostics log.",
     "done":               "Done — {0} aligned, {1} error(s), {2} skipped across {3} target sheet(s).",
     "fatalError":         "Align Sheet Views error: {0}",
     "stoppedByUser":      "Stopped by user — {0} of {1} target sheet(s) processed; work so far preserved.",
     "noPlaceableViews":   "[{0}] No placeable views found — cannot align this sheet.",
     "noCounterpart":      "[{0}] No counterpart views found on any of the {1} source sheet(s) — left unchanged.",
-    "bestReference":      "[{0}] Best reference: '{1}' — {2} of {3} view(s) matched.",
-    "otherCandidates":    "[{0}] Other candidates: {1}.",
-    "candidateItem":      "'{0}' ({1})",
     "missing":            "[{0}] MISSING counterpart for source view '{1}'.",
     "ambiguous":          "[{0}] AMBIGUOUS — source view '{1}' overlaps both '{2}' and '{3}'. Left unchanged.",
     "extra":              "[{0}] EXTRA view '{1}' has no source counterpart — left unchanged.",
     "scaleDiffers":       "[{0}] '{1}' scale 1:{2} differs from source 1:{3} — only the anchor point will register.",
     "orientationDiffers": "[{0}] '{1}' orientation differs from source — field overlay not guaranteed.",
     "rotated":            "[{0}] '{1}' viewport is rotated ({2}) — overlay aligns the anchor only.",
-    "wouldAlign":         "[{0}] Would align '{1}' → source '{2}'{3}",
-    "wouldAlignTitle":    " (and its view title).",
-    "wouldAlignEnd":      ".",
-    "scopeBoxApplied":    "[{0}] {1} scope box assignment(s) applied.",
-    "aligned":            "[{0}] Aligned '{1}' → source '{2}'.",
-    // The condensed run log: one line per target sheet. Routine "info" lines are dropped from a
-    // real run and these stand in for them; preview mode still prints everything.
+    // The condensed run log: one line per target sheet, standing in for the routine detail.
     "sheetOk":            "[{0}] {1} matching view(s) found and aligned.",
-    "sheetWithIssues":    "[{0}] {1} matching view(s) aligned \u2014 {2} issue(s) reported above.",
+    "sheetWithIssues":    "[{0}] {1} matching view(s) aligned — {2} issue(s) reported above.",
+    // Used instead of the two above when more than one reference sheet was selected, so a target
+    // aligned to the wrong reference is visible without adding a second line per sheet.
+    "sheetOkRef":         "[{0}] {1} matching view(s) found and aligned to reference '{2}'.",
+    "sheetWithIssuesRef": "[{0}] {1} matching view(s) aligned to reference '{3}' — {2} issue(s) reported above.",
     "failedMove":         "[{0}] Failed to move '{1}' — see diagnostics log.",
     "couldNotAssignScope":"[{0}] Could not assign scope box to '{1}'.",
-    "cropScopeGoverned":  "[{0}] '{1}' crop is scope-box governed — crop-size inheritance skipped (annotation crop still applied).",
     "couldNotMatchCropSize":"[{0}] Could not match crop size for '{1}'.",
     "couldNotMatchAnnoCrop":"[{0}] Could not match annotation crop for '{1}' (this view type may not support one).",
     "couldNotMatchCropVis":"[{0}] Could not match crop visibility for '{1}'.",
-    "noGrids":            "[{0}] '{1}' has no grids to trim.",
+    "noGrids":            "[{0}] '{1}' has no grids — nothing for grid inheritance to copy.",
     // Changed vs already-matching are split deliberately: a single "N trimmed" that counted
-    // no-op writes is exactly what made a broken run look like a successful one.
+    // no-op writes is exactly what made a broken run look like a successful one. Only the zero
+    // case prints — a pass that did the work does not need narrating.
     "gridsResult":        "[{0}] Grids on '{1}': {2} updated, {3} already matching.",
-    "gridsWouldResult":   "[{0}] Grids on '{1}': {2} would be updated, {3} already matching.",
-    "gridWouldMove":      "[{0}] '{1}' grid '{2}': ends would move {3}' / {4}'.",
-    // Heads/tails are a separate property from the extents — matching ends still show no head
-    // if the source has its bubble on and the target does not.
-    "gridsBubbles":       "[{0}] Grids on '{1}': {2} head/tail bubbles matched to the source.",
-    "gridsWouldBubbles":  "[{0}] Grids on '{1}': {2} head/tail bubbles would be matched to the source.",
-    // The elbow is the jog dragged onto a grid head so it steps aside from its neighbours.
-    // Matched in both directions: an end the source has no elbow on has the target's removed.
-    "gridsElbows":        "[{0}] Grids on '{1}': {2} head elbows matched to the source.",
-    "gridsWouldElbows":   "[{0}] Grids on '{1}': {2} head elbows would be matched to the source.",
-    "gridElbowStuck":     "[{0}] '{1}' grid '{2}': has a head elbow the source does not, and Revit would not clear it \u2014 left in place.",
-    "gridElbowRejected":  "[{0}] '{1}' grid '{2}': Revit rejected the source head elbow \u2014 the leader was created but not repositioned.",
+    "gridElbowStuck":     "[{0}] '{1}' grid '{2}': has a head elbow the source does not, and Revit would not clear it — left in place.",
+    "gridElbowRejected":  "[{0}] '{1}' grid '{2}': Revit rejected the source head elbow — the leader was created but not repositioned.",
     // One line per remaining cause, so a zero result always names its reason. A bare
     // "N skipped" cannot be acted on — it was hiding grids whose source view had no
     // 2D extents at all, reported as if they were invisible or non-collinear.
-    "gridsModelSource":   "[{0}] Grids on '{1}': {2} use model (3D) extents in the source view — target ends reset to model to match.",
-    "gridsBlocked":       "[{0}] Grids on '{1}': {2} blocked by a setting this tool will not change \u2014 see the lines above.",
-    "gridsNotShowable":   "[{0}] Grids on '{1}': Revit will not display {2} in this view \u2014 skipped (its settings already match the source view).",
+    "gridsBlocked":       "[{0}] Grids on '{1}': {2} blocked by a setting this tool will not change — see the lines above.",
+    "gridsNotShowable":   "[{0}] Grids on '{1}': Revit will not display {2} in this view — skipped (its settings already match the source view).",
     "gridsNoSourceCurve": "[{0}] Grids on '{1}': {2} claim view-specific extents but returned no curve — not trimmed.",
     "gridsRejected":      "[{0}] Grids on '{1}': {2} were rejected by Revit when writing the curve — extent mode restored, see diagnostics log.",
     "gridsErrored":       "[{0}] Grids on '{1}': {2} failed with an error — see diagnostics log.",
@@ -136,56 +101,20 @@
     "gridsRestoreFailed": "[{0}] '{1}' grid '{2}': write failed AND its extent mode could not be restored — that end is now 2D with no curve set.",
     "couldNotTrimGrids":  "[{0}] Could not trim grids for '{1}'.",
     // Revit has many ways to hide a grid; the cause is named so "not trimmed" can be acted on.
-    "gridCauseHidden":    "hidden in this view",
-    "gridCauseCategory":  "Grids category switched off",
-    "gridCauseWorkset":   "its workset is hidden here",
-    "gridCauseFilter":    "view filter '{0}' hides it (left unchanged \u2014 it governs other categories too)",
+    // Only a cause that DIFFERS from the source view is ever named — one present on both views
+    // cannot explain why the grid shows in one and not the other.
+    "gridCauseFilter":    "view filter '{0}' hides it (left unchanged — it governs other categories too)",
     "gridCauseTemplate":  "a visibility write was rejected — view template '{0}' most likely controls it; see diagnostics log for the exact error",
-    "gridRestored":       "[{0}] '{1}' grid '{2}': made visible ({3}).",
     "gridBlocked":        "[{0}] '{1}' grid '{2}': {3}. Trim attempted anyway.",
-    "gridWouldRestore":   "[{0}] '{1}' grid '{2}': a real run would clear {3} on this view.",
-    "gridsRestored":      "[{0}] Grids on '{1}': {2} made visible to match the source view.",
-    // Placement drift: anything touching the crop or annotation crop after SetBoxCenter moves the
-    // drawing on the sheet, so the result is verified rather than assumed.
     "couldNotMatchTitleLine":"[{0}] Could not match title line length for '{1}'.",
     "couldNotAlignTitle": "[{0}] Could not align title for '{1}'.",
-    // Placement is REPORTED, never corrected. GetBoxCenter tracks the view title, so a centre
-    // that moves while the outline changes size is the box growing around a stationary drawing —
-    // correcting that displaces the drawing by the size of its own title.
-    "placementPhaseLineLength":    "title line length",
-    "placementPhaseTitlePosition": "title position",
-    "placementStable":    "Placement after {0}: all {1} viewport(s) unmoved.",
-    "placementTitleOnly": "Placement after {0}: {1} viewport(s) report a moved box, but their outlines changed size \u2014 the title grew, the drawing did not move.",
-    "placementMoved":     "Placement after {0}: {1} viewport(s) genuinely repositioned (worst '{2}' by {3}') \u2014 see diagnostics log.",
-    "viewTitlesOk":       "View titles: {0} aligned.",
     "viewTitlesSome":     "View titles: {0} aligned, {1} could not be adjusted.",
-    "noteNoCrop":         "[note] View '{0}' has no active crop — region matched from its default crop box.",
+    // Placement is PREDICTED from the source view and this run's own writes rather than read back
+    // after a regenerate. SetBoxCenter is absolute, so a prediction that missed is corrected
+    // exactly — never nudged — once the run regenerates and the real crop can be measured.
+    "placementCorrected": "[{0}] '{1}' crop differed from the predicted geometry — viewport re-placed ({2}' correction).",
+    "couldNotVerifyPlacement": "[{0}] Could not verify the final placement of '{1}' — see diagnostics log.",
     "couldNotReadAnnoCrop": "[warn] Could not read the annotation crop on view '{0}' — it is treated as having none, so this view may not register exactly.",
-    "annoScaleDiffers":   "[{0}] '{1}' scale differs from its source — annotation-crop margins are copied in model feet, so the printed margin will differ.",
-
-    // Preview-only diagnostics. Emitted per matched pair when \"Preview only\" is ticked.
-    // Their purpose is to settle, on a real plot, whether a viewport's on-sheet footprint
-    // includes the annotation crop (the assumption the alignment maths rests on) and to name
-    // which views the old and new formulas place differently.
-    "diagHeader":         "[diag] [{0}] '{1}' → source '{2}'",
-    "diagScale":          "[diag]   scale src 1:{0} / tgt 1:{1}   rotation {2}   basisX dot {3}  basisY dot {4}",
-    "diagCrop":           "[diag]   model crop (ft)              src {0} x {1} / tgt {2} x {3}",
-    "diagAnno":           "[diag]   annotation crop active       src {0} / tgt {1}",
-    "diagAnnoOff":        "[diag]   anno offsets (ft) src L{0} R{1} B{2} T{3}  |  tgt L{4} R{5} B{6} T{7}",
-    "diagOutline":        "[diag]   ACTUAL box outline (sheet ft) src {0} x {1} / tgt {2} x {3}",
-    "diagPredNoAnno":     "[diag]   predicted WITHOUT anno crop   src {0} x {1} / tgt {2} x {3}",
-    "diagPredAnno":       "[diag]   predicted WITH anno crop      src {0} x {1} / tgt {2} x {3}",
-    "diagVerdict":        "[diag]   → viewport footprint includes the annotation crop: {0}",
-    "diagVerdictYes":     "YES — the alignment fix's assumption holds.",
-    "diagVerdictNo":      "NO — the alignment fix's assumption does NOT hold here; report this line.",
-    "diagCentres":        "[diag]   box centre (current)          src {0} / tgt {1}",
-    "diagNewCentre":      "[diag]   target box centre — old formula {0} → new formula {1}   delta {2} ft",
-    "diagRotCandidates":  "[diag]   ROTATED viewport — candidate A (x,y)→(y,-x) gives {0}; candidate B (x,y)→(-y,x) gives {1}. Confirm which is right on the plot.",
-    "diagFailed":         "[diag] [{0}] Could not produce diagnostics for '{1}'.",
-    "diagMissingHdr":     "[diag] [{0}] No counterpart for source view '{1}' — candidates considered:",
-    "diagMissingCand":    "[diag]   '{0}' in-plane overlap {1}% (threshold {2}%), depth ranges {3}",
-    "diagNoCands":        "[diag]   (no candidate of the same view type and orientation on this sheet)",
-    "diagDepthOk":        "overlap",
-    "diagDepthNo":        "DO NOT overlap — candidate vetoed on depth"
+    "annoScaleDiffers":   "[{0}] '{1}' scale differs from its source — annotation-crop margins are copied in model feet, so the printed margin will differ."
   }
 }
