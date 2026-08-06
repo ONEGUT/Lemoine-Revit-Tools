@@ -6,14 +6,14 @@
   "title": "Bulk Export",
   "runLabel": "Export in Revit →",
   "steps": {
-    "S1": "Select Sheets & Sets", "S2": "Filename & Formats", "S3": "Sets & Order",
-    "S4": "PDF Settings", "S5": "DWG Settings", "S6": "NWC Settings", "S7": "IFC Settings",
-    "S8": "Output", "S9": "Review & Run"
+    "S1": "Select Sheets & Sets", "S2": "Sets, Order & Formats",
+    "S3": "PDF Settings", "S4": "DWG Settings", "S5": "NWC Settings", "S6": "IFC Settings",
+    "S7": "Output", "S8": "Review & Run"
   },
   "summaries": {
     "s1": "{0} {1} selected",
-    "s2None": "No formats selected", "s2": "{0} — {1}",
-    "s3Sets": "{0} sets · {1} items · {2}", "s3Individual": "No sets · {0}",
+    "s2None": "No formats selected",
+    "s2Sets": "{0} sets · {1} · {2}", "s2Individual": "No sets · {0} · {1}",
     "s4": "{0} · {1} · {2} · {3}",
     "s5Default": "Default DWG setup",
     "s6": "{0} · params: {1}",
@@ -24,7 +24,6 @@
     "printSetInherit": "Use global",
     "printSetOn": "On",
     "printSetOff": "Off",
-    "preview": "Preview: {0}{1}",
     "secFormats": "FORMATS",
     "descPdf": "Vector PDF via Revit engine",
     "descDwg": "AutoCAD DWG via Revit export",
@@ -79,7 +78,8 @@
   },
   "review": {
     "itemSheets": "Sheets / Views", "itemFormats": "Formats", "itemPacks": "Sets",
-    "itemQuality": "Quality", "itemPattern": "Filename Pattern", "itemFolder": "Output Folder",
+    "itemQuality": "Quality", "itemPattern": "Naming", "itemFolder": "Output Folder",
+    "namingRule": "Sets use their own name; single files use the sheet or view name",
     "sheetsValue": "{0} selected",
     "setsValue": "{0} set(s) · {1}",
     "qualityValue": "{0} · {1}", "qualityPdfOff": "PDF disabled",
@@ -119,7 +119,7 @@
 
     // Step 2 — output granularity
     "outputAs":          "OUTPUT AS",
-    "assignHint":        "Pick a set on the left, then check sheets — they file into that set. Clicking a Revit print set imports it and checks its sheets.",
+    "assignHint":        "Pick a set on the left, then check sheets — they file into that set. Clicking a Revit print set imports it and checks its sheets. A set's name is its PDF filename.",
     "perSheet":          "One PDF\nper sheet",
     "perSet":            "One PDF\nper set",
     "singleFile":        "One PDF\nfor everything",
@@ -139,7 +139,6 @@
     "moreMembers":       "…{0} more — use Sort to reorder in bulk",
     "optionsHeader":     "SET OPTIONS",
     "optName":           "Name",
-    "optPattern":        "Pattern override",
     "optSubfolder":      "Subfolder",
     "saveAsPrintSet":    "Save as print set",
     "duplicate":         "Duplicate",
@@ -161,15 +160,9 @@
     "saveSets":          "Save sets",
 
     // Step 3 — naming
-    "setPatternLabel":   "SET FILENAME — names each set’s combined PDF",
-    "itemPatternLabel":  "ITEM FILENAME — names each exported {0} file",
-    "setExample":        "{0} → {1}.pdf",
-    "sampleSetName":     "Architectural",
-    "tokSetName":        "Set name",
-    "tokSetIndex":       "Set number",
-    "tokSheetCount":     "Items in set",
-    "tokSetCount":       "Number of sets",
-    "tokSetSeq":         "Position in set",
+    "unnamedFile":       "(name this set)",
+    "expandTip":         "Click to open — order, options and per-format overrides",
+    "collapseTip":       "Click to close",
 
     // Step 8 — output
     "subfolderLabel":    "Give each set its own subfolder",

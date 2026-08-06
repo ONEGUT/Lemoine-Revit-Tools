@@ -38,8 +38,7 @@ namespace LemoineTools.Tools.BulkExport
             dispatcher.BeginInvoke(new Action(() => _refreshStep?.Invoke(stepId)));
         }
 
-        private void RefreshSets()   => PostRefresh("S3");
-        private void RefreshNaming() => PostRefresh("S2");
+        private void RefreshSets() => PostRefresh("S2");
 
         /// <summary>
         /// Repaints the rail and the tree badges WITHOUT rebuilding Step 1.
@@ -293,6 +292,12 @@ namespace LemoineTools.Tools.BulkExport
 
             var outer = new StackPanel();
 
+            AddSectionLabel(outer, AppStrings.T("export.bulkExport.sets.outputAs"));
+            outer.Children.Add(BuildGranularityRow());
+            AddDivider(outer);
+            BuildFormatToggles(outer);
+            AddDivider(outer);
+
             // ── Named set cards (drag-reorderable) ────────────────────────────
             var setPanel = new StackPanel { Margin = new Thickness(0, 8, 0, 0) };
             var reorder  = new ListReorder(setPanel, (from, to) =>
@@ -330,6 +335,51 @@ namespace LemoineTools.Tools.BulkExport
             return outer;
         }
 
+        /// <summary>
+        /// Format toggles. They live on the sets step now that there is no naming step — toggling
+        /// one reveals or hides that format's settings step through IConditionalSteps.
+        /// </summary>
+        private void BuildFormatToggles(StackPanel outer)
+        {
+            // Formats — toggling a format reveals/hides its settings step (via Fire →
+            // the window re-evaluates IsStepVisible).
+            AddSectionLabel(outer, AppStrings.T("export.bulkExport.labels.secFormats"));
+
+            var formatToggles = new ToggleSwitches();
+            formatToggles.SetItems(new List<ToggleItem>
+            {
+                new ToggleItem { Id = "pdf", Label = "PDF", Desc = AppStrings.T("export.bulkExport.labels.descPdf"),                     DefaultOn = _pdfOn  },
+                new ToggleItem { Id = "dwg", Label = "DWG", Desc = AppStrings.T("export.bulkExport.labels.descDwg"),                    DefaultOn = _dwgOn  },
+                new ToggleItem { Id = "nwc", Label = "NWC", Desc = AppStrings.T("export.bulkExport.labels.descNwc"),                  DefaultOn = _nwcOn  },
+                new ToggleItem { Id = "ifc", Label = "IFC", Desc = AppStrings.T("export.bulkExport.labels.descIfc"),   DefaultOn = _ifcOn  },
+            });
+            formatToggles.StateChanged += state =>
+            {
+                _pdfOn = state.TryGetValue("pdf", out bool pdfVal) && pdfVal;
+                _dwgOn = state.TryGetValue("dwg", out bool dwgVal) && dwgVal;
+                _nwcOn = state.TryGetValue("nwc", out bool nwcVal) && nwcVal;
+                _ifcOn = state.TryGetValue("ifc", out bool ifcVal) && ifcVal;
+                Fire();
+            };
+            outer.Children.Add(formatToggles);
+
+            // Mode hint for the 3D-only formats
+            if ((_nwcOn || _ifcOn) && !ViewsMode)
+            {
+                var modeHint = new TextBlock
+                {
+                    Text         = AppStrings.T("export.bulkExport.labels.modeHint"),
+                    TextWrapping = TextWrapping.Wrap,
+                    FontStyle    = FontStyles.Italic,
+                    Margin       = new Thickness(0, 8, 0, 0),
+                };
+                modeHint.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+                modeHint.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+                modeHint.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+                outer.Children.Add(modeHint);
+            }
+        }
+
         private FrameworkElement BuildGranularityRow()
         {
             var row = new UniformGrid { Rows = 1, Columns = 3, Margin = new Thickness(0, 2, 0, 4) };
@@ -348,8 +398,7 @@ namespace LemoineTools.Tools.BulkExport
                 ApplyModeButtonStyle(perSet,   g == PdfGranularity.PerSet);
                 ApplyModeButtonStyle(single,   g == PdfGranularity.SingleFile);
                 _setsDirty = true;
-                // The naming boxes and every set card's resolved filename both depend on this.
-                RefreshNaming();
+                // Every set card's resolved filename depends on this.
                 RefreshSets();
                 Fire();
             }
@@ -381,7 +430,9 @@ namespace LemoineTools.Tools.BulkExport
             var stack = new StackPanel();
 
             // ── Header ────────────────────────────────────────────────────────
-            var header = new DockPanel { LastChildFill = true, Margin = new Thickness(10, 7, 10, 7) };
+            var header = new DockPanel { LastChildFill = true };
+            var headerHost = new Border { Padding = new Thickness(10, 7, 10, 7), Child = header };
+            headerHost.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Card");
 
             var swatch = new WpfRectangle
             {
@@ -394,18 +445,36 @@ namespace LemoineTools.Tools.BulkExport
             DockPanel.SetDock(swatch, Dock.Left);
             header.Children.Add(swatch);
 
-            var caret = new TextBlock
+            // A bordered chevron button, not a bare glyph: a 14px ▸ next to a bold title does not
+            // read as a control, and the card body (ordering, options) was going unfound.
+            var caretBox = new Border
             {
-                Text              = char.ConvertFromUtf32(expanded ? 0x25BE : 0x25B8),
-                Width             = 14,
+                Width             = 20,
+                Height            = 20,
+                BorderThickness   = new Thickness(1),
+                Margin            = new Thickness(0, 0, 8, 0),
                 VerticalAlignment = VerticalAlignment.Center,
                 Cursor            = Cursors.Hand,
+                ToolTip           = expanded
+                                        ? AppStrings.T("export.bulkExport.sets.collapseTip")
+                                        : AppStrings.T("export.bulkExport.sets.expandTip"),
             };
-            caret.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextSub");
-            caret.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            caret.Background = WpfBrushes.Transparent;   // ⚠ direct assignment — hit-testable box
-            DockPanel.SetDock(caret, Dock.Left);
-            header.Children.Add(caret);
+            caretBox.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_SM");
+            caretBox.SetResourceReference(Border.BorderBrushProperty,  expanded ? "LemoineAccent" : "LemoineBorderMid");
+            caretBox.SetResourceReference(Border.BackgroundProperty,   expanded ? "LemoineAccentDim" : "LemoineSelectBg");
+
+            var caret = new TextBlock
+            {
+                Text                = char.ConvertFromUtf32(expanded ? 0x25BE : 0x25B8),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment   = VerticalAlignment.Center,
+                IsHitTestVisible    = false,   // the Border is the target; the glyph must not eat clicks
+            };
+            caret.SetResourceReference(TextBlock.ForegroundProperty, expanded ? "LemoineAccent" : "LemoineText");
+            caret.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
+            caretBox.Child = caret;
+            DockPanel.SetDock(caretBox, Dock.Left);
+            header.Children.Add(caretBox);
 
             // Format chips + enable box sit right; the name is a shrink-to-text hit box on the
             // left so the rest of the row stays grab-able for dragging.
@@ -469,10 +538,27 @@ namespace LemoineTools.Tools.BulkExport
                 if (!_expandedSets.Remove(set.Id)) _expandedSets.Add(set.Id);
                 RefreshSets();
             }
-            caret.MouseLeftButtonDown += (s, e) => { e.Handled = true; Toggle(); };
-            name.MouseLeftButtonDown  += (s, e) => { e.Handled = true; Toggle(); };
+            caretBox.MouseLeftButtonDown += (s, e) => { e.Handled = true; Toggle(); };
+            name.MouseLeftButtonDown     += (s, e) => { e.Handled = true; Toggle(); };
 
-            stack.Children.Add(header);
+            // The whole header is the hit target, and it highlights on hover so the card reads as
+            // openable even before the pointer reaches the chevron. Transparent (never null) or
+            // only the glyphs would be hit-testable.
+            // Wired on the padded host, not the inner DockPanel — otherwise the padding ring
+            // neither highlights nor responds, and the row reads as only partly clickable.
+            headerHost.Background = WpfBrushes.Transparent;
+            headerHost.Cursor     = Cursors.Hand;
+            headerHost.ToolTip    = caretBox.ToolTip;
+            headerHost.MouseLeftButtonDown += (s, e) =>
+            {
+                // Let the enable checkbox keep its own click.
+                if (e.OriginalSource is CheckBox) return;
+                e.Handled = true;
+                Toggle();
+            };
+            MotionEffects.WireHover(headerHost, normalBgKey: null, hoverBgKey: "LemoineSelectBg");
+
+            stack.Children.Add(headerHost);
 
             // ── Body ──────────────────────────────────────────────────────────
             if (expanded) stack.Children.Add(BuildSetBody(set));
@@ -610,16 +696,6 @@ namespace LemoineTools.Tools.BulkExport
             nameBox.TextChanged += (s, e) => { set.Name = nameBox.Text; _setsDirty = true; Fire(); };
             nameBox.LostFocus   += (s, e) => { RefreshSets(); RefreshSetRail(); };
             panel.Children.Add(LabeledRow(AppStrings.T("export.bulkExport.sets.optName"), nameBox));
-
-            // Pattern override
-            var patBox = ThemedBox(set.PatternOverride ?? "", mono: true);
-            patBox.TextChanged += (s, e) =>
-            {
-                set.PatternOverride = string.IsNullOrWhiteSpace(patBox.Text) ? null : patBox.Text;
-                _setsDirty = true;
-                Fire();
-            };
-            panel.Children.Add(LabeledRow(AppStrings.T("export.bulkExport.sets.optPattern"), patBox));
 
             // Subfolder override
             var subBox = ThemedBox(set.SubfolderOverride ?? "");

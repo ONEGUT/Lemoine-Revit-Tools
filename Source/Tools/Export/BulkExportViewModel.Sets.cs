@@ -7,7 +7,6 @@ using System.Windows.Controls;
 using Autodesk.Revit.DB;
 using LemoineTools.Framework;
 using LemoineTools.Framework.Controls;
-using LemoineTools.Framework.Naming;
 
 using WpfVisibility = System.Windows.Visibility;
 
@@ -303,63 +302,26 @@ namespace LemoineTools.Tools.BulkExport
         }
 
         /// <summary>
-        /// What this set produces on disk, resolved through the naming step's patterns. Mirrors
-        /// the handler's own resolution so the card cannot promise a name the run will not use;
-        /// per-sheet granularity produces many files, so it shows the count and one example.
+        /// What this set produces on disk. With no naming step the rule is plain: a combined PDF
+        /// is called what the set is called, and an individual file keeps its own sheet/view name.
+        /// Shown on the card so the typed name is visibly the filename.
         /// </summary>
         internal string SetOutputPreview(ExportSet set)
         {
-            int index = Math.Max(1, _sets.IndexOf(set) + 1);
-
             if (_granularity == PdfGranularity.PerSheet)
             {
                 string first = set.Members.Count > 0
-                    ? ResolveItemPreview(set, set.Members[0], 1)
+                    ? SanitiseFilenamePreview(set.Members[0].Label) + ".pdf"
                     : AppStrings.T("export.bulkExport.sets.noMembers");
                 return AppStrings.T("export.bulkExport.sets.previewPerSheet", set.Members.Count, first);
             }
 
-            string pattern = string.IsNullOrWhiteSpace(set.PatternOverride) ? _setPattern : set.PatternOverride!;
-            var ctx = new TokenContext();
-            ctx.Computed["SetName"]       = set.Name;
-            ctx.Computed["SetIndex"]      = index.ToString("D2");
-            ctx.Computed["SetCount"]      = Math.Max(1, _sets.Count).ToString();
-            ctx.Computed["SheetCount"]    = set.Members.Count.ToString();
-            ctx.Computed["ProjectNumber"] = _previewProjectNumber;
-            ctx.Computed["ProjectName"]   = _previewProjectName;
-            ctx.Computed["Year"]          = DateTime.Now.Year.ToString();
-            ctx.Computed["Month"]         = DateTime.Now.Month.ToString("D2");
-            ctx.Computed["Day"]           = DateTime.Now.Day.ToString("D2");
-
-            string name = SanitiseFilenamePreview(TokenResolver.Resolve(pattern, ctx));
-            if (!name.Any(char.IsLetterOrDigit)) name = SanitiseFilenamePreview(set.Name);
+            string name = SanitiseFilenamePreview(set.Name);
+            if (!name.Any(char.IsLetterOrDigit)) name = AppStrings.T("export.bulkExport.sets.unnamedFile");
 
             return _granularity == PdfGranularity.SingleFile
                 ? AppStrings.T("export.bulkExport.sets.previewSingleFile", name)
                 : AppStrings.T("export.bulkExport.sets.previewPerSet", name);
-        }
-
-        private string ResolveItemPreview(ExportSet set, ExportSetMember member, int setSeq)
-        {
-            var ctx = new TokenContext();
-            string label  = member.Label ?? "";
-            int    dash   = label.IndexOf(" — ", StringComparison.Ordinal);
-            ctx.Computed["SheetNumber"]   = dash >= 0 ? label.Substring(0, dash) : label;
-            ctx.Computed["SheetName"]     = dash >= 0 ? label.Substring(dash + 3) : label;
-            ctx.Computed["ViewName"]      = label;
-            ctx.Computed["ViewType"]      = member.IsSheet ? "Sheet" : "View";
-            ctx.Computed["SetName"]       = set.Name;
-            ctx.Computed["SetSeq"]        = setSeq.ToString("D2");
-            ctx.Computed["Seq"]           = setSeq.ToString("D3");
-            ctx.Computed["ProjectNumber"] = _previewProjectNumber;
-            ctx.Computed["ProjectName"]   = _previewProjectName;
-            ctx.Computed["Year"]          = DateTime.Now.Year.ToString();
-            ctx.Computed["Month"]         = DateTime.Now.Month.ToString("D2");
-            ctx.Computed["Day"]           = DateTime.Now.Day.ToString("D2");
-
-            string pattern = string.IsNullOrWhiteSpace(set.PatternOverride) ? ActivePattern : set.PatternOverride!;
-            string name    = SanitiseFilenamePreview(TokenResolver.Resolve(pattern, ctx));
-            return name.Any(char.IsLetterOrDigit) ? name + ".pdf" : label;
         }
 
         // ══════════════════════════════════════════════════════════════════════

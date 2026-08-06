@@ -9,7 +9,6 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Framework;
 using LemoineTools.Framework.Controls;
-using LemoineTools.Framework.Naming;
 
 using WpfGrid       = System.Windows.Controls.Grid;
 using WpfTextBox    = System.Windows.Controls.TextBox;
@@ -70,14 +69,13 @@ namespace LemoineTools.Tools.BulkExport
         public StepDefinition[] Steps => new[]
         {
             new StepDefinition("S1", AppStrings.T("export.bulkExport.steps.S1"), required: true),
-            new StepDefinition("S2", AppStrings.T("export.bulkExport.steps.S2"),    required: true),
-            new StepDefinition("S3", AppStrings.T("export.bulkExport.steps.S3"),           required: false),
-            new StepDefinition("S4", AppStrings.T("export.bulkExport.steps.S4"),          required: false),
-            new StepDefinition("S5", AppStrings.T("export.bulkExport.steps.S5"),          required: false),
-            new StepDefinition("S6", AppStrings.T("export.bulkExport.steps.S6"),          required: false),
-            new StepDefinition("S7", AppStrings.T("export.bulkExport.steps.S7"),          required: false),
-            new StepDefinition("S8", AppStrings.T("export.bulkExport.steps.S8"),                required: true),
-            new StepDefinition("S9", AppStrings.T("export.bulkExport.steps.S9"),          required: false),
+            new StepDefinition("S2", AppStrings.T("export.bulkExport.steps.S2"), required: true),
+            new StepDefinition("S3", AppStrings.T("export.bulkExport.steps.S3"), required: false),
+            new StepDefinition("S4", AppStrings.T("export.bulkExport.steps.S4"), required: false),
+            new StepDefinition("S5", AppStrings.T("export.bulkExport.steps.S5"), required: false),
+            new StepDefinition("S6", AppStrings.T("export.bulkExport.steps.S6"), required: false),
+            new StepDefinition("S7", AppStrings.T("export.bulkExport.steps.S7"), required: true),
+            new StepDefinition("S8", AppStrings.T("export.bulkExport.steps.S8"), required: false),
         };
 
         // ── IConditionalSteps ──────────────────────────────────────────
@@ -85,10 +83,10 @@ namespace LemoineTools.Tools.BulkExport
         {
             switch (stepId)
             {
-                case "S4": return _pdfOn;
-                case "S5": return _dwgOn;
-                case "S6": return _nwcOn;
-                case "S7": return _ifcOn;
+                case "S3": return _pdfOn;
+                case "S4": return _dwgOn;
+                case "S5": return _nwcOn;
+                case "S6": return _ifcOn;
                 default:   return true;
             }
         }
@@ -105,7 +103,7 @@ namespace LemoineTools.Tools.BulkExport
             // S1 too: its target-set dropdown lists the sets, which Step 2 can change.
             // Rebuilding re-fires SelectionChanged with the surviving selection, which the
             // assignment diff sees as a no-op unless ids genuinely dropped out.
-            if (stepId == "S1" || stepId == "S2" || stepId == "S3" || stepId == "S6")
+            if (stepId == "S1" || stepId == "S2" || stepId == "S5")
                 _refreshStep?.Invoke(stepId);
         }
 
@@ -148,23 +146,18 @@ namespace LemoineTools.Tools.BulkExport
         // Live handles into the S2 "Save as print set" row so the create callback can clear
         // the name box and show a success/error message (rebuilt each time S2 is activated).
 
-        // ── S3 state (filename & formats) ────────────────────────────────────
-        // Separate patterns per mode so each carries a default built from its own valid
-        // token set. ActivePattern resolves to whichever applies to the current mode.
-        private string             _sheetPattern    = BulkExportSettings.Instance.FilenamePattern;
-        private string             _viewPattern     = BulkExportSettings.Instance.ViewFilenamePattern;
-        private string ActivePattern
-        {
-            get => ViewsMode ? _viewPattern : _sheetPattern;
-            set { if (ViewsMode) _viewPattern = value; else _sheetPattern = value; }
-        }
+        // ── Format state ──────────────────────────────────────────────────────
+        // There is no naming step. A set's file is called what the user typed as the set's name;
+        // an individual file is called after its own sheet or view. Sheet NAMES are not unique in
+        // Revit (numbers are), so a sheet file keeps its number — dropping it would make two
+        // sheets collide and silently land as "… (2)".
+        private string ActivePattern => ViewsMode ? ViewDefaultPattern : SheetDefaultPattern;
         internal bool              _pdfOn           = BulkExportSettings.Instance.ExportPdf;
         internal bool              _dwgOn           = BulkExportSettings.Instance.ExportDwg;
         private bool               _nwcOn           = BulkExportSettings.Instance.ExportNwc;
         private bool               _ifcOn           = BulkExportSettings.Instance.ExportIfc;
         private string             _ifcVersion      = BulkExportSettings.Instance.IfcVersion;
         private string             _dwgSetup        = BulkExportSettings.Instance.DwgExportSetupName;
-        private TokenInput? _tokenInput;
 
         // ── NWC option state (all NavisworksExportOptions properties) ─────────
         private string _nwcCoordinates         = BulkExportSettings.Instance.NwcCoordinates;
@@ -199,11 +192,9 @@ namespace LemoineTools.Tools.BulkExport
         private bool   _setSubfolders = BulkExportSettings.Instance.SetSubfolders;
         private string _existingFileAction = BulkExportSettings.Instance.ExistingFileAction;
 
-        // ── Set state ─────────────────────────────────────────────────────────
-        // Names the combined PDFs. Separate from the item pattern because one pattern cannot
-        // name both a file-per-sheet and a file-per-set: {SheetNumber} on a 40-sheet file is
-        // meaningless, which is why a set's PDF used to be named after an arbitrary member.
-        private string _setPattern = BulkExportSettings.Instance.SetFilenamePattern;
+        // A set's combined PDF is simply named after the set. The user types the set name in the
+        // rail, so the name they typed IS the filename — no pattern to author, nothing to resolve.
+        private const string SetNamePattern = "{SetName}";
 
         // ── Revit data ────────────────────────────────────────────────────────
         internal readonly List<ViewSheet>            _allSheets;
@@ -295,60 +286,9 @@ namespace LemoineTools.Tools.BulkExport
 
         // ── Naming helpers ────────────────────────────────────────────────────
 
-        /// <summary>
-        /// The tool's own per-run token values. Declared beside the ViewModel as Computed
-        /// definitions and passed as <c>extraComputed</c> — they are per-tool run values, never
-        /// global registry entries.
-        /// </summary>
-        private static IReadOnlyList<TokenDefinition> SetTokenDefs() => new[]
-        {
-            new TokenDefinition("SetName",    AppStrings.T("export.bulkExport.sets.tokSetName"),    TokenOrigin.Computed, TokenSubject.Environment, TokenEntity.Any),
-            new TokenDefinition("SetIndex",   AppStrings.T("export.bulkExport.sets.tokSetIndex"),   TokenOrigin.Computed, TokenSubject.Environment, TokenEntity.Any),
-            new TokenDefinition("SheetCount", AppStrings.T("export.bulkExport.sets.tokSheetCount"), TokenOrigin.Computed, TokenSubject.Environment, TokenEntity.Any),
-            new TokenDefinition("SetCount",   AppStrings.T("export.bulkExport.sets.tokSetCount"),   TokenOrigin.Computed, TokenSubject.Environment, TokenEntity.Any),
-        };
+;
 
-        private static IReadOnlyList<TokenDefinition> ItemTokenDefs() => new[]
-        {
-            new TokenDefinition("SetName", AppStrings.T("export.bulkExport.sets.tokSetName"), TokenOrigin.Computed, TokenSubject.Environment, TokenEntity.Any),
-            new TokenDefinition("SetSeq",  AppStrings.T("export.bulkExport.sets.tokSetSeq"),  TokenOrigin.Computed, TokenSubject.Environment, TokenEntity.Any),
-        };
-
-        private static TextBlock ExampleLine()
-        {
-            var tb = new TextBlock
-            {
-                TextWrapping = TextWrapping.Wrap,
-                FontStyle    = FontStyles.Italic,
-                Margin       = new Thickness(0, 4, 0, 0),
-            };
-            tb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-            tb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            tb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            return tb;
-        }
-
-        /// <summary>Live example for the set pattern, resolved against the first real set.</summary>
-        private void UpdateSetExample(TextBlock line)
-        {
-            var sample = _sets.FirstOrDefault(s => s.Members.Count > 0);
-            string setName = sample?.Name ?? AppStrings.T("export.bulkExport.sets.sampleSetName");
-            int    count   = sample?.Members.Count ?? _selectedIds.Count;
-
-            var ctx = new TokenContext();
-            ctx.Computed["SetName"]       = setName;
-            ctx.Computed["SetIndex"]      = "01";
-            ctx.Computed["SetCount"]      = Math.Max(1, _sets.Count).ToString();
-            ctx.Computed["SheetCount"]    = count.ToString();
-            ctx.Computed["ProjectNumber"] = _previewProjectNumber;
-            ctx.Computed["ProjectName"]   = _previewProjectName;
-            ctx.Computed["Year"]          = DateTime.Now.Year.ToString();
-            ctx.Computed["Month"]         = DateTime.Now.Month.ToString("D2");
-            ctx.Computed["Day"]           = DateTime.Now.Day.ToString("D2");
-
-            string resolved = SanitiseFilenamePreview(TokenResolver.Resolve(_setPattern, ctx));
-            line.Text = AppStrings.T("export.bulkExport.sets.setExample", setName, resolved);
-        }
+;
 
         // The settings window shows sentences; the file stores the enum name. Persisted tokens
         // stay hardcoded strings by house rule — they are compared and switched on, not displayed.
@@ -421,13 +361,12 @@ namespace LemoineTools.Tools.BulkExport
             switch (stepId)
             {
                 case "S1": return BuildS1();
-                case "S2": return BuildFilenameFormats();
-                case "S3": return BuildSetsAndOrder();
-                case "S4": return BuildS4Pdf();
-                case "S5": return BuildS5Dwg();
-                case "S6": return BuildS6Nwc();
-                case "S7": return BuildS7Ifc();
-                case "S8": return BuildS8Output();
+                case "S2": return BuildSetsAndOrder();
+                case "S3": return BuildPdfSettings();
+                case "S4": return BuildDwgSettings();
+                case "S5": return BuildNwcSettings();
+                case "S6": return BuildIfcSettings();
+                case "S7": return BuildOutput();
                 default:   return null;
             }
         }
@@ -619,163 +558,7 @@ namespace LemoineTools.Tools.BulkExport
         // ── S3 — Filename & Formats ───────────────────────────────────────────
         // Pattern + format toggles only. Each format's own options live in its dedicated
         // step (S4 PDF, S5 DWG, S6 NWC, S7 IFC), shown only when that format is enabled.
-        private FrameworkElement BuildFilenameFormats()
-        {
-            var outer = new StackPanel();
-
-            AddSectionLabel(outer, AppStrings.T("export.bulkExport.sets.outputAs"));
-            outer.Children.Add(BuildGranularityRow());
-            AddDivider(outer);
-
-            // Two patterns, because one cannot name both a file-per-sheet and a file-per-set:
-            // {SheetNumber} on a 40-sheet file is meaningless. Each box is labelled by WHAT IT
-            // NAMES and carries a live resolved example — the example, not the label, is what
-            // makes two stacked TokenInputs unmistakable. Whichever box cannot apply at the
-            // current granularity is hidden outright, never shown disabled.
-            bool setBoxApplies  = _granularity != PdfGranularity.PerSheet && _pdfOn;
-            bool itemBoxApplies = (_granularity == PdfGranularity.PerSheet && _pdfOn)
-                                  || _dwgOn || _nwcOn || _ifcOn;
-
-            if (setBoxApplies)
-            {
-                AddSectionLabel(outer, AppStrings.T("export.bulkExport.sets.setPatternLabel"));
-
-                var setTokens = NamingTokenRegistry.TokensFor(TokenEntity.Any, hasSource: false, SetTokenDefs());
-                var setInput  = new TokenInput(setTokens, SetDefaultPattern) { Text = _setPattern };
-                outer.Children.Add(setInput);
-
-                var setEx = ExampleLine();
-                UpdateSetExample(setEx);
-                outer.Children.Add(setEx);
-
-                setInput.TextChanged += (s, e) =>
-                {
-                    _setPattern = setInput.Text;
-                    UpdateSetExample(setEx);
-                    Fire();
-                };
-            }
-
-            if (itemBoxApplies)
-            {
-                if (setBoxApplies) AddDivider(outer);
-
-                AddSectionLabel(outer, AppStrings.T("export.bulkExport.sets.itemPatternLabel",
-                    ViewsMode ? AppStrings.T("export.bulkExport.words.view") : AppStrings.T("export.bulkExport.words.sheet")));
-
-                var patternTokens = NamingTokenRegistry.TokensFor(
-                    ViewsMode ? TokenEntity.View : TokenEntity.Sheet, hasSource: false, ItemTokenDefs());
-                _tokenInput      = new TokenInput(patternTokens,
-                                                         ViewsMode ? ViewDefaultPattern : SheetDefaultPattern);
-                _tokenInput.Text = ActivePattern;
-                outer.Children.Add(_tokenInput);
-
-                var preview = ExampleLine();
-                UpdatePreview(preview);
-                outer.Children.Add(preview);
-
-                _tokenInput.TextChanged += (s, e) =>
-                {
-                    ActivePattern = _tokenInput.Text;
-                    UpdatePreview(preview);
-                    Fire();
-                };
-            }
-
-            AddDivider(outer);
-
-            // Formats — toggling a format reveals/hides its settings step (via Fire →
-            // the window re-evaluates IsStepVisible).
-            AddSectionLabel(outer, AppStrings.T("export.bulkExport.labels.secFormats"));
-
-            var formatToggles = new ToggleSwitches();
-            formatToggles.SetItems(new List<ToggleItem>
-            {
-                new ToggleItem { Id = "pdf", Label = "PDF", Desc = AppStrings.T("export.bulkExport.labels.descPdf"),                     DefaultOn = _pdfOn  },
-                new ToggleItem { Id = "dwg", Label = "DWG", Desc = AppStrings.T("export.bulkExport.labels.descDwg"),                    DefaultOn = _dwgOn  },
-                new ToggleItem { Id = "nwc", Label = "NWC", Desc = AppStrings.T("export.bulkExport.labels.descNwc"),                  DefaultOn = _nwcOn  },
-                new ToggleItem { Id = "ifc", Label = "IFC", Desc = AppStrings.T("export.bulkExport.labels.descIfc"),   DefaultOn = _ifcOn  },
-            });
-            formatToggles.StateChanged += state =>
-            {
-                _pdfOn = state.TryGetValue("pdf", out bool pdfVal) && pdfVal;
-                _dwgOn = state.TryGetValue("dwg", out bool dwgVal) && dwgVal;
-                _nwcOn = state.TryGetValue("nwc", out bool nwcVal) && nwcVal;
-                _ifcOn = state.TryGetValue("ifc", out bool ifcVal) && ifcVal;
-                Fire();
-            };
-            outer.Children.Add(formatToggles);
-
-            // Mode hint for the 3D-only formats
-            if ((_nwcOn || _ifcOn) && !ViewsMode)
-            {
-                var modeHint = new TextBlock
-                {
-                    Text         = AppStrings.T("export.bulkExport.labels.modeHint"),
-                    TextWrapping = TextWrapping.Wrap,
-                    FontStyle    = FontStyles.Italic,
-                    Margin       = new Thickness(0, 8, 0, 0),
-                };
-                modeHint.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-                modeHint.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-                modeHint.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-                outer.Children.Add(modeHint);
-            }
-
-            return outer;
-        }
-
-        private void UpdatePreview(TextBlock preview)
-        {
-            Dictionary<string, string> tokens;
-            if (ViewsMode)
-            {
-                tokens = new Dictionary<string, string>
-                {
-                    ["ViewName"]      = "Level 1 - Lighting",
-                    ["ViewType"]      = "FloorPlan",
-                    ["ProjectNumber"] = _previewProjectNumber,
-                    ["ProjectName"]   = _previewProjectName,
-                    ["Year"]          = DateTime.Now.Year.ToString(),
-                    ["Month"]         = DateTime.Now.Month.ToString("D2"),
-                    ["Day"]           = DateTime.Now.Day.ToString("D2"),
-                };
-            }
-            else
-            {
-                tokens = new Dictionary<string, string>
-                {
-                    ["SheetNumber"]   = _previewSheetNumber,
-                    ["SheetName"]     = _previewSheetName,
-                    ["Revision"]      = "3",
-                    ["IssueDate"]     = DateTime.Now.ToString("M/d/yy"),
-                    ["ProjectNumber"] = _previewProjectNumber,
-                    ["ProjectName"]   = _previewProjectName,
-                    ["Year"]          = DateTime.Now.Year.ToString(),
-                    ["Month"]         = DateTime.Now.Month.ToString("D2"),
-                    ["Day"]           = DateTime.Now.Day.ToString("D2"),
-                };
-            }
-            var ctx = new TokenContext();
-            foreach (var kvp in tokens) ctx.Computed[kvp.Key] = kvp.Value;
-            var sampleSet = _sets.FirstOrDefault(s => s.Members.Count > 0);
-            ctx.Computed["SetName"] = sampleSet?.Name ?? AppStrings.T("export.bulkExport.sets.sampleSetName");
-            ctx.Computed["SetSeq"]  = "01";
-            ctx.Computed["Seq"]     = "001";
-            string resolved = TokenResolver.Resolve(ActivePattern, ctx);
-            preview.Text = AppStrings.T("export.bulkExport.labels.preview", SanitiseFilenamePreview(resolved), PreviewExtension());
-        }
-
         // The dominant output extension for the preview (first enabled format).
-        private string PreviewExtension()
-        {
-            if (_pdfOn) return ".pdf";
-            if (_dwgOn) return ".dwg";
-            if (_nwcOn) return ".nwc";
-            if (_ifcOn) return ".ifc";
-            return "";
-        }
-
         private static string SanitiseFilenamePreview(string name)
         {
             foreach (char c in Path.GetInvalidFileNameChars())
@@ -886,7 +669,7 @@ namespace LemoineTools.Tools.BulkExport
         }
 
         // ── S4 — PDF Settings (shown only when PDF is enabled) ─────────────────
-        private FrameworkElement BuildS4Pdf()
+        private FrameworkElement BuildPdfSettings()
         {
             var outer = new StackPanel();
 
@@ -1023,7 +806,7 @@ namespace LemoineTools.Tools.BulkExport
         }
 
         // ── S5 — DWG Settings (shown only when DWG is enabled) ─────────────────
-        private FrameworkElement BuildS5Dwg()
+        private FrameworkElement BuildDwgSettings()
         {
             var outer = new StackPanel();
             AddSectionLabel(outer, AppStrings.T("export.bulkExport.labels.secDwgOptions"));
@@ -1054,7 +837,7 @@ namespace LemoineTools.Tools.BulkExport
         }
 
         // ── S6 — NWC Settings (shown only when NWC is enabled) ─────────────────
-        private FrameworkElement BuildS6Nwc()
+        private FrameworkElement BuildNwcSettings()
         {
             var outer = new StackPanel();
             BuildNwcOptions(outer);
@@ -1062,7 +845,7 @@ namespace LemoineTools.Tools.BulkExport
         }
 
         // ── S7 — IFC Settings (shown only when IFC is enabled) ─────────────────
-        private FrameworkElement BuildS7Ifc()
+        private FrameworkElement BuildIfcSettings()
         {
             var outer = new StackPanel();
             BuildIfcOptions(outer);
@@ -1070,7 +853,7 @@ namespace LemoineTools.Tools.BulkExport
         }
 
         // ── S8 — Output ───────────────────────────────────────────────────────
-        private FrameworkElement BuildS8Output()
+        private FrameworkElement BuildOutput()
         {
             var outer = new StackPanel();
 
@@ -1140,7 +923,7 @@ namespace LemoineTools.Tools.BulkExport
             ["formats"] = GetActiveFormats(),
             ["packs"]   = AppStrings.T("export.bulkExport.review.setsValue", _sets.Count, GranularityLabel()),
             ["quality"] = _pdfOn ? AppStrings.T("export.bulkExport.review.qualityValue", _colorDepth, _rasterQuality) : AppStrings.T("export.bulkExport.review.qualityPdfOff"),
-            ["pattern"] = string.IsNullOrEmpty(ActivePattern) ? "—" : ActivePattern,
+            ["pattern"] = AppStrings.T("export.bulkExport.review.namingRule"),
             ["folder"]  = _outputFolder.Length == 0 ? "—"
                 : _outputFolder.Length > 40 ? "…" + _outputFolder.Substring(_outputFolder.Length - 37)
                 : _outputFolder,
@@ -1180,13 +963,13 @@ namespace LemoineTools.Tools.BulkExport
             switch (stepId)
             {
                 case "S1": return _selectedIds.Count > 0;
+                // Sets are optional (an ungrouped selection is one set), but a format is not.
                 case "S2": return _pdfOn || _dwgOn || _nwcOn || _ifcOn;
-                case "S3": return true;   // sets are optional — an ungrouped selection is one set
-                case "S4": return true;   // PDF settings
-                case "S5": return true;   // DWG settings
-                case "S6": return true;   // NWC settings
-                case "S7": return true;   // IFC settings
-                case "S8": return !string.IsNullOrWhiteSpace(_outputFolder);
+                case "S3": return true;   // PDF settings
+                case "S4": return true;   // DWG settings
+                case "S5": return true;   // NWC settings
+                case "S6": return true;   // IFC settings
+                case "S7": return !string.IsNullOrWhiteSpace(_outputFolder);
                 default:   return true;
             }
         }
@@ -1199,15 +982,14 @@ namespace LemoineTools.Tools.BulkExport
                     : AppStrings.T("export.bulkExport.summaries.s1", _selectedIds.Count, _exportMode.ToLower());
                 case "S2": return GetActiveFormats() == "—"
                     ? AppStrings.T("export.bulkExport.summaries.s2None")
-                    : AppStrings.T("export.bulkExport.summaries.s2", GetActiveFormats(), GranularityLabel());
-                case "S3": return _sets.Count == 0
-                    ? AppStrings.T("export.bulkExport.summaries.s3Individual", GranularityLabel())
-                    : AppStrings.T("export.bulkExport.summaries.s3Sets", _sets.Count, _selectedIds.Count, GranularityLabel());
-                case "S4": return AppStrings.T("export.bulkExport.summaries.s4", _hiddenLines.Split(' ')[0], _rasterQuality, _colorDepth, GranularityLabel());
-                case "S5": return string.IsNullOrEmpty(_dwgSetup) ? AppStrings.T("export.bulkExport.summaries.s5Default") : _dwgSetup;
-                case "S6": return AppStrings.T("export.bulkExport.summaries.s6", _nwcCoordinates, _nwcParameters);
-                case "S7": return _ifcVersion;
-                case "S8": return string.IsNullOrEmpty(_outputFolder) ? AppStrings.T("export.bulkExport.summaries.s8NoFolder") : _outputFolder;
+                    : _sets.Count == 0
+                        ? AppStrings.T("export.bulkExport.summaries.s2Individual", GetActiveFormats(), GranularityLabel())
+                        : AppStrings.T("export.bulkExport.summaries.s2Sets", _sets.Count, GetActiveFormats(), GranularityLabel());
+                case "S3": return AppStrings.T("export.bulkExport.summaries.s4", _hiddenLines.Split(' ')[0], _rasterQuality, _colorDepth, GranularityLabel());
+                case "S4": return string.IsNullOrEmpty(_dwgSetup) ? AppStrings.T("export.bulkExport.summaries.s5Default") : _dwgSetup;
+                case "S5": return AppStrings.T("export.bulkExport.summaries.s6", _nwcCoordinates, _nwcParameters);
+                case "S6": return _ifcVersion;
+                case "S7": return string.IsNullOrEmpty(_outputFolder) ? AppStrings.T("export.bulkExport.summaries.s8NoFolder") : _outputFolder;
                 default:   return "—";
             }
         }
@@ -1257,7 +1039,7 @@ namespace LemoineTools.Tools.BulkExport
 
             _handler.Sets                     = BuildRunSetsFromModel();
             _handler.Granularity              = _granularity;
-            _handler.SetFilenamePattern       = _setPattern;
+            _handler.SetFilenamePattern       = SetNamePattern;
             _handler.SetSubfolders            = _setSubfolders;
             _handler.ExistingFileAction       = _existingFileAction;
             _handler.ExportMode               = _exportMode;
@@ -1331,21 +1113,6 @@ namespace LemoineTools.Tools.BulkExport
                                 Hint = "Overwrite matches Revit's own behaviour; the review step always reports the count.",
                                 Options = new SingleSelectOpts { Items = new List<string> { "Overwrite", "Skip", "Add suffix" } },
                                 Default = s.ExistingFileAction },
-                        }
-                    },
-                    new SettingsGroup
-                    {
-                        Id = "G2", Title = "Filename",
-                        Settings = new List<SettingDef>
-                        {
-                            new SettingDef { Id = "setpattern", Kind = "text", Label = "Default SET filename pattern",
-                                Hint = "Names each set's combined PDF. Tokens: {SetName} {SetIndex} {SheetCount} {SetCount} {ProjectNumber} {ProjectName} {Year} {Month} {Day}",
-                                Options = new TextOpts { Mono = true, Placeholder = "{SetName}" },
-                                Default = s.SetFilenamePattern },
-                            new SettingDef { Id = "pattern", Kind = "text", Label = "Default ITEM filename pattern",
-                                Hint = "Tokens: {SheetNumber} {SheetName} {Revision} {IssueDate} {ProjectNumber} {Year} {Month} {Day} + any custom tokens defined in Naming settings",
-                                Options = new TextOpts { Mono = true, Placeholder = "{SheetNumber}-{SheetName}" },
-                                Default = s.FilenamePattern },
                         }
                     },
                     new SettingsGroup
@@ -1444,8 +1211,6 @@ namespace LemoineTools.Tools.BulkExport
                 case "splitformat":     s.SplitByFormat              = value is bool b1 && b1;                     break;
                 case "setsubfolders":   s.SetSubfolders              = value is bool sf && sf;                     break;
                 case "existingfile":    s.ExistingFileAction         = value as string ?? "Overwrite";             break;
-                case "setpattern":      s.SetFilenamePattern         = value as string ?? "{SetName}";             break;
-                case "pattern":         s.FilenamePattern            = value as string ?? "";                      break;
                 case "defpdf":          s.ExportPdf                  = value is bool b2 && b2;                     break;
                 case "defdwg":          s.ExportDwg                  = value is bool b3 && b3;                     break;
                 case "defnwc":          s.ExportNwc                  = value is bool b5 && b5;                     break;
