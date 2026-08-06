@@ -232,8 +232,57 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
         [XmlArray("LegendDocScopes"), XmlArrayItem("Doc")]
         public List<LegendDocScope> LegendDocScopes { get; set; } = new List<LegendDocScope>();
 
+        /// <summary>
+        /// Replaces the active document's legend library with what is stored IN THE DOCUMENT.
+        /// An empty payload means the document has never carried one, so the bucket is left to
+        /// seed itself — "" means "seed me", not "empty library".
+        /// </summary>
+        public static void LoadProjectLibrary(string? xml)
+        {
+            if (string.IsNullOrWhiteSpace(xml)) return;
+            try
+            {
+                var xs = new XmlSerializer(typeof(LegendLibraryDto));
+                using (var sr = new StringReader(xml))
+                {
+                    var dto = xs.Deserialize(sr) as LegendLibraryDto;
+                    var legends = dto?.Legends ?? new List<LegendEntry>();
+                    foreach (var e in legends)
+                        if (e != null && string.IsNullOrEmpty(e.Id)) e.Id = LegendIdGen.New("legend");
+                    // The window's invariant is never zero legends.
+                    if (legends.Count == 0) legends.Add(BlankEntry());
+                    var bucket = Instance.LegendScope();
+                    bucket.Legends = legends;
+                    bucket.Seeded  = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Error("LegendCreatorSettings: read project legend library", ex);
+            }
+        }
+
+        /// <summary>Serializes the active document's legend library for storage in the document.</summary>
+        public static string SerializeProjectLibrary()
+        {
+            try
+            {
+                var xs = new XmlSerializer(typeof(LegendLibraryDto));
+                using (var sw = new StringWriter())
+                {
+                    xs.Serialize(sw, new LegendLibraryDto { Legends = Instance.Legends });
+                    return sw.ToString();
+                }
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Error("LegendCreatorSettings: serialize project legend library", ex);
+                return "";
+            }
+        }
+
         /// <summary>Legend bucket for the active document, seeded on first touch.</summary>
-        private LegendDocScope LegendScope()
+        internal LegendDocScope LegendScope()
         {
             if (LegendDocScopes == null) LegendDocScopes = new List<LegendDocScope>();
 
@@ -278,7 +327,7 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
         }
 
         /// <summary>An empty legend slot — the blank starting point when there is no seed.</summary>
-        private static LegendEntry BlankEntry() => new LegendEntry
+        internal static LegendEntry BlankEntry() => new LegendEntry
         {
             Id             = LegendIdGen.New("legend"),
             Layout         = new LegendLayoutConfig(),

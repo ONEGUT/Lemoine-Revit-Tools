@@ -327,8 +327,58 @@ namespace LemoineTools.Tools.AutoFilters
         [XmlArray("TradeDocScopes"), XmlArrayItem("Doc")]
         public List<TradeDocScope> TradeDocScopes { get; set; } = new List<TradeDocScope>();
 
+        /// <summary>
+        /// Replaces the active document's trade library with what is stored IN THE DOCUMENT.
+        /// Called at command launch with the XML read by ProjectLibraryStore.
+        ///
+        /// An empty/absent payload means the document has never carried a library, so the
+        /// bucket is left to seed itself from SeedLibrary. That distinction is why this takes
+        /// the raw string rather than a parsed list: "" means "seed me", not "empty library".
+        /// </summary>
+        public static void LoadProjectLibrary(string? xml)
+        {
+            if (string.IsNullOrWhiteSpace(xml)) return;
+            try
+            {
+                var xs = new XmlSerializer(typeof(FilterLibraryDto));
+                using (var sr = new StringReader(xml))
+                {
+                    var dto = xs.Deserialize(sr) as FilterLibraryDto;
+                    var trades = dto?.Trades ?? new List<FilterTradeConfig>();
+                    EnsureUniqueTradeIds(trades);
+                    Instance.TradeScope().Trades = trades;
+                    Instance.TradeScope().Seeded = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                // Do NOT fall through to seeding: that would show office defaults over a real
+                // library this project has, and the next save would overwrite it.
+                DiagnosticsLog.Error("AutoFiltersSettings: read project trade library", ex);
+            }
+        }
+
+        /// <summary>Serializes the active document's trade library for storage in the document.</summary>
+        public static string SerializeProjectLibrary()
+        {
+            try
+            {
+                var xs = new XmlSerializer(typeof(FilterLibraryDto));
+                using (var sw = new StringWriter())
+                {
+                    xs.Serialize(sw, new FilterLibraryDto { Trades = Instance.Trades });
+                    return sw.ToString();
+                }
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Error("AutoFiltersSettings: serialize project trade library", ex);
+                return "";
+            }
+        }
+
         /// <summary>Trade bucket for the active document, seeded on first touch.</summary>
-        private TradeDocScope TradeScope()
+        internal TradeDocScope TradeScope()
         {
             if (TradeDocScopes == null) TradeDocScopes = new List<TradeDocScope>();
 

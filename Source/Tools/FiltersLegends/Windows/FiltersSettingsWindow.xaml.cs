@@ -454,6 +454,20 @@ namespace LemoineTools.Framework
                 {
                     AutoFiltersSettings.Instance.Trades = _filterTrades;
                     AutoFiltersSettings.Instance.Save();
+
+                    // The trade library belongs to the PROJECT, so it is written into the
+                    // .rvt as well. Without this it would live only in this user's %AppData%
+                    // and a colleague opening the model would never see it.
+                    try
+                    {
+                        LemoineTools.Framework.Project.ProjectLibraries.Save(
+                            LemoineTools.Framework.Project.ProjectLibraryStore.SectionFilters,
+                            AutoFiltersSettings.SerializeProjectLibrary());
+                    }
+                    catch (Exception __plex)
+                    {
+                        DiagnosticsLog.Swallowed("Save project library on close", __plex);
+                    }
                 }
 
                 var expected = AutoFiltersSettings.ComputeExpectedFilterNames(_filterTrades);

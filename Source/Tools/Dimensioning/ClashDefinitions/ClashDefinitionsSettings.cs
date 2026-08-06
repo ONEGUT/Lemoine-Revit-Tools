@@ -35,8 +35,47 @@ namespace LemoineTools.Tools.Dimensioning
         public List<ClashDefinitionDocScope> DefinitionDocScopes { get; set; } =
             new List<ClashDefinitionDocScope>();
 
+        /// <summary>
+        /// Replaces the active document's clash library with what is stored IN THE DOCUMENT.
+        /// Clash is never seeded, so an empty payload correctly leaves the project empty.
+        /// </summary>
+        public static void LoadProjectLibrary(string? xml)
+        {
+            if (string.IsNullOrWhiteSpace(xml)) return;
+            try
+            {
+                var xs = new XmlSerializer(typeof(List<ClashDefinition>));
+                using (var sr = new StringReader(xml))
+                    Instance.Scope().Definitions =
+                        (xs.Deserialize(sr) as List<ClashDefinition>) ?? new List<ClashDefinition>();
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Error("ClashDefinitionsSettings: read project clash library", ex);
+            }
+        }
+
+        /// <summary>Serializes the active document's clash library for storage in the document.</summary>
+        public static string SerializeProjectLibrary()
+        {
+            try
+            {
+                var xs = new XmlSerializer(typeof(List<ClashDefinition>));
+                using (var sw = new StringWriter())
+                {
+                    xs.Serialize(sw, Instance.Definitions);
+                    return sw.ToString();
+                }
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Error("ClashDefinitionsSettings: serialize project clash library", ex);
+                return "";
+            }
+        }
+
         /// <summary>Definition bucket for the active document, created empty on first touch.</summary>
-        private ClashDefinitionDocScope Scope()
+        internal ClashDefinitionDocScope Scope()
         {
             if (DefinitionDocScopes == null) DefinitionDocScopes = new List<ClashDefinitionDocScope>();
 

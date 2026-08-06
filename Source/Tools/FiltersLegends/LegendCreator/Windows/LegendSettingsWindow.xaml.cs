@@ -165,6 +165,24 @@ namespace LemoineTools.Framework
                 AutoFiltersSettings.Saved -= b.OnFiltersSaved;
                 b.Edited                  -= OnBuilderEdited;
             }
+
+            // The legend library belongs to the PROJECT, so it is written into the .rvt as
+            // well as this user's %AppData%. Done once here rather than at each of the six
+            // in-window Save() points, so a session of edits costs one transaction.
+            //
+            // Guarded: this is a bespoke Window with no dispatcher safety net, and an
+            // unhandled throw on its STA thread would take Revit down with it (CLAUDE.md).
+            try
+            {
+                LemoineTools.Framework.Project.ProjectLibraries.Save(
+                    LemoineTools.Framework.Project.ProjectLibraryStore.SectionLegends,
+                    LegendCreatorSettings.SerializeProjectLibrary());
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Swallowed("LegendSettingsWindow: save project legend library", ex);
+            }
+
             base.OnClosed(e);
         }
 

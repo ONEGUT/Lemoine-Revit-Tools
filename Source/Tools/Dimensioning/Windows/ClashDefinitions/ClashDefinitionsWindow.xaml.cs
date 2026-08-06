@@ -127,6 +127,19 @@ namespace LemoineTools.Framework
             {
                 ClashDefinitionsSettings.Instance.Definitions = _defs;
                 ClashDefinitionsSettings.Instance.Save();
+
+                // Clash definitions belong to the PROJECT — written into the .rvt so the
+                // whole team sees the same ones.
+                try
+                {
+                    LemoineTools.Framework.Project.ProjectLibraries.Save(
+                        LemoineTools.Framework.Project.ProjectLibraryStore.SectionClash,
+                        ClashDefinitionsSettings.SerializeProjectLibrary());
+                }
+                catch (Exception __plex)
+                {
+                    DiagnosticsLog.Swallowed("Save project library on close", __plex);
+                }
             }
             base.OnClosed(e);
         }
