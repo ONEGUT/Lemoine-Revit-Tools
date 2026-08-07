@@ -6,14 +6,14 @@
   "title": "Bulk Export",
   "runLabel": "Export in Revit →",
   "steps": {
-    "S1": "Select Sheets / Views", "S2": "Print Sets", "S3": "Filename & Formats",
-    "S4": "PDF Settings", "S5": "DWG Settings", "S6": "NWC Settings", "S7": "IFC Settings",
-    "S8": "Output", "S9": "Review & Run"
+    "S1": "Select Sheets & Sets", "S2": "Sets, Order & Formats",
+    "S3": "PDF Settings", "S4": "DWG Settings", "S5": "NWC Settings", "S6": "IFC Settings",
+    "S7": "Output", "S8": "Review & Run"
   },
   "summaries": {
     "s1": "{0} {1} selected",
-    "s2PrintSets": "{0} print set(s)", "s2Individual": "Individual export",
-    "s3None": "No formats selected", "s3": "{0} — {1}",
+    "s2None": "No formats selected",
+    "s2Sets": "{0} sets · {1} · {2}", "s2Individual": "No sets · {0} · {1}",
     "s4": "{0} · {1} · {2} · {3}",
     "s5Default": "Default DWG setup",
     "s6": "{0} · params: {1}",
@@ -21,20 +21,9 @@
   },
   "labels": {
     "showAllViews": "Show all non-template views",
-    "printSetsNote": "Optional — leave every print set unchecked to export the Step 1 selection individually with the filename pattern from Step 3. A checked print set is combined into one PDF (its own members, in Revit's saved order) and exported as individual DWGs; NWC/IFC are per-view and always export from the Step 1 selection.",
-    "noPrintSets": "No print sets found in this project.",
-    "saveAsPrintSet": "SAVE CURRENT SELECTION AS A NEW PRINT SET",
-    "savePrintSetBtn": "Save",
-    "saveAsPrintSetHint": "Saves the Step 1 selection as a named Revit print set (View/Sheet Set), so it's available here and in Revit's own File ▸ Print dialog going forward.",
-    "printSetRow": "{0}  ({1} item(s))",
-    "printSetPatternOverride": "FILENAME PATTERN OVERRIDE (blank = use Step 3's pattern)",
     "printSetInherit": "Use global",
     "printSetOn": "On",
     "printSetOff": "Off",
-    "patternSheets": "FILENAME PATTERN (SHEETS)",
-    "patternViews": "FILENAME PATTERN (VIEWS)",
-    "preview": "Preview: {0}{1}",
-    "printSetFilenameNote": "A checked print set's combined PDF is named after the print set (or its own pattern override, if set). The pattern above applies to DWG exports, individual PDF exports, and any print set without an override.",
     "secFormats": "FORMATS",
     "descPdf": "Vector PDF via Revit engine",
     "descDwg": "AutoCAD DWG via Revit export",
@@ -50,9 +39,6 @@
     "lblColorDepth": "Color Depth",
     "lblRasterQuality": "Raster Quality",
     "lblHiddenLines": "Hidden Line Views",
-    "secCombine": "COMBINE",
-    "combineLabel": "Combine into one PDF",
-    "printSetCombineNote": "Each checked print set is always exported as its own combined PDF regardless of this setting.",
     "secAdvanced": "ADVANCED",
     "advViewLinks": "View links in blue",
     "advViewLinksDesc": "Render linked Revit views with a blue tint in the PDF.",
@@ -91,12 +77,98 @@
     "splitLabel": "Split output into subfolders by file format"
   },
   "review": {
-    "itemSheets": "Sheets / Views", "itemFormats": "Formats", "itemPacks": "Print Sets",
-    "itemQuality": "Quality", "itemPattern": "Filename Pattern", "itemFolder": "Output Folder",
+    "itemSheets": "Sheets / Views", "itemFormats": "Formats", "itemPacks": "Sets",
+    "itemQuality": "Quality", "itemPattern": "Naming", "itemFolder": "Output Folder",
+    "namingRule": "Sets use their own name; single files use the sheet or view name",
     "sheetsValue": "{0} selected",
-    "printSetsValue": "{0} print set(s)", "printSetsNone": "None — individual export",
+    "setsValue": "{0} set(s) · {1}",
     "qualityValue": "{0} · {1}", "qualityPdfOff": "PDF disabled",
     "warnSheetsMode": "{0} exports 3D views only and needs Views mode — it will be skipped while you're in Sheets mode."
+  },
+  // Short nouns substituted into log lines.
+  "words": {
+    "sheet": "sheet",
+    "view":  "view",
+    "items": "items",
+    "unnamedSet": "the selection"
+  },
+  // Sets: the Step 1 target bar, the Step 2 editor, and set persistence.
+  "sets": {
+    "noPersistFamily":   "Sets cannot be saved in a family document — they stay in this window only.",
+    "noPersistLinked":   "Sets cannot be saved into a linked model — they stay in this window only.",
+    "noPersistReadOnly": "This model is read-only, so sets cannot be saved into it — they stay in this window only.",
+    "saveFailed":        "Could not save the sets into this model: {0}",
+    "saved":             "Saved {0} set(s) into this model.",
+    "unsaved":           "unsaved changes",
+    "loadDropped":       "{0} stored set member(s) no longer exist in this model and were dropped.",
+
+    // Step 1 — target bar
+    "allItems":          "All items",
+    "countBare":         "{0}",
+    "printSetsHeader":   "REVIT PRINT SETS",
+    "importTip":         "Click to import this print set and check every sheet in it.",
+    "importEmpty":       "Print set “{0}” has no members that exist in this model.",
+    "manageOnStep1":     "Create, import and save sets on Step 1.",
+    "noMembers":         "(no members)",
+    "previewPerSet":     "→ {0}.pdf",
+    "previewSingleFile": "→ part of {0}.pdf",
+    "previewPerSheet":   "→ {0} files, e.g. {1}",
+    "newSet":            "+ New set",
+    "defaultName":       "Set {0}",
+    "itemCount":         "{0} items",
+
+    // Step 2 — output granularity
+    "outputAs":          "OUTPUT AS",
+    "assignHint":        "Pick a set on the left, then check sheets — they file into that set. Clicking a Revit print set imports it and checks its sheets. A set's name is its PDF filename.",
+    "perSheet":          "One PDF\nper sheet",
+    "perSet":            "One PDF\nper set",
+    "singleFile":        "One PDF\nfor everything",
+    "perSheetShort":     "one PDF per sheet",
+    "perSetShort":       "one PDF per set",
+    "singleFileShort":   "one PDF for everything",
+
+    // Step 2 — set cards
+    "noSetsHint":        "No sets yet — everything selected exports as one group. Add a set, or auto-group, to split the run.",
+    "enableTip":         "Include this set in the export.",
+    "sort":              "Sort",
+    "sortBrowser":       "Browser",
+    "sortSheetNo":       "Sheet no.",
+    "sortName":          "Name",
+    "sortReverse":       "Reverse",
+    "dragTip":           "Drag to reorder — this order is the page order in a combined PDF.",
+    "moreMembers":       "…{0} more — use Sort to reorder in bulk",
+    "optionsHeader":     "SET OPTIONS",
+    "optName":           "Name",
+    "optSubfolder":      "Subfolder",
+    "saveAsPrintSet":    "Save as print set",
+    "duplicate":         "Duplicate",
+    "delete":            "Delete",
+    "copySuffix":        " copy",
+
+    // Step 2 — unassigned
+    "unassigned":        "Unassigned",
+    "unassignedWarn":    "{0} item(s) are not in any set and will export as “Unassigned”. Move them, or switch that card off.",
+    "moveAllTo":         "Move all → {0}",
+
+    // Step 2 — actions
+    "autoPrefix":        "Auto-group by sheet prefix",
+    "autoFolder":        "Auto-group by browser folder",
+    "autoDone":          "Created {0} set(s) from {1} item(s). Groups smaller than 3 were merged into “Other”.",
+    "autoNothing":       "Nothing selected to group.",
+    "otherGroup":        "Other",
+    "imported":          "Imported print set “{0}” as a set of {1} item(s).",
+    "saveSets":          "Save sets",
+
+    // Step 3 — naming
+    "unnamedFile":       "(name this set)",
+    "expandTip":         "Click to open — order, options and per-format overrides",
+    "collapseTip":       "Click to close",
+
+    // Step 8 — output
+    "subfolderLabel":    "Give each set its own subfolder",
+    "subfolderDesc":     "Creates PDF\\Architectural\\ under the output folder.",
+    "existingHeader":    "IF A FILE ALREADY EXISTS",
+    "existingLabel":     "Action"
   },
   "log": {
     "printSetNameRequired":  "Enter a name for the print set before saving.",
@@ -105,7 +177,6 @@
     "noDoc":          "No active Revit document — please open a project before exporting.",
     "noFolder":       "Output folder not specified.",
     "folderFail":     "Cannot create output folder: {0}",
-    "droppedWarn":    "{0} element(s) could not be resolved — they may have been deleted since the window was opened.",
     "noElements":     "No elements found for the selected IDs.",
     "noTitleblock":   "Sheet {0} has no titleblock — paper size may be incorrect.",
     "nwcNeedsViews":  "NWC: Skipped — NWC requires Views mode (3D views only). Switch to Views in Step 1.",
@@ -114,17 +185,9 @@
     "fatalError":     "Bulk Export error: {0}",
     "nameCollision":  "{0}: two items resolved to the same filename '{1}' — saved the second as '{2}' so it isn't overwritten.",
     "printSetSaved":  "Saved print set '{0}'.",
-    "packNoItems":    "Print set '{0}': none of its members exist in the model anymore — skipped.",
-    "pdfPackOk":      "PDF (print set): {0}.pdf [{1} sheets]",
-    "pdfPackFalse":   "PDF failed — print set '{0}': export returned false.",
-    "pdfPackFail":    "PDF failed — print set '{0}': {1}",
-    "dwgPackNoSetup": "DWG setup '{0}' not found — print set '{1}' DWG skipped.",
     "dwgOk":          "DWG: {0}.dwg",
     "dwgFalse":       "DWG failed — {0}: export returned false.",
     "dwgFail":        "DWG failed — {0}: {1}",
-    "pdfCombinedOk":  "PDF (combined): {0}.pdf [{1} items]",
-    "pdfCombinedFalse":"PDF failed — combined export returned false.",
-    "pdfCombinedFail":"PDF failed — combined: {0}",
     "pdfOk":          "PDF: {0}.pdf",
     "pdfFalse":       "PDF failed — {0}: export returned false.",
     "pdfFail":        "PDF failed — {0}: {1}",
@@ -134,6 +197,20 @@
     "nwcFail":        "NWC failed — {0}: {1}",
     "ifcNot3d":       "IFC: Skipped {0} — not a 3D view.",
     "ifcOk":          "IFC: {0}.ifc",
-    "ifcFail":        "IFC failed — {0}: {1}"
+    "ifcFail":        "IFC failed — {0}: {1}",
+    "nameFallback":   "{0}: pattern '{1}' produced no usable filename for {3} '{2}' — saved as '{4}' instead.",
+    "planEmpty":      "Nothing to export — no format is enabled for any set.",
+    "setMembersMissing": "Set '{0}': {1} of {2} member(s) no longer exist in the model — skipping those.",
+    "setEmpty":       "Set '{0}': no members left to export — skipped.",
+    "titleblocksOk":  "Titleblocks: all {0} sheet(s) have one.",
+    "singleFileDupes":"{0} item(s) appear in more than one set — each is included once, at its first position.",
+    "existsCheckFailed": "Could not check whether '{0}' already exists: {1}",
+    "noExisting":     "No output files already exist in the target folder(s).",
+    "existingOverwrite": "{0} of {1} output file(s) already exist and WILL BE OVERWRITTEN.",
+    "existingSkip":   "{0} of {1} output file(s) already exist and will be skipped.",
+    "existingSuffix": "{0} output file(s) already existed — a numbered suffix was added so nothing is overwritten.",
+    "skippedExisting":"Skipped {0} — the file already exists.",
+    "combinedStarting": "Exporting {0} items to a single PDF ('{1}') — Revit runs this as one operation; it cannot be cancelled once started and may take several minutes.",
+    "pdfCombinedOk2": "PDF (combined): {0}.pdf [{1} items, {2}]"
   }
 }

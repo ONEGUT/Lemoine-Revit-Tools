@@ -11,6 +11,18 @@ using LemoineTools.Framework;
 namespace LemoineTools.Framework.Controls
 {
     /// <summary>
+    /// A short label rendered at the right of a <see cref="BrowserTreePicker"/> row, tinted with
+    /// its own data colour (hex, like the legend/filter tools store theirs — not a theme key,
+    /// because the colour identifies a user's group rather than a piece of chrome).
+    /// </summary>
+    public struct RowBadge
+    {
+        public string Text;
+        public string AccentHex;
+        public RowBadge(string text, string accentHex) { Text = text; AccentHex = accentHex; }
+    }
+
+    /// <summary>
     /// View/sheet picker that mirrors the source document's Project Browser
     /// organization exactly — folder titles, nesting, ordering, and dependent
     /// views nested under their primary. Feed it the snapshot captured by
@@ -47,6 +59,21 @@ namespace LemoineTools.Framework.Controls
         /// prior selection and folder checkboxes are hidden. Set before <see cref="SetTree"/>.
         /// </summary>
         public bool SingleSelect { get; set; } = false;
+
+        /// <summary>
+        /// Optional per-row badge — a short label rendered at the right of an eligible row, tinted
+        /// with its own data colour. Null (the default) renders every row exactly as before, so
+        /// existing callers are unaffected. Set before <see cref="SetTree"/>.
+        ///
+        /// Bulk Export uses it to write each checked sheet's target set onto the row: assigning
+        /// while selecting means the active set is modal state, and modal state that is not
+        /// visible on the thing it governs is how a batch silently lands in the wrong set.
+        /// </summary>
+        public Func<long, RowBadge?>? RowBadgeProvider { get; set; }
+
+        // Badge hosts by leaf id, so RefreshBadges can repaint without rebuilding the tree —
+        // a full rebuild during a click would destroy the checkbox that was just clicked.
+        private readonly Dictionary<long, Border> _badgeSlots = new Dictionary<long, Border>();
 
         /// <summary>Accessible name announced by screen readers when the control receives focus.</summary>
         public string AccessibleName { set => AutomationProperties.SetName(this, value ?? string.Empty); }
@@ -172,6 +199,9 @@ namespace LemoineTools.Framework.Controls
         private void RebuildRows()
         {
             _treeStack.Children.Clear();
+            // Slots belong to the rows being discarded — keeping them would leak every collapsed
+            // row's Border for the window's lifetime and let RefreshBadges paint dead visuals.
+            _badgeSlots.Clear();
 
             bool filtering = _filter.Length > 0;
             Dictionary<Node, bool>? matches = filtering ? new Dictionary<Node, bool>() : null;
@@ -318,6 +348,29 @@ namespace LemoineTools.Framework.Controls
                 dock.Children.Add(count);
             }
 
+            // Badge slot — created for every eligible row (collapsed when there is no badge) so
+            // RefreshBadges can fill it later without touching the tree structure.
+            if (n.Eligible)
+            {
+                var slot = new Border
+                {
+                    BorderThickness   = new Thickness(1),
+                    Padding           = new Thickness(7, 0, 7, 1),
+                    Margin            = new Thickness(6, 0, 2, 0),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Visibility        = Visibility.Collapsed,
+                };
+                slot.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_SM");
+                var badgeText = new TextBlock { VerticalAlignment = VerticalAlignment.Center };
+                badgeText.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+                badgeText.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+                slot.Child = badgeText;
+                _badgeSlots[n.Src.Id!.Value] = slot;
+                ApplyBadge(n.Src.Id!.Value, slot);
+                DockPanel.SetDock(slot, Dock.Right);
+                dock.Children.Add(slot);
+            }
+
             dock.Children.Add(caret);
             dock.Children.Add(checkSlot);
             dock.Children.Add(label);
@@ -370,6 +423,51 @@ namespace LemoineTools.Framework.Controls
         {
             if (!_expanded.Remove(n)) _expanded.Add(n);
             RebuildRows();
+        }
+
+        // ── Row badges ────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Repaints every visible row badge from <see cref="RowBadgeProvider"/>. Call after the
+        /// badge source changes (e.g. the caller re-filed an item). Cheap and structure-preserving
+        /// — it never rebuilds rows, so it is safe to call from inside a checkbox handler.
+        /// </summary>
+        public void RefreshBadges()
+        {
+            foreach (var kvp in _badgeSlots) ApplyBadge(kvp.Key, kvp.Value);
+        }
+
+        private void ApplyBadge(long id, Border slot)
+        {
+            RowBadge? badge = null;
+            if (RowBadgeProvider != null)
+            {
+                // A caller's provider throwing would take down the whole tree render, and on a
+                // tool window's own STA thread that is a hard Revit crash, not an exception.
+                try { badge = RowBadgeProvider(id); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("BrowserTreePicker: row badge provider", ex); }
+            }
+
+            if (badge == null || string.IsNullOrEmpty(badge.Value.Text))
+            {
+                slot.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            var color = BrushHelper.ColorFromHex(badge.Value.AccentHex, Colors.Gray);
+            var fill  = new SolidColorBrush(Color.FromArgb(38, color.R, color.G, color.B));
+            var line  = new SolidColorBrush(color);
+            fill.Freeze();
+            line.Freeze();   // shared across a per-STA-thread window — never hand out an unfrozen brush
+
+            slot.Background  = fill;
+            slot.BorderBrush = line;
+            if (slot.Child is TextBlock tb)
+            {
+                tb.Text       = badge.Value.Text;
+                tb.Foreground = line;
+            }
+            slot.Visibility = Visibility.Visible;
         }
 
         // ── Selection plumbing ────────────────────────────────────────────────
