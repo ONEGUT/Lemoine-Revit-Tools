@@ -244,3 +244,28 @@ choice, like every other option in this tool — nothing project-specific is per
    Logged whenever the type actually changes.
 3. **Base branch** — `claude/legend-placement-function-g0f43c`, which already exists
    and carries the current main tip (PRs #131 and #132).
+4. **Legends stay decoupled from view matching** — a target sheet that matched no
+   views still receives its legends (§5 items 11, 13, 14).
+
+---
+
+## 9. As built — deltas from the plan
+
+Three things the implementation added that the plan did not call for. All came out of
+the post-change silent-failure scan.
+
+1. **A partial read of a target sheet's legends now skips that sheet.** `CaptureLegends`
+   reports whether it read the sheet in full. It matters more than a normal swallowed
+   error: an incomplete read is indistinguishable from "this sheet does not have the
+   legend", and this pass answers a missing legend by *creating* one — so swallowing it
+   would have silently duplicated legends on top of the ones already there. The sheet is
+   left untouched and reported instead. On the reference side a partial read is only
+   lossy (a legend never gets copied), so it warns and carries on.
+2. **The viewport-type change is only reported for a legend that already existed.** A
+   newly created viewport is born with the document's default type, so adopting the
+   reference's is part of placing it — reporting that would have put a warning line
+   against every legend placed on every sheet, which is the common case.
+3. **Two diagnostics-only paths were promoted to the run log**: a refused view-title
+   write (the view path already warned for the same failure) and a legend whose outline
+   could not be read at verification time — the latter is a placement that was never
+   checked, which a silent `continue` would have made look like a clean verification.

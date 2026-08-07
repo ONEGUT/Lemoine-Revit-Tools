@@ -60,6 +60,13 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
         /// annotation-crop margins are copied.</summary>
         public bool InheritCropSize { get; set; } = false;
 
+        // ── Sheet content ─────────────────────────────────────────────────────
+        /// <summary>Copy the reference sheet's legend placements onto each target sheet: place the
+        /// legend where the target does not carry it, move the target's own instance where it does.
+        /// Independent of the view alignment — a target that matched no views still gets its
+        /// legends.</summary>
+        public bool PlaceLegends { get; set; } = false;
+
         // ── Callbacks ─────────────────────────────────────────────────────────
         public Action<string, string>?     PushLog    { get; set; }
         public Action<int, int, int, int>? OnProgress { get; set; }
@@ -88,6 +95,11 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
         private const double MinCropOffsetFt = 1e-4;   // Revit rejects 0 / negative annotation-crop offsets.
         private const double PlacementTolFt  = 1e-6;   // sheet feet — below this a box is where it should be.
         private const double CurveMatchTolFt = 1e-6;
+
+        // Two viewports of the SAME legend draw the same footprint, so a size difference between
+        // their outlines is a real difference in title state — not rounding. Loose enough not to
+        // fire on floating-point noise, tight enough that a title band can never hide under it.
+        private const double OutlineSizeTolFt = 1e-4;
 
         // ── Per-run caches, cleared in Execute's finally ──────────────────────
         // The source side of a grid comparison is identical for every target aligned to the same
@@ -137,13 +149,27 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                 foreach (var s in sourceSheets)
                 {
                     var entries = CaptureSheet(doc, s);
+                    // A reference sheet carrying only legends has nothing for the view matcher, but
+                    // it is still a usable reference when legends are being placed — so it is only
+                    // dropped when it offers neither. It still scores 0 on views, so it can only be
+                    // chosen for a target that matched nothing anywhere.
+                    var legends = new List<LegendEntry>();
                     string label = $"{s.SheetNumber} - {s.Name}";
-                    if (entries.Count == 0)
+                    if (PlaceLegends)
+                    {
+                        legends = CaptureLegends(doc, s, out bool legendsComplete);
+                        // A partial read here is not destructive — it can only mean a legend the
+                        // reference carries is never copied — but the user would have no way to tell
+                        // that from a legend they simply forgot to place.
+                        if (!legendsComplete)
+                            Log(AppStrings.T("testing.alignSheetViews.log.legendSourceReadPartial", label), "warn");
+                    }
+                    if (entries.Count == 0 && legends.Count == 0)
                     {
                         Log(AppStrings.T("testing.alignSheetViews.log.sourceNoViews", label), "warn");
                         continue;
                     }
-                    sources.Add(new SourceSheet(label, entries));
+                    sources.Add(new SourceSheet(s.Id, label, entries, legends));
                 }
                 if (sources.Count == 0)
                 {
@@ -225,6 +251,13 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
             var allPairs      = new List<MatchedPair>();
             var pendingElbows = new List<PendingElbow>();
 
+            // Legend work, all of which needs the run's regenerate before it can be checked.
+            var legendPlacements = new List<LegendPlacement>();
+            var legendTally      = new LegendTally();
+            // "This reference has no legends" is a property of the REFERENCE, not of the target
+            // being processed — logging it per target would repeat one fact once per sheet.
+            var legendSourcesReported = new HashSet<string>();
+
             for (int i = 0; i < targets.Count; i++)
             {
                 if (RunState.CancelRequested)
@@ -239,16 +272,11 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                 int alignedHere = 0;
 
                 var targetEntries = CaptureSheet(doc, sheet);
-                if (targetEntries.Count == 0)
-                {
-                    Log(AppStrings.T("testing.alignSheetViews.log.noPlaceableViews", label), "fail");
-                    f++;
-                    onProgress(Pct(i + 1, total), p, f, s);
-                    continue;
-                }
 
                 // Pick the best source sheet for this target. One source is the common case and
-                // needs no scoring at all.
+                // needs no scoring at all. This runs even for a sheet with no placeable views:
+                // the alignment has nothing to do there, but the legend pass still needs to know
+                // which reference this target belongs to.
                 SourceSheet? bestSource;
                 SheetMatch?  bestMatch;
                 if (sources.Count == 1)
@@ -270,131 +298,175 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                     }
                 }
 
-                if (bestSource == null || bestMatch == null || bestMatch.Pairs.Count == 0)
+                // A sheet the alignment cannot act on is still reported as a failure exactly as
+                // before — it just no longer skips the legend pass on its way out, because legend
+                // placement never depended on a view matching in the first place.
+                bool alignable = bestSource != null && bestMatch != null && bestMatch.Pairs.Count > 0;
+                if (targetEntries.Count == 0)
+                {
+                    Log(AppStrings.T("testing.alignSheetViews.log.noPlaceableViews", label), "fail");
+                    f++;
+                }
+                else if (!alignable)
                 {
                     Log(AppStrings.T("testing.alignSheetViews.log.noCounterpart", label, sources.Count), "fail");
                     f++;
-                    onProgress(Pct(i + 1, total), p, f, s);
-                    continue;
                 }
 
-                // Report the gaps for the chosen source.
-                foreach (var miss in bestMatch.Missing)
+                // Spelled out rather than reusing `alignable` so the compiler can see the two
+                // references are non-null inside the block — the condition is the same one.
+                if (bestMatch != null && bestSource != null && bestMatch.Pairs.Count > 0)
                 {
-                    Log(AppStrings.T("testing.alignSheetViews.log.missing", label, miss.ViewName), "fail");
-                    DiagnosticsLog.Warn("AlignSheetViews", $"No counterpart for '{miss.ViewName}' on sheet {sheet.Id.Value}.");
-                    f++;
-                }
-                foreach (var amb in bestMatch.Ambiguous)
-                {
-                    Log(AppStrings.T("testing.alignSheetViews.log.ambiguous", label, amb.src.ViewName, amb.a.ViewName, amb.b.ViewName), "fail");
-                    DiagnosticsLog.Warn("AlignSheetViews", $"Ambiguous match for '{amb.src.ViewName}' on sheet {sheet.Id.Value}.");
-                    f++;
-                }
-                foreach (var extra in bestMatch.Extra)
-                {
-                    Log(AppStrings.T("testing.alignSheetViews.log.extra", label, extra.ViewName), "warn");
-                    s++;
-                }
-
-                // Quality warnings per matched pair (anchor still aligns).
-                foreach (var pr in bestMatch.Pairs)
-                {
-                    pr.Label = label;
-                    if (pr.Target.Scale != pr.Source.Scale)
-                        Log(AppStrings.T("testing.alignSheetViews.log.scaleDiffers", label, pr.Target.ViewName, pr.Target.Scale, pr.Source.Scale), "warn");
-                    if (!OrientationMatches(pr.Source, pr.Target))
-                        Log(AppStrings.T("testing.alignSheetViews.log.orientationDiffers", label, pr.Target.ViewName), "warn");
-                    if (pr.Target.Rotation != ViewportRotation.None)
-                        Log(AppStrings.T("testing.alignSheetViews.log.rotated", label, pr.Target.ViewName, pr.Target.Rotation), "warn");
-                }
-
-                // ── Phase A — every write whose result the alignment can predict ──
-                if (InheritScopeBox)
-                {
-                    foreach (var pr in bestMatch.Pairs)
+                    // Report the gaps for the chosen source.
+                    foreach (var miss in bestMatch.Missing)
                     {
-                        if (pr.Source.ScopeBoxId == ElementId.InvalidElementId) continue;
-                        if (AssignScopeBox(doc, pr, label)) pr.GotScopeBox = true;
-                    }
-                }
-                if (InheritCropSize)
-                    foreach (var pr in bestMatch.Pairs) InheritCropGeometry(doc, pr, label);
-                if (InheritCropVisibility)
-                    foreach (var pr in bestMatch.Pairs) SetCropVisibility(doc, pr, label);
-
-                List<GridPlan>? gridPlans = null;
-                if (InheritGridExtents)
-                {
-                    gridPlans = PrepareGrids(doc, bestMatch.Pairs, label);
-                    // One regen for the whole sheet so the extent-mode switches are live before any
-                    // curve is written — Revit's ordering requirement, and the only regen left
-                    // inside the loop. Never per grid and never per view.
-                    if (gridPlans.Any(g => g.Writes.Count > 0)) doc.Regenerate();
-                }
-
-                // ── Phase B — the writes that had to follow that regen ──
-                if (gridPlans != null)
-                {
-                    foreach (var plan in gridPlans)
-                    {
-                        WriteGridCurves(plan);
-                        QueueElbows(plan, pendingElbows);
-                        ReportGridTally(plan, label);
-                    }
-                }
-
-                foreach (var pr in bestMatch.Pairs)
-                {
-                    if (TryAlign(doc, pr))
-                    {
-                        MatchTitleLineLength(doc, pr);
-                        allPairs.Add(pr);
-                        alignedHere++;
-                        p++;
-                    }
-                    else
-                    {
-                        Log(AppStrings.T("testing.alignSheetViews.log.failedMove", label, pr.Target.ViewName), "fail");
+                        Log(AppStrings.T("testing.alignSheetViews.log.missing", label, miss.ViewName), "fail");
+                        DiagnosticsLog.Warn("AlignSheetViews", $"No counterpart for '{miss.ViewName}' on sheet {sheet.Id.Value}.");
                         f++;
                     }
+                    foreach (var amb in bestMatch.Ambiguous)
+                    {
+                        Log(AppStrings.T("testing.alignSheetViews.log.ambiguous", label, amb.src.ViewName, amb.a.ViewName, amb.b.ViewName), "fail");
+                        DiagnosticsLog.Warn("AlignSheetViews", $"Ambiguous match for '{amb.src.ViewName}' on sheet {sheet.Id.Value}.");
+                        f++;
+                    }
+                    foreach (var extra in bestMatch.Extra)
+                    {
+                        Log(AppStrings.T("testing.alignSheetViews.log.extra", label, extra.ViewName), "warn");
+                        s++;
+                    }
+
+                    // Quality warnings per matched pair (anchor still aligns).
+                    foreach (var pr in bestMatch.Pairs)
+                    {
+                        pr.Label = label;
+                        if (pr.Target.Scale != pr.Source.Scale)
+                            Log(AppStrings.T("testing.alignSheetViews.log.scaleDiffers", label, pr.Target.ViewName, pr.Target.Scale, pr.Source.Scale), "warn");
+                        if (!OrientationMatches(pr.Source, pr.Target))
+                            Log(AppStrings.T("testing.alignSheetViews.log.orientationDiffers", label, pr.Target.ViewName), "warn");
+                        if (pr.Target.Rotation != ViewportRotation.None)
+                            Log(AppStrings.T("testing.alignSheetViews.log.rotated", label, pr.Target.ViewName, pr.Target.Rotation), "warn");
+                    }
+
+                    // ── Phase A — every write whose result the alignment can predict ──
+                    if (InheritScopeBox)
+                    {
+                        foreach (var pr in bestMatch.Pairs)
+                        {
+                            if (pr.Source.ScopeBoxId == ElementId.InvalidElementId) continue;
+                            if (AssignScopeBox(doc, pr, label)) pr.GotScopeBox = true;
+                        }
+                    }
+                    if (InheritCropSize)
+                        foreach (var pr in bestMatch.Pairs) InheritCropGeometry(doc, pr, label);
+                    if (InheritCropVisibility)
+                        foreach (var pr in bestMatch.Pairs) SetCropVisibility(doc, pr, label);
+
+                    List<GridPlan>? gridPlans = null;
+                    if (InheritGridExtents)
+                    {
+                        gridPlans = PrepareGrids(doc, bestMatch.Pairs, label);
+                        // One regen for the whole sheet so the extent-mode switches are live before any
+                        // curve is written — Revit's ordering requirement, and the only regen left
+                        // inside the loop. Never per grid and never per view.
+                        if (gridPlans.Any(g => g.Writes.Count > 0)) doc.Regenerate();
+                    }
+
+                    // ── Phase B — the writes that had to follow that regen ──
+                    if (gridPlans != null)
+                    {
+                        foreach (var plan in gridPlans)
+                        {
+                            WriteGridCurves(plan);
+                            QueueElbows(plan, pendingElbows);
+                            ReportGridTally(plan, label);
+                        }
+                    }
+
+                    foreach (var pr in bestMatch.Pairs)
+                    {
+                        if (TryAlign(doc, pr))
+                        {
+                            MatchTitleLineLength(doc, pr);
+                            allPairs.Add(pr);
+                            alignedHere++;
+                            p++;
+                        }
+                        else
+                        {
+                            Log(AppStrings.T("testing.alignSheetViews.log.failedMove", label, pr.Target.ViewName), "fail");
+                            f++;
+                        }
+                    }
                 }
+
+                // ── Legends — deliberately outside the `alignable` gate ──
+                // A legend carries no crop box and no world geometry, so its placement is a copy of
+                // a sheet coordinate and owes nothing to whether the views matched. Gating it on the
+                // alignment would mean a sheet whose views could not be paired silently lost its
+                // legends too, for a reason that has nothing to do with them.
+                if (PlaceLegends && bestSource != null)
+                    PlaceLegendsOnSheet(doc, sheet, bestSource, label,
+                                        legendTally, legendPlacements, legendSourcesReported,
+                                        ref p, ref f, ref s);
 
                 // One line per sheet. A clean sheet says so and nothing else; a sheet with problems
                 // points at the detail already printed above it rather than repeating it. With more
                 // than one reference in play the line also names the one this sheet was aligned to —
                 // otherwise a target matched to the wrong reference is invisible.
-                bool nameRef = sources.Count > 1;
-                Log(_sheetIssues == 0
-                        ? (nameRef
-                            ? AppStrings.T("testing.alignSheetViews.log.sheetOkRef", label, alignedHere, bestSource.Label)
-                            : AppStrings.T("testing.alignSheetViews.log.sheetOk", label, alignedHere))
-                        : (nameRef
-                            ? AppStrings.T("testing.alignSheetViews.log.sheetWithIssuesRef", label, alignedHere, _sheetIssues, bestSource.Label)
-                            : AppStrings.T("testing.alignSheetViews.log.sheetWithIssues", label, alignedHere, _sheetIssues)),
-                    _sheetIssues == 0 ? "pass" : "warn");
+                // Only sheets the alignment actually ran on get this line: one that failed out above
+                // has already said so, and a second line claiming "0 views aligned" would read as a
+                // separate result rather than the same one.
+                if (alignable && bestSource != null)
+                {
+                    bool nameRef = sources.Count > 1;
+                    Log(_sheetIssues == 0
+                            ? (nameRef
+                                ? AppStrings.T("testing.alignSheetViews.log.sheetOkRef", label, alignedHere, bestSource.Label)
+                                : AppStrings.T("testing.alignSheetViews.log.sheetOk", label, alignedHere))
+                            : (nameRef
+                                ? AppStrings.T("testing.alignSheetViews.log.sheetWithIssuesRef", label, alignedHere, _sheetIssues, bestSource.Label)
+                                : AppStrings.T("testing.alignSheetViews.log.sheetWithIssues", label, alignedHere, _sheetIssues)),
+                        _sheetIssues == 0 ? "pass" : "warn");
+                }
 
                 onProgress(Pct(i + 1, total), p, f, s);
             }
 
             // ── Run end — the one place live geometry is genuinely required ──
-            if (allPairs.Count > 0)
+            if (allPairs.Count > 0 || legendPlacements.Count > 0)
             {
                 // Everything above wrote without reading back: boxes are placed, titles have their
-                // line lengths, leaders exist. This single regenerate makes all of it live.
+                // line lengths, leaders exist, and any legend this run created exists but has never
+                // been measured. This single regenerate makes all of it live — legends add none of
+                // their own, which is the whole reason their writes were queued rather than checked
+                // as they were made.
                 doc.Regenerate();
 
-                PositionElbows(pendingElbows);
+                // Legends go first: a viewport outline is only trustworthy on freshly regenerated
+                // geometry, and both passes below write boxes and label offsets that dirty it again.
+                int legendCorrected = legendPlacements.Count > 0
+                    ? VerifyLegendPlacements(doc, legendPlacements, legendTally)
+                    : 0;
 
-                // Only now is the real crop geometry available to check the predictions against.
-                int corrected = VerifyPlacements(doc, allPairs);
+                if (allPairs.Count > 0)
+                {
+                    PositionElbows(pendingElbows);
 
-                // A correction moves the box, and a title travels with its box — so a corrected
-                // viewport's label outline is stale and has to be recomputed before it is read.
-                if (corrected > 0) doc.Regenerate();
+                    // Only now is the real crop geometry available to check the predictions against.
+                    int corrected = VerifyPlacements(doc, allPairs);
 
-                AlignTitleOffsets(doc, allPairs);
+                    // A correction moves the box, and a title travels with its box — so a corrected
+                    // viewport's label outline is stale and has to be recomputed before it is read.
+                    // A corrected legend dirtied the document in exactly the same way, so it counts
+                    // toward this regenerate too.
+                    if (corrected > 0 || legendCorrected > 0) doc.Regenerate();
+
+                    AlignTitleOffsets(doc, allPairs);
+                }
             }
+
+            if (PlaceLegends) ReportLegendSummary(legendTally);
 
             return (p, f, s);
         }
@@ -1385,6 +1457,566 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                 Log(AppStrings.T("testing.alignSheetViews.log.viewTitlesSome", titled, titleFail), "warn");
         }
 
+        // ══════════════════════════════════════════════════════════════════════
+        // Legends
+        //
+        // A legend is the one view type Revit lets you place on many sheets — and more than once
+        // on the same sheet — so it is matched by the legend view's own ElementId rather than by
+        // geometry. It also carries no crop box and no world anchor, which is what makes this pass
+        // simple: a legend view's content and scale are properties of the VIEW, so the same legend
+        // draws the same footprint on every sheet, and "the same place on the target" is a straight
+        // copy of the source viewport's box centre. No scale conversion, no anchor projection.
+        //
+        // The one trap is the view title. GetBoxCenter and GetBoxOutline both measure the drawing
+        // AND its title, so two viewports' centres only describe the same drawing position once
+        // their title state matches — which is why the type and label settings are copied before
+        // the centre is written, not after.
+        // ══════════════════════════════════════════════════════════════════════
+
+        /// <summary>
+        /// Reads every legend viewport on a sheet.
+        ///
+        /// <paramref name="complete"/> reports whether the sheet was read in full, and it matters:
+        /// an incomplete read of a TARGET sheet is indistinguishable from a sheet that does not have
+        /// the legend, and this pass responds to a missing legend by creating one. Swallowing the
+        /// difference would silently duplicate legends the sheet already carried.
+        /// </summary>
+        private List<LegendEntry> CaptureLegends(Document doc, ViewSheet sheet, out bool complete)
+        {
+            complete = true;
+            var entries = new List<LegendEntry>();
+            ICollection<ElementId> vpIds;
+            try { vpIds = sheet.GetAllViewports(); }
+            catch (Exception ex)
+            {
+                complete = false;
+                DiagnosticsLog.Swallowed($"AlignSheetViews: GetAllViewports (legends) on sheet {sheet.Id.Value}", ex);
+                return entries;
+            }
+
+            foreach (var vpId in vpIds)
+            {
+                try
+                {
+                    if (!(doc.GetElement(vpId) is Viewport vp)) continue;
+                    if (!(doc.GetElement(vp.ViewId) is View view) || view.IsTemplate) continue;
+                    if (view.ViewType != ViewType.Legend) continue;
+
+                    entries.Add(new LegendEntry
+                    {
+                        ViewportId      = vp.Id,
+                        ViewId          = view.Id,
+                        ViewName        = view.Name,
+                        BoxCenter       = vp.GetBoxCenter(),
+                        Rotation        = vp.Rotation,
+                        TypeId          = vp.GetTypeId(),
+                        LabelLineLength = vp.LabelLineLength,
+                        LabelOffset     = vp.LabelOffset,
+                    });
+                }
+                catch (Exception ex)
+                {
+                    complete = false;
+                    DiagnosticsLog.Swallowed($"AlignSheetViews: capture legend viewport {vpId.Value}", ex);
+                }
+            }
+            return entries;
+        }
+
+        /// <summary>
+        /// Pairs the reference sheet's legend instances with the target's, one legend view at a time.
+        ///
+        /// Within a legend view, instances are paired <b>globally nearest-first</b> rather than in
+        /// list order, so a legend already roughly where it belongs maps to the source instance it
+        /// actually corresponds to. Leftovers on the source side are placements to create; leftovers
+        /// on the target side are the user's own extra copies and are never touched.
+        /// </summary>
+        private static LegendMatch MatchLegends(List<LegendEntry> srcLegends, List<LegendEntry> tgtLegends)
+        {
+            var res         = new LegendMatch();
+            var usedTargets = new HashSet<long>();
+
+            foreach (var grp in srcLegends.GroupBy(e => e.ViewId.Value))
+            {
+                var sources = grp.ToList();
+                var targets = tgtLegends.Where(t => t.ViewId.Value == grp.Key).ToList();
+
+                var cands = new List<(LegendEntry S, LegendEntry T, double D)>();
+                foreach (var sl in sources)
+                    foreach (var tl in targets)
+                        cands.Add((sl, tl, sl.BoxCenter.DistanceTo(tl.BoxCenter)));
+
+                var pairedSources = new HashSet<long>();
+                foreach (var c in cands.OrderBy(x => x.D))
+                {
+                    if (pairedSources.Contains(c.S.ViewportId.Value)) continue;
+                    if (usedTargets.Contains(c.T.ViewportId.Value))   continue;
+                    pairedSources.Add(c.S.ViewportId.Value);
+                    usedTargets.Add(c.T.ViewportId.Value);
+                    res.Move.Add((c.S, c.T));
+                }
+
+                foreach (var sl in sources.Where(x => !pairedSources.Contains(x.ViewportId.Value)))
+                    res.Create.Add(sl);
+            }
+
+            foreach (var tl in tgtLegends.Where(t => !usedTargets.Contains(t.ViewportId.Value)))
+                res.Extra.Add(tl);
+
+            return res;
+        }
+
+        /// <summary>Places / moves one target sheet's legends to match the reference sheet's.</summary>
+        private void PlaceLegendsOnSheet(
+            Document doc, ViewSheet sheet, SourceSheet source, string label,
+            LegendTally tally, List<LegendPlacement> queued, HashSet<string> sourcesReported,
+            ref int pass, ref int fail, ref int skip)
+        {
+            // A reference with no legends is a property of the reference, so it is said once rather
+            // than repeated for every target aligned to it — but it IS said: the user ticked this
+            // option, and a silently empty pass is indistinguishable from a broken one.
+            if (source.Legends.Count == 0)
+            {
+                if (sourcesReported.Add(source.Label))
+                {
+                    Log(AppStrings.T("testing.alignSheetViews.log.legendsNoneOnSource", source.Label), "warn");
+                    ReportSheetSchedules(doc, source);
+                }
+                return;
+            }
+            if (sourcesReported.Add(source.Label)) ReportSheetSchedules(doc, source);
+
+            // A partial read of the target's existing legends would be read as "this sheet does not
+            // have them" and answered by creating duplicates on top of what is already there. The
+            // sheet is left alone instead, and said so.
+            List<LegendEntry> targetLegends = CaptureLegends(doc, sheet, out bool readComplete);
+            if (!readComplete)
+            {
+                Log(AppStrings.T("testing.alignSheetViews.log.legendReadFailed", label), "fail");
+                fail++;
+                return;
+            }
+
+            LegendMatch match = MatchLegends(source.Legends, targetLegends);
+
+            int placedHere = 0, movedHere = 0, sameHere = 0;
+
+            foreach (var (src, tgt) in match.Move)
+            {
+                LegendOutcome outcome = MoveLegend(doc, src, tgt, label);
+                switch (outcome)
+                {
+                    case LegendOutcome.Moved:
+                        movedHere++; tally.Moved++; pass++;
+                        queued.Add(new LegendPlacement(sheet.Id, src.ViewportId, tgt.ViewportId, label, src.ViewName));
+                        break;
+                    case LegendOutcome.AlreadyInPlace:
+                        sameHere++; tally.AlreadyInPlace++;
+                        break;
+                    default:
+                        tally.Failed++; fail++;
+                        break;
+                }
+            }
+
+            foreach (var src in match.Create)
+            {
+                ElementId created = CreateLegend(doc, sheet, src, label);
+                if (created == ElementId.InvalidElementId) { tally.Failed++; fail++; continue; }
+                placedHere++; tally.Placed++; pass++;
+                queued.Add(new LegendPlacement(sheet.Id, src.ViewportId, created, label, src.ViewName));
+            }
+
+            foreach (var extra in match.Extra)
+            {
+                tally.LeftAlone++; skip++;
+                Log(AppStrings.T("testing.alignSheetViews.log.legendExtra", label, extra.ViewName), "warn");
+            }
+
+            if (placedHere > 0 || movedHere > 0)
+                Log(AppStrings.T("testing.alignSheetViews.log.legendsResult", label, placedHere, movedHere, sameHere), "pass");
+        }
+
+        /// <summary>
+        /// Moves an existing target legend onto the reference's placement. Returns what happened, so
+        /// a legend that was already correct is counted as such rather than as a move that did
+        /// nothing — the two look identical in a plain success count and only one of them is work.
+        /// </summary>
+        private LegendOutcome MoveLegend(Document doc, LegendEntry src, LegendEntry tgt, string label)
+        {
+            try
+            {
+                if (!(doc.GetElement(tgt.ViewportId) is Viewport vp))
+                {
+                    // The caller counts this as a failure, so it has to say so — a counted failure
+                    // with no line is the one kind the user cannot act on.
+                    Log(AppStrings.T("testing.alignSheetViews.log.legendMoveFailed", label, src.ViewName), "fail");
+                    DiagnosticsLog.Warn("AlignSheetViews",
+                        $"Legend viewport {tgt.ViewportId.Value} vanished between capture and move.");
+                    return LegendOutcome.Failed;
+                }
+
+                if (tgt.TypeId          == src.TypeId
+                 && tgt.Rotation        == src.Rotation
+                 && Math.Abs(tgt.LabelLineLength - src.LabelLineLength) <= PlacementTolFt
+                 && tgt.LabelOffset.DistanceTo(src.LabelOffset)         <= PlacementTolFt
+                 && tgt.BoxCenter.DistanceTo(src.BoxCenter)             <= PlacementTolFt)
+                    return LegendOutcome.AlreadyInPlace;
+
+                // A pinned viewport silently refuses to move, so the pin is lifted for the write and
+                // put back exactly as it was — including when the write throws.
+                bool wasPinned = vp.Pinned;
+                if (wasPinned) vp.Pinned = false;
+                try
+                {
+                    ApplyLegendAppearance(doc, vp, src, label, isNew: false);
+                    vp.SetBoxCenter(src.BoxCenter);
+                }
+                finally
+                {
+                    if (wasPinned)
+                    {
+                        try { vp.Pinned = true; }
+                        catch (Exception ex)
+                        {
+                            Log(AppStrings.T("testing.alignSheetViews.log.legendRepinFailed", label, src.ViewName), "warn");
+                            DiagnosticsLog.Swallowed($"AlignSheetViews: restore pin on legend viewport {tgt.ViewportId.Value}", ex);
+                        }
+                    }
+                }
+                return LegendOutcome.Moved;
+            }
+            catch (Exception ex)
+            {
+                Log(AppStrings.T("testing.alignSheetViews.log.legendMoveFailed", label, src.ViewName), "fail");
+                DiagnosticsLog.Swallowed($"AlignSheetViews: move legend viewport {tgt.ViewportId.Value}", ex);
+                return LegendOutcome.Failed;
+            }
+        }
+
+        /// <summary>Places a legend the target sheet does not carry. Returns the new viewport's id,
+        /// or <see cref="ElementId.InvalidElementId"/> if it could not be placed.</summary>
+        private ElementId CreateLegend(Document doc, ViewSheet sheet, LegendEntry src, string label)
+        {
+            try
+            {
+                if (!Viewport.CanAddViewToSheet(doc, sheet.Id, src.ViewId))
+                {
+                    Log(AppStrings.T("testing.alignSheetViews.log.legendCannotPlace", label, src.ViewName), "warn");
+                    DiagnosticsLog.Warn("AlignSheetViews",
+                        $"Revit will not add legend view {src.ViewId.Value} ('{src.ViewName}') to sheet {sheet.Id.Value}.");
+                    return ElementId.InvalidElementId;
+                }
+
+                Viewport vp = Viewport.Create(doc, sheet.Id, src.ViewId, src.BoxCenter);
+                if (vp == null)
+                {
+                    Log(AppStrings.T("testing.alignSheetViews.log.legendCreateFailed", label, src.ViewName), "fail");
+                    DiagnosticsLog.Warn("AlignSheetViews",
+                        $"Viewport.Create returned null for legend view {src.ViewId.Value} on sheet {sheet.Id.Value}.");
+                    return ElementId.InvalidElementId;
+                }
+
+                // Create placed the box at the reference's centre, but the writes below change what
+                // the box IS — a viewport type with a title draws a bigger box than one without, and
+                // the centre tracks it — so the centre is restated once the appearance is settled.
+                ApplyLegendAppearance(doc, vp, src, label, isNew: true);
+                vp.SetBoxCenter(src.BoxCenter);
+                return vp.Id;
+            }
+            catch (Exception ex)
+            {
+                Log(AppStrings.T("testing.alignSheetViews.log.legendCreateFailed", label, src.ViewName), "fail");
+                DiagnosticsLog.Swallowed($"AlignSheetViews: create legend {src.ViewId.Value} on sheet {sheet.Id.Value}", ex);
+                return ElementId.InvalidElementId;
+            }
+        }
+
+        /// <summary>
+        /// Mirrors the reference viewport's type, rotation and title settings onto the target.
+        ///
+        /// This is not cosmetic. The viewport TYPE is what decides whether a view title is drawn at
+        /// all, and <c>GetBoxCenter</c> measures the drawing together with its title — so a target
+        /// whose type differs from the reference's has a box of a different size, and giving the two
+        /// boxes the same centre would leave their drawings offset by half the difference. Each
+        /// write is guarded on its own: a viewport type that refuses one setting should not cost the
+        /// legend the others.
+        /// </summary>
+        /// <param name="isNew">True when the viewport was created by this run. A fresh viewport is
+        /// born with the document's default type, so adopting the reference's is part of placing it
+        /// — not a restyle of something the user had already set up, and not worth a line each.</param>
+        private void ApplyLegendAppearance(Document doc, Viewport vp, LegendEntry src, string label, bool isNew)
+        {
+            try
+            {
+                if (src.TypeId != ElementId.InvalidElementId
+                 && vp.GetTypeId() != src.TypeId
+                 && doc.GetElement(src.TypeId) is ElementType)
+                {
+                    vp.ChangeTypeId(src.TypeId);
+                    // Only an EXISTING legend's type change is worth a line: that one alters how a
+                    // legend the user already placed looks, not just where it sits.
+                    if (!isNew)
+                        Log(AppStrings.T("testing.alignSheetViews.log.legendTypeChanged", label, src.ViewName), "warn");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log(AppStrings.T("testing.alignSheetViews.log.legendTypeFailed", label, src.ViewName), "warn");
+                DiagnosticsLog.Swallowed($"AlignSheetViews: legend viewport type on {vp.Id.Value}", ex);
+            }
+
+            try { if (vp.Rotation != src.Rotation) vp.Rotation = src.Rotation; }
+            catch (Exception ex)
+            {
+                Log(AppStrings.T("testing.alignSheetViews.log.legendRotationFailed", label, src.ViewName), "warn");
+                DiagnosticsLog.Swallowed($"AlignSheetViews: legend rotation on viewport {vp.Id.Value}", ex);
+            }
+
+            // A refused title write leaves the legend drawing a different footprint than the
+            // reference, so the placement below no longer registers exactly — that is a user-visible
+            // outcome, not a diagnostics detail. The view path warns for the same failure.
+            try { vp.LabelLineLength = src.LabelLineLength; }
+            catch (Exception ex)
+            {
+                Log(AppStrings.T("testing.alignSheetViews.log.legendTitleFailed", label, src.ViewName), "warn");
+                DiagnosticsLog.Swallowed($"AlignSheetViews: legend LabelLineLength on viewport {vp.Id.Value}", ex);
+            }
+
+            try { vp.LabelOffset = src.LabelOffset; }
+            catch (Exception ex)
+            {
+                Log(AppStrings.T("testing.alignSheetViews.log.legendTitleFailed", label, src.ViewName), "warn");
+                DiagnosticsLog.Swallowed($"AlignSheetViews: legend LabelOffset on viewport {vp.Id.Value}", ex);
+            }
+        }
+
+        /// <summary>
+        /// Checks each placed legend against the geometry the document actually ended up with, and
+        /// returns how many had to be corrected.
+        ///
+        /// The size test is the whole point, and it is not optional. A viewport's box outline tracks
+        /// its view title, so a centre that has moved means one of two opposite things: at EQUAL
+        /// outline size the two viewports draw the same footprint and the gap is a genuine
+        /// misplacement to correct; at DIFFERENT size the box has grown around a stationary drawing,
+        /// and "correcting" the centre would take a legend that is sitting correctly and displace it
+        /// by half a title. So a size mismatch is reported and left alone — never corrected.
+        ///
+        /// Both remaining checks — off the drawing area, and overlapping something already on the
+        /// sheet — need the same outlines, so they ride along here rather than costing another pass.
+        /// </summary>
+        private int VerifyLegendPlacements(Document doc, List<LegendPlacement> placements, LegendTally tally)
+        {
+            int corrected = 0;
+
+            // Both per-sheet lookups are identical for every legend on that sheet, and one of them
+            // walks all its viewports — so they are resolved once per sheet, not once per legend.
+            var titleBlocks = new Dictionary<long, Outline?>();
+            var neighbours  = new Dictionary<long, List<(string Name, Outline Box)>>();
+
+            foreach (var pl in placements)
+            {
+                try
+                {
+                    if (!(doc.GetElement(pl.SourceViewportId) is Viewport sVp)) continue;
+                    if (!(doc.GetElement(pl.TargetViewportId) is Viewport tVp)) continue;
+
+                    Outline srcBox = sVp.GetBoxOutline();
+                    Outline tgtBox = tVp.GetBoxOutline();
+                    if (srcBox == null || tgtBox == null)
+                    {
+                        // Placed, but never measured — so none of the checks below ran for it. A
+                        // silent skip here is indistinguishable from a clean verification.
+                        Log(AppStrings.T("testing.alignSheetViews.log.legendVerifyFailed", pl.Label, pl.ViewName), "warn");
+                        DiagnosticsLog.Warn("AlignSheetViews",
+                            $"Legend viewport {pl.TargetViewportId.Value} ('{pl.ViewName}') returned no box outline — placement not verified.");
+                        continue;
+                    }
+
+                    double sw = srcBox.MaximumPoint.X - srcBox.MinimumPoint.X;
+                    double sh = srcBox.MaximumPoint.Y - srcBox.MinimumPoint.Y;
+                    double tw = tgtBox.MaximumPoint.X - tgtBox.MinimumPoint.X;
+                    double th = tgtBox.MaximumPoint.Y - tgtBox.MinimumPoint.Y;
+
+                    if (Math.Abs(sw - tw) > OutlineSizeTolFt || Math.Abs(sh - th) > OutlineSizeTolFt)
+                    {
+                        // Same legend view, different on-sheet footprint — the title state still
+                        // differs, so the two centres do not describe the same drawing position and
+                        // there is no correction that can be trusted.
+                        tally.SizeMismatch++;
+                        Log(AppStrings.T("testing.alignSheetViews.log.legendSizeDiffers", pl.Label, pl.ViewName), "warn");
+                        DiagnosticsLog.Warn("AlignSheetViews",
+                            $"Legend viewport {pl.TargetViewportId.Value} ('{pl.ViewName}') outline {tw:0.####}×{th:0.####} differs from the reference's {sw:0.####}×{sh:0.####} — left where it is.");
+                    }
+                    else
+                    {
+                        // Equal size, so equal centres mean equal drawings. SetBoxCenter is absolute,
+                        // which makes this exact rather than a nudge that could compound.
+                        XYZ truth = sVp.GetBoxCenter();
+                        XYZ cur   = tVp.GetBoxCenter();
+                        double dx = truth.X - cur.X, dy = truth.Y - cur.Y;
+                        double off = Math.Sqrt(dx * dx + dy * dy);
+                        if (off > PlacementTolFt)
+                        {
+                            tVp.SetBoxCenter(new XYZ(truth.X, truth.Y, cur.Z));
+                            corrected++;
+                            // The outline just moved with the box; shifting the one already in hand
+                            // keeps the two checks below exact without re-reading dirtied geometry.
+                            tgtBox = Translate(tgtBox, dx, dy);
+                            Log(AppStrings.T("testing.alignSheetViews.log.legendCorrected", pl.Label, pl.ViewName, F(off)), "warn");
+                        }
+                    }
+
+                    CheckLegendOnSheet(doc, pl, tgtBox, titleBlocks, neighbours);
+                }
+                catch (Exception ex)
+                {
+                    Log(AppStrings.T("testing.alignSheetViews.log.legendVerifyFailed", pl.Label, pl.ViewName), "warn");
+                    DiagnosticsLog.Swallowed($"AlignSheetViews: verify legend viewport {pl.TargetViewportId.Value}", ex);
+                }
+            }
+
+            return corrected;
+        }
+
+        /// <summary>
+        /// Warns when a legend has landed somewhere it should not be. Sheet coordinates are copied
+        /// verbatim from the reference — the same basis the view alignment uses — so a target whose
+        /// title block is a different size, or placed at a different origin, can receive a legend
+        /// that falls off the drawing area or on top of something already there. Both are named and
+        /// left in place: the position came from the reference, and quietly relocating it would be a
+        /// guess the user never asked for. Undo puts it back.
+        /// </summary>
+        private void CheckLegendOnSheet(
+            Document doc, LegendPlacement pl, Outline box,
+            Dictionary<long, Outline?> titleBlocks,
+            Dictionary<long, List<(string Name, Outline Box)>> neighbours)
+        {
+            long sheetKey = pl.SheetId.Value;
+
+            if (!titleBlocks.TryGetValue(sheetKey, out Outline? tb))
+            {
+                tb = TryTitleBlockOutline(doc, pl.SheetId);
+                titleBlocks[sheetKey] = tb;
+            }
+            if (tb != null
+             && (box.MinimumPoint.X < tb.MinimumPoint.X - OutlineSizeTolFt
+              || box.MinimumPoint.Y < tb.MinimumPoint.Y - OutlineSizeTolFt
+              || box.MaximumPoint.X > tb.MaximumPoint.X + OutlineSizeTolFt
+              || box.MaximumPoint.Y > tb.MaximumPoint.Y + OutlineSizeTolFt))
+            {
+                Log(AppStrings.T("testing.alignSheetViews.log.legendOffSheet", pl.Label, pl.ViewName), "warn");
+                DiagnosticsLog.Warn("AlignSheetViews",
+                    $"Legend viewport {pl.TargetViewportId.Value} ('{pl.ViewName}') falls outside the title block of sheet {sheetKey}.");
+            }
+
+            if (!neighbours.TryGetValue(sheetKey, out var others))
+            {
+                others = CaptureViewportBoxes(doc, pl.SheetId);
+                neighbours[sheetKey] = others;
+            }
+            foreach (var other in others)
+            {
+                if (!BoxesOverlap(box, other.Box)) continue;
+                Log(AppStrings.T("testing.alignSheetViews.log.legendOverlaps", pl.Label, pl.ViewName, other.Name), "warn");
+                break;   // one line names the collision; listing every viewport it touches adds nothing
+            }
+        }
+
+        /// <summary>The placed title block's on-sheet bounding box, or null when the sheet has none
+        /// (which is not an error — it just means there is no drawing area to test against).</summary>
+        private Outline? TryTitleBlockOutline(Document doc, ElementId sheetId)
+        {
+            try
+            {
+                if (!(doc.GetElement(sheetId) is ViewSheet sheet)) return null;
+                var tb = new FilteredElementCollector(doc, sheet.Id)
+                    .OfCategory(BuiltInCategory.OST_TitleBlocks)
+                    .WhereElementIsNotElementType()
+                    .FirstElement();
+                if (tb == null) return null;
+                BoundingBoxXYZ bb = tb.get_BoundingBox(sheet);
+                if (bb == null) return null;
+                return new Outline(bb.Min, bb.Max);
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Swallowed($"AlignSheetViews: title block bounds on sheet {sheetId.Value}", ex);
+                return null;
+            }
+        }
+
+        /// <summary>Every non-legend viewport's on-sheet footprint, for the overlap check.</summary>
+        private List<(string Name, Outline Box)> CaptureViewportBoxes(Document doc, ElementId sheetId)
+        {
+            var result = new List<(string, Outline)>();
+            try
+            {
+                if (!(doc.GetElement(sheetId) is ViewSheet sheet)) return result;
+                foreach (var vpId in sheet.GetAllViewports())
+                {
+                    try
+                    {
+                        if (!(doc.GetElement(vpId) is Viewport vp)) continue;
+                        if (!(doc.GetElement(vp.ViewId) is View view)) continue;
+                        if (view.ViewType == ViewType.Legend) continue;   // legend-on-legend is the user's own layout
+                        Outline box = vp.GetBoxOutline();
+                        if (box != null) result.Add((view.Name, box));
+                    }
+                    catch (Exception ex)
+                    {
+                        DiagnosticsLog.Swallowed($"AlignSheetViews: outline of viewport {vpId.Value}", ex);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Swallowed($"AlignSheetViews: viewport outlines on sheet {sheetId.Value}", ex);
+            }
+            return result;
+        }
+
+        private void ReportLegendSummary(LegendTally t)
+        {
+            if (t.Placed == 0 && t.Moved == 0 && t.AlreadyInPlace == 0 && t.LeftAlone == 0 && t.Failed == 0) return;
+            Log(AppStrings.T("testing.alignSheetViews.log.legendsSummary",
+                             t.Placed, t.Moved, t.AlreadyInPlace, t.LeftAlone),
+                t.Failed > 0 || t.SizeMismatch > 0 ? "warn" : "pass");
+        }
+
+        /// <summary>
+        /// Names any schedule instances on the reference sheet. A keynote legend is a SCHEDULE, not a
+        /// legend — it is a <c>ScheduleSheetInstance</c> rather than a viewport, so this tool cannot
+        /// place it. Saying so once beats letting the user find the gap on a plot and conclude the
+        /// legend pass is broken.
+        /// </summary>
+        private void ReportSheetSchedules(Document doc, SourceSheet source)
+        {
+            try
+            {
+                if (source.SheetId == ElementId.InvalidElementId) return;
+
+                int n = new FilteredElementCollector(doc, source.SheetId)
+                    .OfClass(typeof(ScheduleSheetInstance))
+                    .GetElementCount();
+                if (n > 0)
+                    Log(AppStrings.T("testing.alignSheetViews.log.legendSchedulesIgnored", source.Label, n), "warn");
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Swallowed($"AlignSheetViews: schedule scan on reference '{source.Label}'", ex);
+            }
+        }
+
+        private static Outline Translate(Outline o, double dx, double dy)
+            => new Outline(new XYZ(o.MinimumPoint.X + dx, o.MinimumPoint.Y + dy, o.MinimumPoint.Z),
+                           new XYZ(o.MaximumPoint.X + dx, o.MaximumPoint.Y + dy, o.MaximumPoint.Z));
+
+        /// <summary>In-plane overlap test. Touching edges are not an overlap.</summary>
+        private static bool BoxesOverlap(Outline a, Outline b)
+            => Overlap1D(a.MinimumPoint.X, a.MaximumPoint.X, b.MinimumPoint.X, b.MaximumPoint.X) > OutlineSizeTolFt
+            && Overlap1D(a.MinimumPoint.Y, a.MaximumPoint.Y, b.MinimumPoint.Y, b.MaximumPoint.Y) > OutlineSizeTolFt;
+
         // ── Capture ───────────────────────────────────────────────────────────
         /// <summary>Reads every viewport on a sheet that hosts a graphical, crop-bearing view.</summary>
         private List<VpEntry> CaptureSheet(Document doc, ViewSheet sheet)
@@ -1404,7 +2036,16 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                 {
                     if (!(doc.GetElement(vpId) is Viewport vp)) continue;
                     if (!(doc.GetElement(vp.ViewId) is View view) || view.IsTemplate) continue;
-                    if (view.Scale <= 0) continue;                 // perspective / schedule / legend — no model scale
+
+                    // Legends are viewports too, and a legend view DOES report a scale — so the
+                    // guard below never excluded them and only the crop-box test stood between a
+                    // legend and the view matcher. That is not something to leave to chance: two
+                    // legends are trivially "eligible" for each other (same ViewType, parallel
+                    // ViewDirection), and pairing them would move one by crop-anchor maths computed
+                    // from geometry a legend does not have. Legends belong to the legend pass.
+                    if (view.ViewType == ViewType.Legend) continue;
+
+                    if (view.Scale <= 0) continue;                 // perspective / schedule — no model scale
 
                     BoundingBoxXYZ cb = view.CropBox;
                     if (cb == null || cb.Transform == null) continue;
@@ -1812,15 +2453,85 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
             catch (Exception ex) { DiagnosticsLog.Swallowed("AlignSheetViews: configure failure handling", ex); }
         }
 
+        // ══════════════════════════════════════════════════════════════════════
+        // Legend types
+        // ══════════════════════════════════════════════════════════════════════
+
+        /// <summary>What happened to one legend the tool tried to move.</summary>
+        private enum LegendOutcome { Failed, Moved, AlreadyInPlace }
+
+        /// <summary>A legend viewport captured from a sheet. Everything here is read before the run
+        /// writes anything, and everything is a property of the VIEWPORT — the legend view itself is
+        /// never modified.</summary>
+        private sealed class LegendEntry
+        {
+            public ElementId        ViewportId      { get; set; } = ElementId.InvalidElementId;
+            public ElementId        ViewId          { get; set; } = ElementId.InvalidElementId;
+            public string           ViewName        { get; set; } = "";
+            public XYZ              BoxCenter       { get; set; } = XYZ.Zero;
+            public ViewportRotation Rotation        { get; set; } = ViewportRotation.None;
+            public ElementId        TypeId          { get; set; } = ElementId.InvalidElementId;
+            public double           LabelLineLength { get; set; }
+            public XYZ              LabelOffset     { get; set; } = XYZ.Zero;
+        }
+
+        /// <summary>One reference sheet's legends reconciled against one target sheet's.</summary>
+        private sealed class LegendMatch
+        {
+            /// <summary>Target instances to move onto their reference counterpart.</summary>
+            public List<(LegendEntry Src, LegendEntry Tgt)> Move { get; } = new List<(LegendEntry, LegendEntry)>();
+            /// <summary>Reference instances the target does not have — to be placed.</summary>
+            public List<LegendEntry> Create { get; } = new List<LegendEntry>();
+            /// <summary>Target instances the reference does not have. Reported, never deleted.</summary>
+            public List<LegendEntry> Extra  { get; } = new List<LegendEntry>();
+        }
+
+        /// <summary>A legend placed or moved this run, waiting on the run's regenerate before its
+        /// real on-sheet geometry can be measured.</summary>
+        private sealed class LegendPlacement
+        {
+            public LegendPlacement(ElementId sheetId, ElementId sourceViewportId,
+                                   ElementId targetViewportId, string label, string viewName)
+            {
+                SheetId          = sheetId;
+                SourceViewportId = sourceViewportId;
+                TargetViewportId = targetViewportId;
+                Label            = label;
+                ViewName         = viewName;
+            }
+            public ElementId SheetId          { get; }
+            public ElementId SourceViewportId { get; }
+            public ElementId TargetViewportId { get; }
+            public string    Label            { get; }
+            public string    ViewName         { get; }
+        }
+
+        /// <summary>Run-wide legend counts. Placed and Moved are split from AlreadyInPlace on
+        /// purpose: a single "N done" that counted no-op writes is what makes a run that changed
+        /// nothing look like a run that worked.</summary>
+        private sealed class LegendTally
+        {
+            public int Placed         { get; set; }
+            public int Moved          { get; set; }
+            public int AlreadyInPlace { get; set; }
+            public int LeftAlone      { get; set; }
+            public int Failed         { get; set; }
+            public int SizeMismatch   { get; set; }
+        }
+
         // ── A captured source sheet ───────────────────────────────────────────
         private sealed class SourceSheet
         {
-            public SourceSheet(string label, List<VpEntry> entries)
+            public SourceSheet(ElementId sheetId, string label, List<VpEntry> entries, List<LegendEntry> legends)
             {
-                Label = label; Entries = entries;
+                SheetId = sheetId; Label = label; Entries = entries; Legends = legends;
             }
-            public string        Label   { get; }
-            public List<VpEntry> Entries { get; }
+            public ElementId         SheetId { get; }
+            public string            Label   { get; }
+            public List<VpEntry>     Entries { get; }
+            /// <summary>Empty unless <see cref="PlaceLegends"/> is on — the capture is skipped
+            /// entirely when the option is off.</summary>
+            public List<LegendEntry> Legends { get; }
         }
 
         // ── One source-sheet → target-sheet matching result ───────────────────
