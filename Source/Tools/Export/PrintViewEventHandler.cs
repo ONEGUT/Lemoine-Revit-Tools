@@ -28,6 +28,8 @@ namespace LemoineTools.Tools.BulkExport
         public int       ZoomPercent   { get; set; } = 100;
         public string    ColorDepth    { get; set; } = "Color";
         public string    RasterQuality { get; set; } = "High";
+        public string    HiddenLines      { get; set; } = "Vector Processing";
+        public string    ExportQualityDpi { get; set; } = "300 DPI";
         public bool      ViewLinksInBlue              { get; set; } = false;
         public bool      ReplaceHalftoneWithThinLines { get; set; } = false;
 
@@ -119,7 +121,8 @@ namespace LemoineTools.Tools.BulkExport
                     {
                         var opts = ExportOptionsFactory.BuildPdfOptions(
                             filename, combine: false, placement: "Offset from Corner",
-                            ColorDepth, RasterQuality, ZoomSetting, ZoomPercent,
+                            ColorDepth, RasterQuality, HiddenLines, ExportQualityDpi,
+                            ZoomSetting, ZoomPercent,
                             ViewLinksInBlue, ReplaceHalftoneWithThinLines);
 
                         pushLog(AppStrings.T("export.printView.log.pdfExporting", filename), "info");

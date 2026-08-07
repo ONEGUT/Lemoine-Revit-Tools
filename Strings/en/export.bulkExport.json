@@ -14,7 +14,8 @@
     "s1": "{0} {1} selected",
     "s2None": "No formats selected",
     "s2Sets": "{0} sets · {1} · {2}", "s2Individual": "No sets · {0} · {1}",
-    "s4": "{0} · {1} · {2} · {3}",
+    // PDF Settings step summary: hidden lines · DPI · raster quality · colour · granularity.
+    "s4": "{0} · {1} · {2} · {3} · {4}",
     "s5Default": "Default DWG setup",
     "s6": "{0} · params: {1}",
     "s8NoFolder": "No output folder"
@@ -37,8 +38,10 @@
     "pctPercent": "%",
     "secOutputQuality": "OUTPUT QUALITY",
     "lblColorDepth": "Color Depth",
-    "lblRasterQuality": "Raster Quality",
     "lblHiddenLines": "Hidden Line Views",
+    "hiddenLinesHint": "Vector keeps linework as vectors where possible — shaded and transparent views always rasterize. Raster forces every view to an image.",
+    "lblRasterQuality": "Raster Quality",
+    "lblExportQuality": "Export Quality (DPI)",
     "secAdvanced": "ADVANCED",
     "advViewLinks": "View links in blue",
     "advViewLinksDesc": "Render linked Revit views with a blue tint in the PDF.",
@@ -82,7 +85,8 @@
     "namingRule": "Sets use their own name; single files use the sheet or view name",
     "sheetsValue": "{0} selected",
     "setsValue": "{0} set(s) · {1}",
-    "qualityValue": "{0} · {1}", "qualityPdfOff": "PDF disabled",
+    // Review row: hidden lines · DPI · raster quality · colour depth.
+    "qualityValue": "{0} · {1} · {2} · {3}", "qualityPdfOff": "PDF disabled",
     "warnSheetsMode": "{0} exports 3D views only and needs Views mode — it will be skipped while you're in Sheets mode."
   },
   // Short nouns substituted into log lines.

@@ -74,6 +74,9 @@ namespace LemoineTools.Tools.BulkExport
         private int    _zoomPct         = BulkExportSettings.Instance.ZoomPercent;
         private string _colorDepth      = BulkExportSettings.Instance.ColorDepth;
         private string _rasterQuality   = BulkExportSettings.Instance.RasterQuality;
+        private string _hiddenLines     = BulkExportSettings.Instance.HiddenLinesVector
+                                          ? "Vector Processing" : "Raster Processing";
+        private string _exportQualityDpi = BulkExportSettings.Instance.PdfExportQualityDpi;
         private bool   _viewLinksBlue   = BulkExportSettings.Instance.ViewLinksInBlue;
         private bool   _replaceHalftone = BulkExportSettings.Instance.ReplaceHalftoneWithThinLines;
 
@@ -281,10 +284,35 @@ namespace LemoineTools.Tools.BulkExport
                 GetIndex(new[] { "Color", "Grayscale", "Black & White" }, _colorDepth),
                 val => { _colorDepth = val; Fire(); });
 
+            // Hidden Line Views sits above the two raster knobs: it decides whether
+            // rasterizing happens at all, and Raster Quality / Export Quality only bite
+            // once something is being rasterized.
+            AddLabeledComboBox(outer, AppStrings.T("export.printView.labels.lblHiddenLines"),
+                ExportOptionsFactory.HiddenLineOptions(),
+                GetIndex(ExportOptionsFactory.HiddenLineOptions(), _hiddenLines),
+                val => { _hiddenLines = val; Fire(); });
+
+            var hiddenLinesHint = new TextBlock
+            {
+                Text         = AppStrings.T("export.printView.labels.hiddenLinesHint"),
+                TextWrapping = TextWrapping.Wrap,
+                FontStyle    = FontStyles.Italic,
+                Margin       = new Thickness(0, -2, 0, 6),
+            };
+            hiddenLinesHint.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            hiddenLinesHint.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            hiddenLinesHint.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            outer.Children.Add(hiddenLinesHint);
+
             AddLabeledComboBox(outer, AppStrings.T("export.printView.labels.lblRasterQuality"),
                 new[] { "Low", "Medium", "High", "Presentation" },
                 GetIndex(new[] { "Low", "Medium", "High", "Presentation" }, _rasterQuality),
                 val => { _rasterQuality = val; Fire(); });
+
+            AddLabeledComboBox(outer, AppStrings.T("export.printView.labels.lblExportQuality"),
+                ExportOptionsFactory.ExportQualityDpiOptions(),
+                GetIndex(ExportOptionsFactory.ExportQualityDpiOptions(), _exportQualityDpi),
+                val => { _exportQualityDpi = val; Fire(); });
 
             AddDivider(outer);
 
@@ -463,7 +491,7 @@ namespace LemoineTools.Tools.BulkExport
         {
             ["view"]    = _viewDisplayName,
             ["formats"] = FormatsSummary(),
-            ["quality"] = $"{_colorDepth} · {_rasterQuality} · {_zoomSetting}",
+            ["quality"] = $"{_hiddenLines.Split(' ')[0]} · {_exportQualityDpi} · {_rasterQuality} · {_colorDepth} · {_zoomSetting}",
             ["folder"]  = string.IsNullOrEmpty(_outputFolder) ? "—"
                 : _outputFolder.Length > 40 ? "…" + _outputFolder.Substring(_outputFolder.Length - 37)
                 : _outputFolder,
@@ -491,7 +519,7 @@ namespace LemoineTools.Tools.BulkExport
             switch (stepId)
             {
                 case "S1": return FormatsSummary();
-                case "S2": return $"{_colorDepth} · {_rasterQuality} · {_zoomSetting}";
+                case "S2": return $"{_hiddenLines.Split(' ')[0]} · {_exportQualityDpi} · {_rasterQuality} · {_colorDepth} · {_zoomSetting}";
                 case "S3": return string.IsNullOrEmpty(_dwgSetup) ? AppStrings.T("export.printView.summaries.dwgDefault") : _dwgSetup;
                 case "S4": return $"{_nwcCoordinates} · {_nwcParameters}";
                 case "S5": return _ifcVersion;
@@ -525,6 +553,8 @@ namespace LemoineTools.Tools.BulkExport
             s.ZoomPercent                  = _zoomPct;
             s.ColorDepth                   = _colorDepth;
             s.RasterQuality                = _rasterQuality;
+            s.HiddenLinesVector            = _hiddenLines == "Vector Processing";
+            s.PdfExportQualityDpi          = _exportQualityDpi;
             s.ViewLinksInBlue              = _viewLinksBlue;
             s.ReplaceHalftoneWithThinLines = _replaceHalftone;
             s.DwgExportSetupName           = _dwgSetup;
@@ -558,6 +588,8 @@ namespace LemoineTools.Tools.BulkExport
             _handler.ZoomPercent                  = _zoomPct;
             _handler.ColorDepth                   = _colorDepth;
             _handler.RasterQuality                = _rasterQuality;
+            _handler.HiddenLines                  = _hiddenLines;
+            _handler.ExportQualityDpi             = _exportQualityDpi;
             _handler.ViewLinksInBlue              = _viewLinksBlue;
             _handler.ReplaceHalftoneWithThinLines = _replaceHalftone;
 

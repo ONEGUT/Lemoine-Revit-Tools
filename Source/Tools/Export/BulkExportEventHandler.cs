@@ -47,6 +47,7 @@ namespace LemoineTools.Tools.BulkExport
         public string                 DwgSetupName                 { get; set; } = "";
         public string                 PdfPlacement                 { get; set; } = "Offset from Corner";
         public string                 HiddenLines                  { get; set; } = "Vector Processing";
+        public string                 ExportQualityDpi             { get; set; } = "300 DPI";
         public string                 ColorDepth                   { get; set; } = "Color";
         public string                 RasterQuality                { get; set; } = "High";
         public string                 ZoomSetting                  { get; set; } = "Fit to Page";   // "Fit to Page" | "Scale %"
@@ -838,6 +839,7 @@ namespace LemoineTools.Tools.BulkExport
         private PDFExportOptions BuildPdfOptions(string fileName, bool combine)
             => ExportOptionsFactory.BuildPdfOptions(
                    fileName, combine, PdfPlacement, ColorDepth, RasterQuality,
+                   HiddenLines, ExportQualityDpi,
                    ZoomSetting, ZoomPercent, ViewLinksInBlue, ReplaceHalftoneWithThinLines);
 
         // Returns null when a named setup is specified but does not exist in the document.

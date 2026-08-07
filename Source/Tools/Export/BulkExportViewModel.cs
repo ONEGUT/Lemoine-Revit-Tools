@@ -183,6 +183,7 @@ namespace LemoineTools.Tools.BulkExport
         private string _rasterQuality   = BulkExportSettings.Instance.RasterQuality;
         private string _hiddenLines     = BulkExportSettings.Instance.HiddenLinesVector
                                           ? "Vector Processing" : "Raster Processing";
+        private string _exportQualityDpi = BulkExportSettings.Instance.PdfExportQualityDpi;
         private bool   _viewLinksBlue   = BulkExportSettings.Instance.ViewLinksInBlue;
         private bool   _replaceHalftone = BulkExportSettings.Instance.ReplaceHalftoneWithThinLines;
 
@@ -755,15 +756,35 @@ namespace LemoineTools.Tools.BulkExport
                 GetIndex(new[] { "Color", "Grayscale", "Black & White" }, _colorDepth),
                 val => { _colorDepth = val; Fire(); });
 
+            // Hidden Line Views sits above the two raster knobs: it decides whether
+            // rasterizing happens at all, and Raster Quality / Export Quality only bite
+            // once something is being rasterized.
+            AddLabeledComboBox(outer, AppStrings.T("export.bulkExport.labels.lblHiddenLines"),
+                ExportOptionsFactory.HiddenLineOptions(),
+                GetIndex(ExportOptionsFactory.HiddenLineOptions(), _hiddenLines),
+                val => { _hiddenLines = val; Fire(); });
+
+            var hiddenLinesHint = new TextBlock
+            {
+                Text         = AppStrings.T("export.bulkExport.labels.hiddenLinesHint"),
+                TextWrapping = TextWrapping.Wrap,
+                FontStyle    = FontStyles.Italic,
+                Margin       = new Thickness(0, -2, 0, 6),
+            };
+            hiddenLinesHint.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            hiddenLinesHint.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            hiddenLinesHint.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            outer.Children.Add(hiddenLinesHint);
+
             AddLabeledComboBox(outer, AppStrings.T("export.bulkExport.labels.lblRasterQuality"),
                 new[] { "Draft", "Low", "Medium", "High", "Presentation" },
                 GetIndex(new[] { "Draft", "Low", "Medium", "High", "Presentation" }, _rasterQuality),
                 val => { _rasterQuality = val; Fire(); });
 
-            AddLabeledComboBox(outer, AppStrings.T("export.bulkExport.labels.lblHiddenLines"),
-                new[] { "Vector Processing", "Raster Processing" },
-                _hiddenLines == "Vector Processing" ? 0 : 1,
-                val => { _hiddenLines = val; Fire(); });
+            AddLabeledComboBox(outer, AppStrings.T("export.bulkExport.labels.lblExportQuality"),
+                ExportOptionsFactory.ExportQualityDpiOptions(),
+                GetIndex(ExportOptionsFactory.ExportQualityDpiOptions(), _exportQualityDpi),
+                val => { _exportQualityDpi = val; Fire(); });
 
             AddDivider(outer);
 
@@ -922,7 +943,7 @@ namespace LemoineTools.Tools.BulkExport
             ["sheets"]  = _selectedIds.Count == 0 ? "—" : AppStrings.T("export.bulkExport.review.sheetsValue", _selectedIds.Count),
             ["formats"] = GetActiveFormats(),
             ["packs"]   = AppStrings.T("export.bulkExport.review.setsValue", _sets.Count, GranularityLabel()),
-            ["quality"] = _pdfOn ? AppStrings.T("export.bulkExport.review.qualityValue", _colorDepth, _rasterQuality) : AppStrings.T("export.bulkExport.review.qualityPdfOff"),
+            ["quality"] = _pdfOn ? AppStrings.T("export.bulkExport.review.qualityValue", _hiddenLines.Split(' ')[0], _exportQualityDpi, _rasterQuality, _colorDepth) : AppStrings.T("export.bulkExport.review.qualityPdfOff"),
             ["pattern"] = AppStrings.T("export.bulkExport.review.namingRule"),
             ["folder"]  = _outputFolder.Length == 0 ? "—"
                 : _outputFolder.Length > 40 ? "…" + _outputFolder.Substring(_outputFolder.Length - 37)
@@ -985,7 +1006,7 @@ namespace LemoineTools.Tools.BulkExport
                     : _sets.Count == 0
                         ? AppStrings.T("export.bulkExport.summaries.s2Individual", GetActiveFormats(), GranularityLabel())
                         : AppStrings.T("export.bulkExport.summaries.s2Sets", _sets.Count, GetActiveFormats(), GranularityLabel());
-                case "S3": return AppStrings.T("export.bulkExport.summaries.s4", _hiddenLines.Split(' ')[0], _rasterQuality, _colorDepth, GranularityLabel());
+                case "S3": return AppStrings.T("export.bulkExport.summaries.s4", _hiddenLines.Split(' ')[0], _exportQualityDpi, _rasterQuality, _colorDepth, GranularityLabel());
                 case "S4": return string.IsNullOrEmpty(_dwgSetup) ? AppStrings.T("export.bulkExport.summaries.s5Default") : _dwgSetup;
                 case "S5": return AppStrings.T("export.bulkExport.summaries.s6", _nwcCoordinates, _nwcParameters);
                 case "S6": return _ifcVersion;
@@ -1028,6 +1049,7 @@ namespace LemoineTools.Tools.BulkExport
             s.PdfGranularity               = _granularity.ToString();
             s.PdfPaperPlacement            = _pdfPlacement;
             s.HiddenLinesVector            = _hiddenLines == "Vector Processing";
+            s.PdfExportQualityDpi          = _exportQualityDpi;
             s.DwgExportSetupName           = _dwgSetup;
             s.ColorDepth                   = _colorDepth;
             s.RasterQuality                = _rasterQuality;
@@ -1070,6 +1092,7 @@ namespace LemoineTools.Tools.BulkExport
             _handler.DwgSetupName             = _dwgSetup;
             _handler.PdfPlacement             = _pdfPlacement;
             _handler.HiddenLines              = _hiddenLines;
+            _handler.ExportQualityDpi         = _exportQualityDpi;
             _handler.ColorDepth               = _colorDepth;
             _handler.RasterQuality            = _rasterQuality;
             _handler.ZoomSetting              = _zoomSetting;
@@ -1138,8 +1161,13 @@ namespace LemoineTools.Tools.BulkExport
                                 Options = new SingleSelectOpts { Items = new List<string> { "Center", "Offset from Corner" } },
                                 Default = s.PdfPaperPlacement },
                             new SettingDef { Id = "hiddenlines", Kind = "single", Label = "Hidden line views",
-                                Options = new SingleSelectOpts { Items = new List<string> { "Vector Processing", "Raster Processing" } },
+                                Hint = "Vector keeps linework as vectors where possible; shaded and transparent views always rasterize. Raster forces every view to an image.",
+                                Options = new SingleSelectOpts { Items = new List<string>(ExportOptionsFactory.HiddenLineOptions()) },
                                 Default = s.HiddenLinesVector ? "Vector Processing" : "Raster Processing" },
+                            new SettingDef { Id = "exportquality", Kind = "single", Label = "Export quality (DPI)",
+                                Hint = "Output resolution of anything rasterized — applies under vector processing too.",
+                                Options = new SingleSelectOpts { Items = new List<string>(ExportOptionsFactory.ExportQualityDpiOptions()) },
+                                Default = s.PdfExportQualityDpi },
                             new SettingDef { Id = "colordepth",  Kind = "single", Label = "Color depth",
                                 Options = new SingleSelectOpts { Items = new List<string> { "Color", "Grayscale", "Black & White" } },
                                 Default = s.ColorDepth },
@@ -1218,6 +1246,7 @@ namespace LemoineTools.Tools.BulkExport
                 case "granularity":     s.PdfGranularity             = GranularityFromOptionLabel(value as string); break;
                 case "placement":       s.PdfPaperPlacement          = value as string ?? "Center";                break;
                 case "hiddenlines":     s.HiddenLinesVector          = value as string == "Vector Processing";     break;
+                case "exportquality":   s.PdfExportQualityDpi        = value as string ?? "300 DPI";              break;
                 case "colordepth":      s.ColorDepth                 = value as string ?? "Color";                 break;
                 case "rasterquality":   s.RasterQuality              = value as string ?? "High";                  break;
                 case "zoomsetting":     s.ZoomSetting                = value as string ?? "Fit to Page";           break;

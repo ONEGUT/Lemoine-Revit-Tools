@@ -51,7 +51,13 @@ namespace LemoineTools.Tools.BulkExport
         // ── PDF — output quality ──────────────────────────────────────────────
         public string ColorDepth    { get; set; } = "Color";             // "Color" | "Grayscale" | "Black & White"
         public string RasterQuality { get; set; } = "High";              // "Draft"|"Low"|"Medium"|"High"|"Presentation"
+
+        // Vector vs raster processing → PDFExportOptions.AlwaysUseRaster (inverted).
         public bool   HiddenLinesVector { get; set; } = true;
+
+        // Output resolution of anything rasterized → PDFExportOptions.ExportQuality.
+        // Applies under vector processing too: shaded/transparent views always rasterize.
+        public string PdfExportQualityDpi { get; set; } = "300 DPI";      // see ExportOptionsFactory.ExportQualityDpiOptions
 
         // ── PDF — combine ─────────────────────────────────────────────────────
         /// <summary>
