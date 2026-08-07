@@ -285,11 +285,7 @@ namespace LemoineTools.Tools.BulkExport
         // updated so AssignToTarget sees a consistent view of what is selected.
         private readonly List<long> _pendingAssign = new List<long>();
 
-        // ── Naming helpers ────────────────────────────────────────────────────
-
-;
-
-;
+        // ── PDF granularity labels ────────────────────────────────────────────
 
         // The settings window shows sentences; the file stores the enum name. Persisted tokens
         // stay hardcoded strings by house rule — they are compared and switched on, not displayed.
