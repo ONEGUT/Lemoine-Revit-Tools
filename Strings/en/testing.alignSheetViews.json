@@ -33,13 +33,12 @@
   },
   "review": {
     "itemSource": "Reference Sheets", "itemTargets": "Target Sheets", "itemOverlap": "Fallback Overlap",
-    "itemInherit": "Inherit",
-    "itemLegends": "Legends",
+    // Covers view inheritance AND legend placement: legends share this card rather than taking a
+    // fifth of their own, which would sit alone on its row in ReviewSummary's two-column grid.
+    "itemInherit": "Inherit & content",
     "none": "— (none selected)",
     "sheetCount": "{0} sheet(s)",
     "overlapValue": "{0}% minimum (scope box matched first)",
-    "legendsOn": "Placed from the reference sheet",
-    "legendsOff": "Not placed",
     // View titles are always aligned, so the clause is part of the sentence rather than a fragment.
     // {1} is the legend clause — empty unless legends are being placed.
     "warning": "Target viewports and their view titles{0} will be modified on every selected sheet.{1}",
@@ -51,7 +50,9 @@
     "scopeBox": "scope box",
     "gridExtents": "grid extents, heads and elbows",
     "cropVisibility": "crop visibility",
-    "cropSize": "crop size"
+    "cropSize": "crop size",
+    // Not an inherited view property — it shares the review card, so it shares this group.
+    "legends": "legends"
   },
   "summaries": {
     "s1Single": "1 selected",

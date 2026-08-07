@@ -269,3 +269,9 @@ the post-change silent-failure scan.
    write (the view path already warned for the same failure) and a legend whose outline
    could not be read at verification time — the latter is a placement that was never
    checked, which a silent `continue` would have made look like a clean verification.
+4. **Legends share the Inherit review card rather than taking a fifth of their own.**
+   `ReviewSummary` lays cards out two per row, so a fifth would have sat alone on its
+   own row. The card is relabelled **Inherit & content**, and `legends` leads the value
+   string: the value is ellipsis-trimmed at the window's default width, and the inherit
+   list is long enough to eat the line, so the term naming the run's only
+   element-*creating* behaviour goes where it cannot be cut off.

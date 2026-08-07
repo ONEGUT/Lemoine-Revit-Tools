@@ -313,7 +313,6 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
             ("targets", AppStrings.T("testing.alignSheetViews.review.itemTargets")),
             ("overlap", AppStrings.T("testing.alignSheetViews.review.itemOverlap")),
             ("inherit", AppStrings.T("testing.alignSheetViews.review.itemInherit")),
-            ("legends", AppStrings.T("testing.alignSheetViews.review.itemLegends")),
         };
 
         public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
@@ -327,10 +326,7 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                 ? AppStrings.T("testing.alignSheetViews.review.none")
                 : AppStrings.T("testing.alignSheetViews.review.sheetCount", EffectiveTargetCount),
             ["overlap"] = AppStrings.T("testing.alignSheetViews.review.overlapValue", _overlapPercent),
-            ["inherit"] = InheritSummary,
-            ["legends"] = _placeLegends
-                ? AppStrings.T("testing.alignSheetViews.review.legendsOn")
-                : AppStrings.T("testing.alignSheetViews.review.legendsOff"),
+            ["inherit"] = ContentSummary,
         };
 
         public IList<string>? ReviewChips => null;
@@ -340,6 +336,33 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                 ? ""
                 : AppStrings.T("testing.alignSheetViews.review.warnInherit", InheritSummary.ToLowerInvariant()),
             _placeLegends ? AppStrings.T("testing.alignSheetViews.review.warnLegends") : "");
+
+        /// <summary>
+        /// The review card's value: everything this run does to a target sheet beyond moving its
+        /// viewports. Legends share the card rather than taking one of their own — a fifth card
+        /// would sit alone on its own row in <c>ReviewSummary</c>'s two-column grid.
+        ///
+        /// Kept separate from <see cref="InheritSummary"/>, which is compared against the "nothing"
+        /// string elsewhere and must keep meaning view inheritance alone.
+        /// </summary>
+        private string ContentSummary
+        {
+            get
+            {
+                string inherited = InheritSummary;
+                bool   nothing   = inherited == AppStrings.T("testing.alignSheetViews.inherit.nothing");
+
+                if (!_placeLegends) return inherited;
+
+                string legends = AppStrings.T("testing.alignSheetViews.inherit.legends");
+                if (nothing) return legends;
+
+                // Legends lead. The card's value is trimmed with an ellipsis at this width, and the
+                // inherit list is long enough to eat the rest of the line — so the term that names
+                // the run's only element-CREATING behaviour goes where it cannot be cut off.
+                return legends + ", " + inherited;
+            }
+        }
 
         private string InheritSummary
         {
