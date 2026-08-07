@@ -14,7 +14,7 @@
     "s1": "{0} {1} selected",
     "s2PrintSets": "{0} print set(s)", "s2Individual": "Individual export",
     "s3None": "No formats selected", "s3": "{0} — {1}",
-    "s4": "{0} · {1} · {2} · {3}",
+    "s4": "{0} · {1} · {2} · {3} · {4}",
     "s5Default": "Default DWG setup",
     "s6": "{0} · params: {1}",
     "s8NoFolder": "No output folder"
@@ -48,8 +48,10 @@
     "pctPercent": "%",
     "secOutputQuality": "OUTPUT QUALITY",
     "lblColorDepth": "Color Depth",
-    "lblRasterQuality": "Raster Quality",
     "lblHiddenLines": "Hidden Line Views",
+    "hiddenLinesHint": "Vector keeps linework as vectors where possible — shaded and transparent views always rasterize. Raster forces every view to an image.",
+    "lblRasterQuality": "Raster Quality",
+    "lblExportQuality": "Export Quality (DPI)",
     "secCombine": "COMBINE",
     "combineLabel": "Combine into one PDF",
     "printSetCombineNote": "Each checked print set is always exported as its own combined PDF regardless of this setting.",
@@ -95,7 +97,7 @@
     "itemQuality": "Quality", "itemPattern": "Filename Pattern", "itemFolder": "Output Folder",
     "sheetsValue": "{0} selected",
     "printSetsValue": "{0} print set(s)", "printSetsNone": "None — individual export",
-    "qualityValue": "{0} · {1}", "qualityPdfOff": "PDF disabled",
+    "qualityValue": "{0} · {1} · {2} · {3}", "qualityPdfOff": "PDF disabled",
     "warnSheetsMode": "{0} exports 3D views only and needs Views mode — it will be skipped while you're in Sheets mode."
   },
   "log": {

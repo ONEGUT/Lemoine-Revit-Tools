@@ -16,12 +16,19 @@ namespace LemoineTools.Tools.BulkExport
     internal static class ExportOptionsFactory
     {
         // ── PDF ───────────────────────────────────────────────────────────────
+        // hiddenLines is the vector-vs-raster processing choice. PDFExportOptions has no
+        // HiddenLineViews property (that one lives on PrintParameters, the legacy
+        // PrintManager path) — AlwaysUseRaster is the handle: false lets Revit keep
+        // linework vector and rasterize only the views that need it (shaded/realistic/
+        // transparency), true forces every view to an image.
         public static PDFExportOptions BuildPdfOptions(
             string fileName,
             bool   combine,
             string placement,       // "Center" | "Offset from Corner"
             string colorDepth,
             string rasterQuality,
+            string hiddenLines,     // "Vector Processing" | "Raster Processing"
+            string exportQualityDpi,
             string zoomSetting,     // "Scale %" | "Fit to Page"
             int    zoomPercent,
             bool   viewLinksInBlue,
@@ -36,6 +43,8 @@ namespace LemoineTools.Tools.BulkExport
                                                    : PaperPlacementType.LowerLeft,
                 ColorDepth                   = MapColorDepth(colorDepth),
                 RasterQuality                = MapRasterQuality(rasterQuality),
+                AlwaysUseRaster              = hiddenLines == "Raster Processing",
+                ExportQuality                = MapExportQuality(exportQualityDpi),
                 ViewLinksInBlue              = viewLinksInBlue,
                 ReplaceHalftoneWithThinLines = replaceHalftone,
             };
@@ -150,6 +159,37 @@ namespace LemoineTools.Tools.BulkExport
                 default:             return RasterQualityType.High;
             }
         }
+
+        // Output resolution for whatever ends up rasterized — which is not only the
+        // "Raster Processing" case: a shaded or transparent view rasterizes even under
+        // vector processing, so this applies to both modes. DPI300 is the default.
+        public static PDFExportQualityType MapExportQuality(string value)
+        {
+            switch (value)
+            {
+                case "72 DPI":   return PDFExportQualityType.DPI72;
+                case "144 DPI":  return PDFExportQualityType.DPI144;
+                case "600 DPI":  return PDFExportQualityType.DPI600;
+                case "1200 DPI": return PDFExportQualityType.DPI1200;
+                case "2400 DPI": return PDFExportQualityType.DPI2400;
+                case "3600 DPI": return PDFExportQualityType.DPI3600;
+                case "4000 DPI": return PDFExportQualityType.DPI4000;
+                default:         return PDFExportQualityType.DPI300;
+            }
+        }
+
+        // Both pickers hand back a FRESH array per call rather than exposing a shared
+        // static one. Every tool window runs on its own STA thread, and these arrays are
+        // used as ComboBox.ItemsSource — matching the per-call `new[] { … }` style of the
+        // other option lists here keeps one instance from being bound on two dispatchers.
+
+        /// <summary>Option values for the Export Quality (DPI) picker, in ladder order.</summary>
+        public static string[] ExportQualityDpiOptions() =>
+            new[] { "72 DPI", "144 DPI", "300 DPI", "600 DPI", "1200 DPI", "2400 DPI", "3600 DPI", "4000 DPI" };
+
+        /// <summary>Option values for the Hidden Line Views (vector vs raster) picker.</summary>
+        public static string[] HiddenLineOptions() =>
+            new[] { "Vector Processing", "Raster Processing" };
 
         // ── Filename sanitiser ────────────────────────────────────────────────
         public static string SanitizeFilename(string name)
