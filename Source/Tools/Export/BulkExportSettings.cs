@@ -60,7 +60,28 @@ namespace LemoineTools.Tools.BulkExport
         public string PdfExportQualityDpi { get; set; } = "300 DPI";      // see ExportOptionsFactory.ExportQualityDpiOptions
 
         // ── PDF — combine ─────────────────────────────────────────────────────
+        /// <summary>
+        /// DEPRECATED — superseded by <see cref="PdfGranularity"/>, which can also express
+        /// "one file per set". Kept in the DTO so an existing BulkExportSettings.xml still
+        /// deserialises and its value can be migrated on load; never read at run time.
+        /// </summary>
         public bool CombinePdf { get; set; } = true;
+
+        /// <summary>
+        /// "PerSheet" | "PerSet" | "SingleFile". Empty on a file written before this field
+        /// existed — <see cref="Load"/> then migrates it from <see cref="CombinePdf"/>.
+        /// </summary>
+        public string PdfGranularity { get; set; } = "";
+
+        // ── Sets ──────────────────────────────────────────────────────────────
+        /// <summary>Names the combined PDFs (per set, or the single whole-run file).</summary>
+        public string SetFilenamePattern { get; set; } = "{SetName}";
+
+        /// <summary>Give each set its own subfolder under the output (or format) folder.</summary>
+        public bool SetSubfolders { get; set; } = false;
+
+        /// <summary>"Overwrite" | "Skip" | "Add suffix" — what to do when the target file exists.</summary>
+        public string ExistingFileAction { get; set; } = "Overwrite";
 
         // ── PDF — advanced ────────────────────────────────────────────────────
         public bool ViewLinksInBlue             { get; set; } = false;
@@ -155,15 +176,32 @@ namespace LemoineTools.Tools.BulkExport
                 {
                     var xs = new XmlSerializer(typeof(BulkExportSettings));
                     using (var r = new StreamReader(path))
-                        return (BulkExportSettings)xs.Deserialize(r)!;
+                        return MigrateGranularity((BulkExportSettings)xs.Deserialize(r)!);
                 }
 
                 // No new-format file yet — migrate the legacy Batch Export file if present.
                 var migrated = MigrateFromLegacy();
-                if (migrated != null) return migrated;
+                if (migrated != null) return MigrateGranularity(migrated);
             }
             catch (Exception __lex) { DiagnosticsLog.Swallowed("BulkExportSettings.Load", __lex); }
             return new BulkExportSettings();
+        }
+
+        /// <summary>
+        /// Carries the retired <see cref="CombinePdf"/> bool forward onto
+        /// <see cref="PdfGranularity"/>. Without this every existing user silently reverts to the
+        /// default the first time they open the reworked tool: combine-on meant one file for the
+        /// whole selection, combine-off meant one file per sheet.
+        /// </summary>
+        private static BulkExportSettings MigrateGranularity(BulkExportSettings s)
+        {
+            if (string.IsNullOrWhiteSpace(s.PdfGranularity))
+                // Fully qualified: the simple name PdfGranularity binds to this class's own
+                // string property, not the enum.
+                s.PdfGranularity = s.CombinePdf
+                    ? nameof(LemoineTools.Tools.BulkExport.PdfGranularity.SingleFile)
+                    : nameof(LemoineTools.Tools.BulkExport.PdfGranularity.PerSheet);
+            return s;
         }
     }
 }

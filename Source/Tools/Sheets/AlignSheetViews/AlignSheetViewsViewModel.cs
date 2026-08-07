@@ -61,6 +61,10 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
         private bool _inheritCropVisibility = false;
         private bool _inheritCropSize       = false;
 
+        // Sheet content — not an inheritance toggle: a legend has no crop and no world anchor, so
+        // this copies a sheet placement rather than a property of a matched view.
+        private bool _placeLegends          = false;
+
         // A scope box governs the crop rectangle it is assigned to, so a view that inherits one
         // inherits its crop size with it — there is nothing left for a separate crop-size choice to
         // decide. The checkbox is replaced by a static "inherited" row while scope box is ticked.
@@ -236,6 +240,15 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                 AppStrings.T("testing.alignSheetViews.labels.optCropVis"), _inheritCropVisibility,
                 v => _inheritCropVisibility = v));
 
+            // ── Sheet content ─────────────────────────────────────────────────
+            // Its own section rather than another row under "inherit from source view": legends are
+            // not a property of a matched view, they are sheet content copied from the reference.
+            outer.Children.Add(SectionLabel2(AppStrings.T("testing.alignSheetViews.labels.secSheetContent")));
+
+            outer.Children.Add(OptionCheck(
+                AppStrings.T("testing.alignSheetViews.labels.optLegends"), _placeLegends,
+                v => _placeLegends = v));
+
             return outer;
         }
 
@@ -313,7 +326,7 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                 ? AppStrings.T("testing.alignSheetViews.review.none")
                 : AppStrings.T("testing.alignSheetViews.review.sheetCount", EffectiveTargetCount),
             ["overlap"] = AppStrings.T("testing.alignSheetViews.review.overlapValue", _overlapPercent),
-            ["inherit"] = InheritSummary,
+            ["inherit"] = ContentSummary,
         };
 
         public IList<string>? ReviewChips => null;
@@ -321,7 +334,35 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
         public string?        ReviewWarning => AppStrings.T("testing.alignSheetViews.review.warning",
             InheritSummary == AppStrings.T("testing.alignSheetViews.inherit.nothing")
                 ? ""
-                : AppStrings.T("testing.alignSheetViews.review.warnInherit", InheritSummary.ToLowerInvariant()));
+                : AppStrings.T("testing.alignSheetViews.review.warnInherit", InheritSummary.ToLowerInvariant()),
+            _placeLegends ? AppStrings.T("testing.alignSheetViews.review.warnLegends") : "");
+
+        /// <summary>
+        /// The review card's value: everything this run does to a target sheet beyond moving its
+        /// viewports. Legends share the card rather than taking one of their own — a fifth card
+        /// would sit alone on its own row in <c>ReviewSummary</c>'s two-column grid.
+        ///
+        /// Kept separate from <see cref="InheritSummary"/>, which is compared against the "nothing"
+        /// string elsewhere and must keep meaning view inheritance alone.
+        /// </summary>
+        private string ContentSummary
+        {
+            get
+            {
+                string inherited = InheritSummary;
+                bool   nothing   = inherited == AppStrings.T("testing.alignSheetViews.inherit.nothing");
+
+                if (!_placeLegends) return inherited;
+
+                string legends = AppStrings.T("testing.alignSheetViews.inherit.legends");
+                if (nothing) return legends;
+
+                // Legends lead. The card's value is trimmed with an ellipsis at this width, and the
+                // inherit list is long enough to eat the rest of the line — so the term that names
+                // the run's only element-CREATING behaviour goes where it cannot be cut off.
+                return legends + ", " + inherited;
+            }
+        }
 
         private string InheritSummary
         {
@@ -371,7 +412,8 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                         : AppStrings.T("testing.alignSheetViews.review.sheetCount", EffectiveSourceCount));
                 case "S2": return EffectiveTargetCount == 0 ? "—" : AppStrings.T("testing.alignSheetViews.review.sheetCount", EffectiveTargetCount);
                 case "S3": return AppStrings.T("testing.alignSheetViews.summaries.s3Overlap", _overlapPercent) +
-                                  (InheritSummary == AppStrings.T("testing.alignSheetViews.inherit.nothing") ? "" : AppStrings.T("testing.alignSheetViews.summaries.s3Inherit"));
+                                  (InheritSummary == AppStrings.T("testing.alignSheetViews.inherit.nothing") ? "" : AppStrings.T("testing.alignSheetViews.summaries.s3Inherit")) +
+                                  (_placeLegends ? AppStrings.T("testing.alignSheetViews.summaries.s3Legends") : "");
                 case "S4": return AppStrings.T("testing.alignSheetViews.summaries.S4");
                 default:   return "—";
             }
@@ -394,6 +436,7 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
             _handler.InheritGridExtents    = _inheritGrids;
             _handler.InheritCropVisibility = _inheritCropVisibility;
             _handler.InheritCropSize       = CropSizeInherited;
+            _handler.PlaceLegends          = _placeLegends;
             _handler.PushLog               = pushLog;
             _handler.OnProgress            = onProgress;
             _handler.OnComplete            = onComplete;

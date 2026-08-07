@@ -25,29 +25,40 @@
     "optCropSize": "Crop size + annotation crop",
     // Replaces optCropSize while "Scope box assignment" is ticked: the scope box governs the
     // crop rectangle, so there is no separate crop-size decision left to make.
-    "impliedCropSize": "Crop size inherited from the scope box"
+    "impliedCropSize": "Crop size inherited from the scope box",
+    // Legends are sheet content, not a property of a matched view, so they get their own section
+    // rather than another row under "inherit from source view".
+    "secSheetContent": "SHEET CONTENT",
+    "optLegends": "Place legends from the reference sheet"
   },
   "review": {
     "itemSource": "Reference Sheets", "itemTargets": "Target Sheets", "itemOverlap": "Fallback Overlap",
-    "itemInherit": "Inherit",
+    // Covers view inheritance AND legend placement: legends share this card rather than taking a
+    // fifth of their own, which would sit alone on its row in ReviewSummary's two-column grid.
+    "itemInherit": "Inherit & content",
     "none": "— (none selected)",
     "sheetCount": "{0} sheet(s)",
     "overlapValue": "{0}% minimum (scope box matched first)",
     // View titles are always aligned, so the clause is part of the sentence rather than a fragment.
-    "warning": "Target viewports and their view titles{0} will be modified on every selected sheet.",
-    "warnInherit": " (plus inherited {0})"
+    // {1} is the legend clause — empty unless legends are being placed.
+    "warning": "Target viewports and their view titles{0} will be modified on every selected sheet.{1}",
+    "warnInherit": " (plus inherited {0})",
+    "warnLegends": " Legends on the reference sheet will be placed on, or moved within, every target sheet."
   },
   "inherit": {
     "nothing": "Nothing",
     "scopeBox": "scope box",
     "gridExtents": "grid extents, heads and elbows",
     "cropVisibility": "crop visibility",
-    "cropSize": "crop size"
+    "cropSize": "crop size",
+    // Not an inherited view property — it shares the review card, so it shares this group.
+    "legends": "legends"
   },
   "summaries": {
     "s1Single": "1 selected",
     "s3Overlap": "overlap {0}%",
     "s3Inherit": "  |  inherit",
+    "s3Legends": "  |  legends",
     "S4": "Ready to run"
   },
   "log": {
@@ -115,6 +126,42 @@
     "placementCorrected": "[{0}] '{1}' crop differed from the predicted geometry — viewport re-placed ({2}' correction).",
     "couldNotVerifyPlacement": "[{0}] Could not verify the final placement of '{1}' — see diagnostics log.",
     "couldNotReadAnnoCrop": "[warn] Could not read the annotation crop on view '{0}' — it is treated as having none, so this view may not register exactly.",
-    "annoScaleDiffers":   "[{0}] '{1}' scale differs from its source — annotation-crop margins are copied in model feet, so the printed margin will differ."
+    "annoScaleDiffers":   "[{0}] '{1}' scale differs from its source — annotation-crop margins are copied in model feet, so the printed margin will differ.",
+
+    // ── Legends ──────────────────────────────────────────────────────────────────────────────
+    // A legend is the only view type Revit places on many sheets, so it is matched by the legend
+    // VIEW's id rather than by geometry, and its placement is a straight copy of a sheet
+    // coordinate. The per-sheet roll-up line only prints when something actually changed; the
+    // zero case is reported once against the REFERENCE, not once per target.
+    "legendsResult":      "[{0}] Legends: {1} placed, {2} moved, {3} already in place.",
+    "legendsNoneOnSource":"Reference '{0}' carries no legends — nothing for the legend option to place.",
+    "legendsSummary":     "Legends: {0} placed, {1} moved, {2} already in place, {3} left unchanged.",
+    // A keynote legend is a ScheduleSheetInstance, not a viewport — this tool cannot place one, and
+    // saying so beats letting the gap be discovered on a plot.
+    "legendSchedulesIgnored": "Reference '{0}' also carries {1} schedule instance(s) (e.g. a keynote legend) — those are not legends and are not placed.",
+    "legendExtra":        "[{0}] Legend '{1}' is on this sheet but not on the reference — left unchanged.",
+    "legendCannotPlace":  "[{0}] Revit will not add legend '{1}' to this sheet — not placed.",
+    "legendCreateFailed": "[{0}] Failed to place legend '{1}' — see diagnostics log.",
+    "legendMoveFailed":   "[{0}] Failed to move legend '{1}' — see diagnostics log.",
+    // The viewport type decides whether a view title is drawn, and the box centre measures the
+    // drawing WITH its title — so matching the type is what makes the placement exact. It also
+    // changes how the legend looks, which is why it is reported rather than done quietly.
+    "legendTypeChanged":  "[{0}] Legend '{1}': viewport type changed to match the reference (this is what makes the titles line up).",
+    "legendTypeFailed":   "[{0}] Legend '{1}': could not match the reference's viewport type — its title may sit differently.",
+    "legendRotationFailed":"[{0}] Legend '{1}': could not match the reference's rotation.",
+    "legendTitleFailed":  "[{0}] Legend '{1}': could not match the reference's view-title settings — it may not register exactly.",
+    // A partial read of a TARGET sheet's legends would look like "this sheet has none" and be
+    // answered by creating duplicates on top of what is already there, so the sheet is skipped.
+    "legendReadFailed":   "[{0}] Could not read this sheet's existing legends — skipped, so nothing is duplicated on top of them. See diagnostics log.",
+    "legendSourceReadPartial": "Reference '{0}': some legend viewports could not be read — any legend missing from the list below was not copied. See diagnostics log.",
+    "legendRepinFailed":  "[{0}] Legend '{1}': moved, but could not be re-pinned — it is now unpinned.",
+    // Equal outline size means the two viewports draw the same footprint, so a centre gap is a real
+    // misplacement. A DIFFERENT size means the box grew around a stationary drawing — correcting
+    // that would displace a legend that is sitting correctly, so it is reported instead.
+    "legendCorrected":    "[{0}] Legend '{1}' was not where it was placed — corrected ({2}').",
+    "legendSizeDiffers":  "[{0}] Legend '{1}' draws a different footprint than on the reference (its view title still differs) — left where it is rather than moved to a position that would not register.",
+    "legendOffSheet":     "[{0}] Legend '{1}' lands outside this sheet's title block — the reference's sheet position was copied exactly; move it or undo the run.",
+    "legendOverlaps":     "[{0}] Legend '{1}' overlaps '{2}' on this sheet.",
+    "legendVerifyFailed": "[{0}] Could not verify the final placement of legend '{1}' — see diagnostics log."
   }
 }
