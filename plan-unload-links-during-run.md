@@ -279,6 +279,58 @@ Labels differ by tier:
 New `Strings/en/linkUnloadGuard.json` for the guard's own log lines; per-tool checkbox labels
 go in each tool's existing JSON. All user-facing text via `AppStrings.T`.
 
+### 4.6 Is the option worth it? Measure, do not estimate from file size
+
+The obvious idea — predict reload time from link file size and compare it to the regen time
+saved — does not survive contact with the API or the physics. Recording why, so it is not
+re-proposed later.
+
+**File size is mostly unavailable.** `ExternalFileReference` exposes no size member at all
+(verified: `GetPath`, `GetAbsolutePath`, `GetLinkedFileStatus`, `PathType`,
+`ExternalFileReferenceType`, `GetReferencingId`, and nothing else). Size would have to come
+from `FileInfo` on the resolved path — but `ModelPath` has `CloudPath` / `ServerPath` /
+`GetProjectGUID()` / `GetModelGUID()`, and a **cloud (BIM 360 / ACC) link has no local file to
+stat**. In a cloud-hosted office the largest links are exactly the ones with no size.
+
+**Size predicts reload time poorly even when available.** Reload is dominated by the I/O path
+— local SSD vs network share vs VPN is a 10–100× spread on identical bytes. Byte size is not
+complexity (200 MB of linked CAD behaves nothing like 200 MB of small MEP families), and
+worksharing adds workset-open cost independent of size.
+
+**And one unknown may moot the question entirely:** it has never been measured whether
+`RevertLocalUnloadStatus()` re-reads from disk or restores from data Revit still holds in
+memory. Reverting a *local* unload may be far cheaper than a cold load — in which case reload
+cost is near zero and there is nothing to estimate. Added to §6 as item 6.
+
+**The other half of the sum cannot be estimated from size at all.** Breakeven is
+`N × S > R`: size gives only a shaky `R`. The per-item saving `S` depends on how much linked
+geometry is *visible in the specific views being processed* — a sheet set whose view template
+hides the links saves nothing regardless of link size.
+
+So, two mechanisms instead of a predictor:
+
+1. **Learn `R` per machine.** The guard already unloads and restores, so time both phases on
+   every run and persist the result. This is machine/environment data, not model data, so
+   `%AppData%` is the correct tier here (contrast §4.3, where element identity must be
+   document-scoped). From the second run onward the checkbox can read
+   *"≈40s to reload these 6 links (measured last run)"* — a real number for these links on
+   this machine, which beats any heuristic. Reuse `BulkExportEventHandler.FormatElapsed`
+   (`Source/Tools/Export/BulkExportEventHandler.cs:815`) for consistent formatting.
+2. **Detect the definite no-win case before the run.** If the links are not visible in the
+   views being processed, unloading saves nothing — check link display mode (the existing
+   `ReportLinkDisplayModes` covers this half) plus per-view link visibility, and hide the
+   option when it would do nothing. A reliable negative is worth more than an unreliable
+   positive, and it matches the UX rule about only presenting choices that work for the
+   current input.
+
+**Rejected: a calibration probe** (time item 1 with links loaded, unload, time item 2). Items
+are not uniform — a sheet with 2 views against one with 40 makes a 2-sample probe noisy — and
+the probe has already paid the unload+reload it was meant to justify.
+
+The framing that matters: near breakeven is exactly where any estimate is least trustworthy,
+and far from breakeven the estimate is not needed. Report the measured cost; let the user
+decide.
+
 ---
 
 ## 5. Files touched
@@ -312,6 +364,10 @@ two callback interfaces, and the crop-inactive measurement hazard.
    place?
 5. **Does a locally-unloaded link's per-view visibility/graphics state survive** the
    unload/revert cycle intact?
+6. **Does `RevertLocalUnloadStatus()` re-read the link from disk, or restore from memory?**
+   (§4.6) If it restores from memory, reload is near-free and the whole cost/benefit question
+   disappears — this is the single highest-value measurement in this list, and it is one
+   stopwatch around one call.
 
 ---
 
