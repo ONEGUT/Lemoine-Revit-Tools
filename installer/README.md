@@ -79,6 +79,31 @@ The script:
   installer placed are removed; user settings in `%AppData%\LemoineTools\` are left
   in place so a reinstall keeps them.
 
+### Where your data lives (and why the install mode doesn't change it)
+
+Everything the plugin writes goes to `%AppData%\LemoineTools\` — settings, the colour
+picker, naming patterns, `diagnostics.log`, and the optional `Seed\` override. That is a
+*per-user* location, so it is the same folder whichever install mode you pick, and it
+survives uninstall and reinstall. Per-project data (trade/legend/clash libraries, filter
+ownership) is stored inside the `.rvt` itself, so it travels with the model rather than
+the machine. Nothing the plugin writes ever lands next to the installed DLL — `Strings\`
+and `Seed\` are read-only there.
+
+Because settings are per-user and per-machine, installing for **all users** does not give
+every user your settings: each Windows account starts fresh from the shipped defaults. To
+push an office-standard starting library, drop a seed file into each user's
+`%AppData%\LemoineTools\Seed\`, or replace the shipped `Seed\` folder before building
+the installer.
+
+### If you switch install modes
+
+Revit loads add-ins from **both** the all-users and per-user folders, so having the plugin
+in both would load it twice — duplicate ribbon panels. The installer detects a copy in the
+other location and offers to remove it (it deletes only the `.addin` manifest, which is
+enough to stop Revit loading it; your settings are untouched). If it can't remove the file —
+typically a machine-wide copy while you're doing a no-admin install — it tells you the exact
+path to delete by hand.
+
 ## Not included (yet)
 
 - **Code signing** — the `setup.exe` is unsigned, so Windows SmartScreen will show

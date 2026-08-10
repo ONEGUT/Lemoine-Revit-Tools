@@ -193,6 +193,78 @@ begin
     Result := (ResultCode = 0);
 end;
 
+// A machine can carry BOTH an all-users install (%ProgramData%) and a per-user one
+// (%AppData%\Roaming) at the same time. Revit scans both folders, so the same AddInId
+// would be registered twice: the add-in loads twice, giving duplicate ribbon panels and
+// two sets of static event handlers over one set of %AppData% settings files. The install
+// chooser makes this easy to reach — UsePreviousPrivileges=no re-asks the mode on every
+// run — and neither uninstaller knows about the other's files. So on install, look for our
+// manifest in the OTHER location and offer to remove it.
+//
+// Removing just the .addin is enough and is the least destructive fix: Revit loads nothing
+// a manifest does not point at, so the stray DLL beside it goes inert. User settings in
+// %AppData%\LemoineTools\ are never touched either way.
+//
+// Line comments are deliberate here: Pascal { } comments do not nest, so the
+// {userappdata} / {commonappdata} constants named below would close a brace comment early.
+//
+// Limitation: if an all-users install is elevated under a DIFFERENT admin account,
+// {userappdata} resolves to that account's profile, so the original user's per-user copy
+// is not seen. That case falls through silently — it cannot be detected from here.
+function OtherModeAddinsRoot(): String;
+begin
+  if IsAdminInstallMode() then
+    Result := ExpandConstant('{userappdata}') + '\Autodesk\Revit\Addins'
+  else
+    Result := ExpandConstant('{commonappdata}') + '\Autodesk\Revit\Addins';
+end;
+
+procedure OfferToRemoveOtherModeInstall();
+var
+  Years: array[0..3] of String;
+  i: Integer;
+  Root, Manifest, Found: String;
+begin
+  Years[0] := '2024'; Years[1] := '2025'; Years[2] := '2026'; Years[3] := '2027';
+  Root  := OtherModeAddinsRoot();
+  Found := '';
+
+  for i := 0 to 3 do
+  begin
+    Manifest := Root + '\' + Years[i] + '\LemoineTools.addin';
+    if FileExists(Manifest) then
+      Found := Found + #13#10 + '    ' + Manifest;
+  end;
+
+  if Found = '' then Exit;
+
+  if MsgBox('Lemoine Tools is already installed in the other location:' + #13#10 +
+            Found + #13#10 + #13#10 +
+            'Revit reads add-ins from both the all-users and per-user folders, so leaving ' +
+            'that copy in place would load the plugin twice — you would get duplicate ' +
+            'ribbon panels.' + #13#10 + #13#10 +
+            'Remove the other copy now? (Your settings are kept either way.)',
+            mbConfirmation, MB_YESNO) <> IDYES then Exit;
+
+  for i := 0 to 3 do
+  begin
+    Manifest := Root + '\' + Years[i] + '\LemoineTools.addin';
+    if FileExists(Manifest) then
+    begin
+      if not DeleteFile(Manifest) then
+        MsgBox('Could not remove:' + #13#10 + '    ' + Manifest + #13#10 + #13#10 +
+               'Delete that file by hand (it may need administrator rights), otherwise ' +
+               'Revit will load Lemoine Tools twice.', mbError, MB_OK);
+    end;
+  end;
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssInstall then
+    OfferToRemoveOtherModeInstall();
+end;
+
 function InitializeSetup(): Boolean;
 begin
   Result := True;

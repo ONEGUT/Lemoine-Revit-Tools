@@ -189,28 +189,18 @@ namespace LemoineTools.Framework
 
         private void OnLoaded(object sender, RoutedEventArgs e)
         {
-            try
-            {
-                AppSettings.Instance.ApplyTo(Resources);
-                ControlStyles.InjectInto(Resources, scrollBarWidth: 8);
-                Background = AppSettings.Instance.ActiveTheme.PageBg;
-                _root.SetResourceReference(Grid.BackgroundProperty, "LemoineBg");
-                _outerBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-                _outerBorder.CornerRadius = new CornerRadius(8);
+            AppSettings.Instance.ApplyTo(Resources);
+            ControlStyles.InjectInto(Resources, scrollBarWidth: 8);
+            Background = AppSettings.Instance.ActiveTheme.PageBg;
+            _root.SetResourceReference(Grid.BackgroundProperty, "LemoineBg");
+            _outerBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            _outerBorder.CornerRadius = new CornerRadius(8);
 
-                UpdateRowHeights();
-                BuildToolbar();
-                _contentBorder.Child = BuildFiltersContent();
-                BuildFloatingStatus();
-                SetupHistory();
-            }
-            catch (Exception ex)
-            {
-                // Building this window's content on its own STA thread has no other net; a throw
-                // here would hard-crash Revit (observed on colleague machines while every other tool
-                // worked). Log the real cause and leave the window open rather than taking Revit down.
-                DiagnosticsLog.Error("FiltersSettingsWindow: build content (OnLoaded)", ex);
-            }
+            UpdateRowHeights();
+            BuildToolbar();
+            _contentBorder.Child = BuildFiltersContent();
+            BuildFloatingStatus();
+            SetupHistory();
         }
 
         // Last-resort net for this window's STA dispatcher (see the constructor). Logs the real
