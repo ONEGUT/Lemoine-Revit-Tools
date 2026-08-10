@@ -22,6 +22,9 @@ packages/
 # Revit deploy target (local only)
 *.addin.bak
 
+# Inno Setup installer build artifacts
+installer/output/
+
 # Python cache (devtools scripts)
 __pycache__/
 *.pyc
