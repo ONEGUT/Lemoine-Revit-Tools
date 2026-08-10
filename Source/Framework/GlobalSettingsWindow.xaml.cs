@@ -46,11 +46,28 @@ namespace LemoineTools.Framework
             // on the next theme change.
             AppSettings.Instance.ThemeChanged  += OnThemeChanged;
             AppSettings.Instance.UiSizeChanged += OnUiSizeChanged;
+
+            // Last-resort safety net for this window's dedicated STA thread. Without it, an
+            // unhandled exception (e.g. opening the color picker on the Ceiling Heatmap tab) tears
+            // down the dispatcher and hard-crashes Revit with NO diagnostics.log entry — the same
+            // gap StepFlowWindow and FiltersSettingsWindow already close. Route it through
+            // DiagnosticsLog and keep the window alive. Named handler, detached on close.
+            Dispatcher.UnhandledException += OnDispatcherUnhandledException;
             Closed += (s, e) =>
             {
                 AppSettings.Instance.ThemeChanged  -= OnThemeChanged;
                 AppSettings.Instance.UiSizeChanged -= OnUiSizeChanged;
+                Dispatcher.UnhandledException -= OnDispatcherUnhandledException;
             };
+        }
+
+        // Last-resort net for this window's STA dispatcher (see the constructor). Logs the real
+        // exception — so a crash on another machine is finally diagnosable — and keeps Revit alive.
+        private void OnDispatcherUnhandledException(
+            object? sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
+        {
+            DiagnosticsLog.Error("GlobalSettingsWindow unhandled UI exception", e.Exception);
+            e.Handled = true;
         }
 
         // Fired on the theme-change thread (any STA thread). Marshal back to this window's

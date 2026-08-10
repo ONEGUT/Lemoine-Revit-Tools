@@ -153,6 +153,14 @@ namespace LemoineTools.Framework
             AppSettings.Instance.ThemeChanged  += OnThemeChanged;
             AppSettings.Instance.UiSizeChanged += OnUiSizeChanged;
 
+            // Last-resort safety net for this window's dedicated STA thread. Without it, an
+            // unhandled exception while building or using this window tears down the dispatcher
+            // and hard-crashes Revit with NO diagnostics.log entry (StepFlowWindow has this net;
+            // this bespoke window did not — which is how a colleague-machine crash in only this
+            // window went untraced). Route it through DiagnosticsLog and keep the window alive.
+            // Named handler, detached in OnClosed.
+            Dispatcher.UnhandledException += OnDispatcherUnhandledException;
+
             // Reload discovered rules when focus returns from the Discover window.
             Activated += OnWindowActivated;
         }
@@ -193,6 +201,15 @@ namespace LemoineTools.Framework
             _contentBorder.Child = BuildFiltersContent();
             BuildFloatingStatus();
             SetupHistory();
+        }
+
+        // Last-resort net for this window's STA dispatcher (see the constructor). Logs the real
+        // exception — so a crash on another machine is finally diagnosable — and keeps Revit alive.
+        private void OnDispatcherUnhandledException(
+            object? sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
+        {
+            DiagnosticsLog.Error("FiltersSettingsWindow unhandled UI exception", e.Exception);
+            e.Handled = true;
         }
 
         // ── Undo/redo history ─────────────────────────────────────────────────
@@ -444,6 +461,7 @@ namespace LemoineTools.Framework
             AppSettings.Instance.ThemeChanged  -= OnThemeChanged;
             AppSettings.Instance.UiSizeChanged -= OnUiSizeChanged;
             Activated -= OnWindowActivated;
+            Dispatcher.UnhandledException -= OnDispatcherUnhandledException;
             _historyTimer?.Stop();
             _historyTimer = null;
 

@@ -70,6 +70,18 @@ namespace LemoineTools.Framework
             // Revit on the next theme change.
             AppSettings.Instance.ThemeChanged  += OnThemeChanged;
             AppSettings.Instance.UiSizeChanged += OnUiSizeChanged;
+
+            // Last-resort safety net for this window's dedicated STA thread (see StepFlowWindow /
+            // FiltersSettingsWindow). An unhandled exception here would otherwise hard-crash Revit
+            // with NO diagnostics.log entry. Route it through DiagnosticsLog; detached in OnClosed.
+            Dispatcher.UnhandledException += OnDispatcherUnhandledException;
+        }
+
+        private void OnDispatcherUnhandledException(
+            object? sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
+        {
+            DiagnosticsLog.Error("LegendSettingsWindow unhandled UI exception", e.Exception);
+            e.Handled = true;
         }
 
         // ── Document links ────────────────────────────────────────────────────
@@ -158,6 +170,7 @@ namespace LemoineTools.Framework
         {
             AppSettings.Instance.ThemeChanged  -= OnThemeChanged;
             AppSettings.Instance.UiSizeChanged -= OnUiSizeChanged;
+            Dispatcher.UnhandledException -= OnDispatcherUnhandledException;
 
             AutoFiltersSettings.Saved -= OnFiltersSaved;
             foreach (var b in _builders.Values)
