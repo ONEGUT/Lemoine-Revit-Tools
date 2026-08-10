@@ -1,0 +1,100 @@
+// modify.splitByLength.json — Split Elements by Length tool + handler logs.
+// Cuts line-based elements into fixed-length pieces. Gap = 0 keeps ducts and pipes connected
+// (Revit's BreakCurve); any gap above zero, or any other category, yields separate elements.
+{
+  "title":    "Split Elements by Length",
+  "runLabel": "Split in Revit →",
+
+  // S2 (Select Views) is conditional — hidden unless the active-view scope is switched off.
+  "steps": {
+    "S1": "Select Elements",
+    "S2": "Select Views",
+    "S3": "Segment Length",
+    "S4": "Review & Run"
+  },
+
+  "summaries": {
+    "S2": "{0} view(s) selected",
+    // {0} segment length ft · {1} remainder mode · {2} gap phrase
+    "S3": "{0:F1} ft · {1} · {2}",
+    "S4": "Ready to run"
+  },
+
+  "labels": {
+    "countStrip":      "{0} line-based categories · {1} elements in document",
+    "noCategories":    "No line-based elements found in this document. Only elements with a straight location line — MEP curves, framing, walls, and line-based families — can be split by length.",
+
+    "activeViewLabel": "Active view elements only",
+    // {0} active view name
+    "activeViewDesc":  "On: splits what is visible in \"{0}\". Turn off to choose specific views instead.",
+    "activeViewNone":  "No active view to scope to — choose the views to run over instead.",
+
+    "pickerName":      "Views to split elements in",
+    "noViews":         "No printable views found in this document.",
+    "viewsNote":       "Elements visible in any selected view are split once — a run appearing in two views is not cut twice.",
+
+    "fromSelection":   "FROM CURRENT SELECTION",
+    "preselCount":     "{0} element(s) across {1} categor(ies)",
+    // Shown only when the selection also held things with no straight line to cut.
+    "preselIgnored":   "{0} selected element(s) have no straight line and will be left alone.",
+    "preselNote":      "Close and reopen the tool to use category selection instead.",
+
+    "segLength":  "Segment length",
+    "unitFeet":   "ft",
+    "remainder":  "Remainder",
+    // Combo option text. The behaviour is driven by a bool in the ViewModel, not by these
+    // strings' values, so they are safe to translate.
+    "modeOffcut": "Offcut at end",
+    "modeEven":   "Even lengths",
+    "gap":        "Gap between pieces",
+    "unitInches": "in",
+
+    "hintConnected": "Gap is 0 — ducts and pipes are cut in place with Break Curve and stay connected as one system. Every other category is cut into separate elements: Revit has no connected-split API for them.",
+    // {0} gap in inches
+    "hintDetached":  "A {0:F2} in gap produces physically separate pieces, so their connectors are released. Set the gap back to 0 to keep ducts and pipes connected."
+  },
+
+  "review": {
+    "itemCats": "Categories", "itemScope": "Scope", "itemLength": "Segment length",
+    "itemRemainder": "Remainder", "itemGap": "Gap", "itemOp": "Operation",
+
+    "scopeFromSel": "From selection ({0} elements)",
+    "scopeActive":  "Active view only ({0})",
+    "scopeViews":   "{0} selected view(s)",
+
+    "lenValue": "{0:F1} ft",
+    "gapNone":  "None — ducts and pipes stay connected",
+    "gapValue": "{0:F2} in — every piece is detached",
+    "op":       "Cut each run into {0:F1} ft pieces",
+
+    "note":         "Runs shorter than one segment are skipped, as are curved and flex runs — only straight lines can be cut to length. Both are reported as a total, not one line each.",
+    "warnDetached": "A gap above zero splits every run into separate pieces and releases their connectors. The run will no longer be a single connected system."
+  },
+
+  "log": {
+    "preSelected":     "Operating on {0} pre-selected element(s).",
+    // Ids captured at launch can stop resolving if the element was deleted in between.
+    "preSelectedGone": "{0} pre-selected element(s) no longer exist and were left out.",
+
+    "scopeViews":      "Scope: {0} view(s).",
+    "viewsGone":       "{0} selected view(s) no longer exist and were left out.",
+    "noViews":         "None of the selected views could be resolved — nothing to split.",
+
+    "foundCats":       "Found {0} element(s) across {1} category(ies).",
+    // Zero found is reported explicitly — a silent empty run looks like a broken collector.
+    "foundNone":       "No line-based elements found across {0} selected category(ies) — nothing to split.",
+
+    "splitting":       "Splitting {0} element(s) into {1:F1} ft pieces ({2}).",
+    "modeOffcut":      "offcut at end",
+    "modeEven":        "even lengths",
+    "pathConnected":   "Gap is 0 — ducts and pipes are cut in place with Break Curve; other categories are cut into separate elements.",
+    "pathDetached":    "Gap is {0:F2} in — every piece will be separated and its connectors released.",
+
+    // Rolled-up skip totals: one counted line each instead of one line per element.
+    "skipTooShort":    "{0} element(s) skipped — shorter than the {1:F1} ft segment length, so there was nothing to cut.",
+    "skipNotStraight": "{0} element(s) skipped — curved or flex runs, which have no straight line to measure along.",
+
+    "done":            "Done — {0} piece(s) created from {1} element(s), {2} skipped, {3} failed.",
+    "error":           "Error: {0}"
+  }
+}
