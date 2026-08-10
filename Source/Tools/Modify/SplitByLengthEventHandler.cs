@@ -21,7 +21,15 @@ namespace LemoineTools.Tools.ModifyElements
         // ── Inputs (set before Raise) ─────────────────────────────────────────
         public List<string>     SelectedCategoryNames { get; set; } = new List<string>();
         public List<ElementId>? PreSelectedIds        { get; set; }
-        public ElementId?       ActiveViewId          { get; set; }
+
+        /// <summary>Set when the scope is "active view only" (the default). Null otherwise.</summary>
+        public ElementId? ActiveViewId { get; set; }
+
+        /// <summary>
+        /// Views the user picked when the active-view scope was switched off. Elements visible in
+        /// ANY of them are split, deduplicated by id so a run showing in two views is cut once.
+        /// </summary>
+        public List<ElementId>? SelectedViewIds { get; set; }
 
         public double SegmentLengthFeet { get; set; } = 10.0;
         public double GapFeet           { get; set; } = 0.0;
@@ -73,8 +81,19 @@ namespace LemoineTools.Tools.ModifyElements
                 }
                 else
                 {
-                    View? view = ActiveViewId != null ? doc.GetElement(ActiveViewId) as View : null;
-                    elements = CollectByName(doc, view, SelectedCategoryNames);
+                    var views = ResolveScopeViews(doc, pushLog);
+                    if (views.Count == 0)
+                    {
+                        // Every requested view failed to resolve — refuse rather than silently
+                        // widening the run to the whole document.
+                        pushLog(AppStrings.T("modify.splitByLength.log.noViews"), "fail");
+                        onComplete(0, 1, 0);
+                        return;
+                    }
+
+                    elements = CollectInViews(doc, views, SelectedCategoryNames);
+                    pushLog(AppStrings.T("modify.splitByLength.log.scopeViews", views.Count), "info");
+
                     // A zero result is reported explicitly — a silent empty run is
                     // indistinguishable from a broken collector (CLAUDE.md).
                     pushLog(
@@ -128,6 +147,16 @@ namespace LemoineTools.Tools.ModifyElements
                     pushLog(AppStrings.T("common.log.stoppedByUser", processed, elements.Count), "warn");
                 }
 
+                // Bulk "nothing to do" skips are rolled up into one counted line each rather than
+                // one line per element — hundreds of identical notices would bury the warnings and
+                // failures that actually need reading. The reason is still stated, so no element
+                // is ever silently passed over.
+                if (stats.QuietSkips.TryGetValue(SplitElementsShared.SkipTooShort, out int tooShort) && tooShort > 0)
+                    pushLog(AppStrings.T("modify.splitByLength.log.skipTooShort", tooShort, SegmentLengthFeet), "info");
+
+                if (stats.QuietSkips.TryGetValue(SplitElementsShared.SkipNotStraight, out int notStraight) && notStraight > 0)
+                    pushLog(AppStrings.T("modify.splitByLength.log.skipNotStraight", notStraight), "info");
+
                 pushLog(AppStrings.T("modify.splitByLength.log.done",
                             stats.SegmentsCreated, stats.SplitCount, stats.SkipCount, stats.FailCount),
                         stats.FailCount > 0 ? "fail" : "pass");
@@ -146,35 +175,64 @@ namespace LemoineTools.Tools.ModifyElements
                 SelectedCategoryNames = new List<string>();
                 PreSelectedIds        = null;
                 ActiveViewId          = null;
+                SelectedViewIds       = null;
             }
         }
 
         /// <summary>
-        /// Collects candidate elements for the selected category labels. Uses an
-        /// <see cref="ElementMulticategoryFilter"/> built from
-        /// <see cref="SplitElementsShared.LengthSplitCategories"/> rather than walking every
-        /// element and comparing category names — the tool supports exactly two categories, so
-        /// the filter is both faster on a large model and immune to localised category names.
+        /// Resolves the views the run is scoped to: the active view when that scope is on,
+        /// otherwise the user's picked views. A view that no longer resolves (deleted between
+        /// launch and run) is reported rather than dropped, so the scope can never shrink
+        /// silently.
         /// </summary>
-        private static List<Element> CollectByName(Document doc, View? view, List<string> labels)
+        private List<View> ResolveScopeViews(Document doc, Action<string, string> pushLog)
+        {
+            var wanted = ActiveViewId != null
+                ? new List<ElementId> { ActiveViewId! }
+                : (SelectedViewIds ?? new List<ElementId>());
+
+            var views = new List<View>();
+            int dropped = 0;
+            foreach (var id in wanted)
+            {
+                var v = doc.GetElement(id) as View;
+                if (v == null || v.IsTemplate) { dropped++; continue; }
+                views.Add(v);
+            }
+
+            if (dropped > 0)
+            {
+                pushLog(AppStrings.T("modify.splitByLength.log.viewsGone", dropped), "warn");
+                DiagnosticsLog.Warn("SplitByLength: scope views",
+                    $"{dropped} of {wanted.Count} scope views no longer resolve.");
+            }
+            return views;
+        }
+
+        /// <summary>
+        /// Collects the elements of the selected categories visible in ANY of
+        /// <paramref name="views"/>, deduplicated by id — a run showing in three views is still
+        /// cut once. Category matching is by name because the picker is built by scanning the
+        /// document, so it can list any line-based family category the project happens to load.
+        /// </summary>
+        private static List<Element> CollectInViews(Document doc, List<View> views, List<string> labels)
         {
             var selected = new HashSet<string>(labels ?? new List<string>(), StringComparer.OrdinalIgnoreCase);
+            if (selected.Count == 0) return new List<Element>();
 
-            var cats = SplitElementsShared.LengthSplitCategories
-                .Where(c => selected.Contains(c.Label))
-                .Select(c => c.Cat)
-                .ToList();
+            var seen  = new HashSet<long>();
+            var found = new List<Element>();
 
-            if (cats.Count == 0) return new List<Element>();
-
-            var coll = (view != null && !view.IsTemplate)
-                ? new FilteredElementCollector(doc, view.Id)
-                : new FilteredElementCollector(doc);
-
-            return coll
-                .WherePasses(new ElementMulticategoryFilter(cats))
-                .WhereElementIsNotElementType()
-                .ToList();
+            foreach (var view in views)
+            {
+                foreach (var el in new FilteredElementCollector(doc, view.Id).WhereElementIsNotElementType())
+                {
+                    if (el?.Category?.Name == null || !selected.Contains(el.Category.Name)) continue;
+                    if (!seen.Add(el.Id.Value)) continue;
+                    found.Add(el);
+                }
+            }
+            return found;
         }
     }
 }

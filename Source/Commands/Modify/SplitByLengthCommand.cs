@@ -6,6 +6,7 @@ using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Framework;
+using LemoineTools.Helpers;
 using LemoineTools.Tools.ModifyElements;
 
 namespace LemoineTools.Commands
@@ -15,6 +16,17 @@ namespace LemoineTools.Commands
     public class SplitByLengthCommand : IExternalCommand
     {
         private static StepFlowWindow? _window;
+
+        /// <summary>
+        /// View types that draw model geometry, and so can carry elements to split. Schedules,
+        /// legends, drafting views, sheets and the report types are excluded — nothing in them is
+        /// a model element with a location line.
+        /// </summary>
+        private static readonly HashSet<ViewType> ModelViewTypes = new HashSet<ViewType>
+        {
+            ViewType.FloorPlan, ViewType.EngineeringPlan, ViewType.AreaPlan, ViewType.CeilingPlan,
+            ViewType.Elevation,  ViewType.Section,        ViewType.Detail,   ViewType.ThreeD,
+        };
 
         public Result Execute(
             ExternalCommandData commandData,
@@ -50,40 +62,58 @@ namespace LemoineTools.Commands
             var uiApp = commandData.Application;
             SplitByLengthViewModel BuildTool()
             {
-                var uidoc        = uiApp.ActiveUIDocument;
-                var doc          = uidoc.Document;
-                var activeViewId = uidoc.ActiveView?.Id;
+                var uidoc      = uiApp.ActiveUIDocument;
+                var doc        = uidoc.Document;
+                var activeView = uidoc.ActiveView;
 
-                // Only the categories this tool can cut are counted or offered.
-                var supported = SplitElementsShared.LengthSplitCategories.Select(c => c.Cat).ToList();
-                var supportedNames = new HashSet<string>(
-                    SplitElementsShared.LengthSplitCategories.Select(c => c.Label),
-                    System.StringComparer.OrdinalIgnoreCase);
-
-                int totalElements = new FilteredElementCollector(doc)
-                    .WherePasses(new ElementMulticategoryFilter(supported))
+                // The category picker is scanned from the document rather than curated: any
+                // line-based element — MEP curve, beam, wall, or a line-based family instance —
+                // can be cut to length, and which of those a project loads is not knowable in
+                // advance. Only categories that actually have splittable content are offered
+                // (CLAUDE.md UX Philosophy: never show-then-skip).
+                var lineBased = new FilteredElementCollector(doc)
                     .WhereElementIsNotElementType()
-                    .GetElementCount();
+                    .Where(e => e.Category?.Name != null
+                             && e.Category.CategoryType == CategoryType.Model
+                             && SplitElementsShared.HasStraightCurve(e))
+                    .ToList();
 
-                // Pre-selection: keep only the ducts and pipes. Anything else the user had
-                // highlighted is counted so step 1 can say it was left out, rather than dropping
-                // it silently.
-                var rawSelection = uidoc.Selection.GetElementIds()
+                var categoryGroups = CategoryDisciplineHelper.GroupByDiscipline(lineBased);
+                int totalElements  = lineBased.Count;
+
+                // Pre-selection: keep what actually has a straight curve.
+                var selectedIds = uidoc.Selection.GetElementIds();
+                var usable = selectedIds
                     .Select(id => doc.GetElement(id))
-                    .Where(e => e?.Category?.Name != null)
+                    .Where(e => e?.Category?.Name != null && SplitElementsShared.HasStraightCurve(e))
                     .ToList();
 
-                var usable = rawSelection
-                    .Where(e => supportedNames.Contains(e.Category!.Name))
-                    .ToList();
+                var preSelectedIds  = usable.Select(e => e!.Id).ToList();
+                var preSelectedCats = usable.Select(e => e!.Category!.Name).Distinct().ToList();
 
-                var preSelectedIds  = usable.Select(e => e.Id).ToList();
-                var preSelectedCats = usable.Select(e => e.Category!.Name).Distinct().ToList();
-                int ignored         = rawSelection.Count - usable.Count;
+                // Counted against the RAW selection, not against what resolved: an id that no
+                // longer resolves is just as "left out" as an arc pipe, and step 1 must say so
+                // either way rather than quietly shrinking the user's selection.
+                int ignored = selectedIds.Count - usable.Count;
+
+                // Views the scope picker may offer, plus the Project Browser tree it mirrors.
+                // Both must be read here: this factory runs on the Revit main thread (directly on
+                // launch, and via App.ReloadEvent on reload), while the tool window lives on its
+                // own STA thread and could not query the document itself.
+                // Only views that actually show model geometry. CanBePrinted alone would let
+                // schedules and legends through, and neither holds anything this tool can cut.
+                var eligibleViewIds = new FilteredElementCollector(doc)
+                    .OfClass(typeof(View))
+                    .Cast<View>()
+                    .Where(v => !v.IsTemplate && ModelViewTypes.Contains(v.ViewType))
+                    .Select(v => v.Id.Value)
+                    .ToList();
 
                 return new SplitByLengthViewModel(
                     App.SplitByLengthHandler!, App.SplitByLengthEvent!,
-                    totalElements, activeViewId,
+                    categoryGroups, totalElements,
+                    activeView?.Id, activeView?.Name ?? "",
+                    BrowserTreeCapture.Capture(doc), eligibleViewIds,
                     preSelectedIds, preSelectedCats, ignored);
             }
 

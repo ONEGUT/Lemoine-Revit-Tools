@@ -99,22 +99,40 @@ namespace LemoineTools.Tools.ModifyElements
         };
 
         /// <summary>
-        /// Defines the Revit element categories that the length-split operation supports.
-        /// Deliberately just ducts and pipes: they are the only categories with a BreakCurve API,
-        /// so they are the only ones that can be cut and stay connected. The split core itself is
-        /// category-agnostic, so adding a row here (plus its collector mapping) is all it takes to
-        /// extend the tool — but nothing else is exposed today.
+        /// Whether the length split can cut this element at all: it must carry a straight
+        /// <see cref="LocationCurve"/>. That is exactly the set of line-based elements — MEP
+        /// curves, structural framing, walls, and any line-based family instance — so the tool's
+        /// category picker is built by scanning the document with this predicate rather than from
+        /// a curated list that would go stale against whatever line-based families a project
+        /// actually loads.
+        ///
+        /// Arcs and flex runs return false: their length cannot be walked as a straight station.
         /// </summary>
-        public static readonly IReadOnlyList<(BuiltInCategory Cat, string Label, string Note)>
-            LengthSplitCategories = new[]
+        /// <summary>
+        /// Quiet-skip reason key: the run is shorter than one segment, so there is nothing to cut.
+        /// Rolled up into a single counted line instead of one per element.
+        /// </summary>
+        public const string SkipTooShort = "tooShort";
+
+        /// <summary>
+        /// Quiet-skip reason key: the element has no straight LocationCurve (a curved or flex run).
+        /// Common now that whole categories are selectable, so it is rolled up the same way.
+        /// </summary>
+        public const string SkipNotStraight = "notStraight";
+
+        public static bool HasStraightCurve(Element? el)
         {
-            (BuiltInCategory.OST_DuctCurves,
-                "Ducts",
-                "Cut into fixed lengths along the run — pieces stay connected"),
-            (BuiltInCategory.OST_PipeCurves,
-                "Pipes",
-                "Cut into fixed lengths along the run — pieces stay connected"),
-        };
+            try
+            {
+                return el?.Location is LocationCurve lc && lc.Curve is Line;
+            }
+            catch (Exception ex)
+            {
+                // A few element types throw on Location access rather than returning null.
+                DiagnosticsLog.Swallowed($"SplitElements: read location of {el?.Id}", ex);
+                return false;
+            }
+        }
 
         // ── Level constraint parameters ───────────────────────────────────────
 
@@ -309,7 +327,8 @@ namespace LemoineTools.Tools.ModifyElements
 
                     if (!(el.Location is LocationCurve lc) || !(lc.Curve is Line line))
                     {
-                        stats.Skip($"{el.Category.Name} {elId}: no straight LocationCurve — flex and curved runs cannot be split by length");
+                        // Counted, reported once as a total — see SkipQuiet.
+                        stats.SkipQuiet(SkipNotStraight);
                         continue;
                     }
 
@@ -813,7 +832,8 @@ namespace LemoineTools.Tools.ModifyElements
 
             if (stations.Count == 0)
             {
-                stats.Skip($"{elCat} {elId}: {totalLen:F2} ft is shorter than one segment — nothing to cut");
+                // Counted, reported once as a total — see SkipQuiet.
+                stats.SkipQuiet(SkipTooShort);
                 return;
             }
 
@@ -892,9 +912,9 @@ namespace LemoineTools.Tools.ModifyElements
 
             if (cells.Count <= 1)
             {
-                // One cell spans the whole run, so re-curving would be a no-op. Say so — a silent
-                // empty result is indistinguishable from a broken collector.
-                stats.Skip($"{el.Category?.Name} {el.Id}: {totalLen:F2} ft is shorter than one segment — nothing to cut");
+                // One cell spans the whole run, so re-curving would be a no-op. Counted and
+                // reported once as a total — see SkipQuiet.
+                stats.SkipQuiet(SkipTooShort);
                 return;
             }
 
@@ -976,6 +996,10 @@ namespace LemoineTools.Tools.ModifyElements
                     Line newCurve = Line.CreateBound(segA, segB);
                     var  segLc    = seg.Location as LocationCurve;
                     if (segLc == null) throw new InvalidOperationException("No LocationCurve on copy.");
+                    // Walls are line-based too, so they reach this path. Their end joins must be
+                    // released or Revit re-joins the pieces and warps the geometry back — the same
+                    // step SplitCurveElement takes for the plane splits.
+                    if (seg is Wall wSeg) DisallowWallJoins(doc, wSeg);
                     DisconnectAllConnectors(seg);
                     segLc.Curve = newCurve;
                     success++;
@@ -1475,6 +1499,32 @@ namespace LemoineTools.Tools.ModifyElements
         /// </summary>
         /// <param name="msg">Reason the element was skipped.</param>
         public void Skip(string msg)  { SkipCount++;  Emit($"— {msg}", "info"); }
+
+        private readonly Dictionary<string, int> _quietSkips = new Dictionary<string, int>(StringComparer.Ordinal);
+
+        /// <summary>
+        /// Counts by reason key of every element skipped through <see cref="SkipQuiet"/>. The
+        /// caller reports these as one rolled-up line per reason once the run is over.
+        /// </summary>
+        public IReadOnlyDictionary<string, int> QuietSkips => _quietSkips;
+
+        /// <summary>
+        /// Records a skipped element WITHOUT writing its own log line, tallying it under a shared
+        /// reason key instead.
+        ///
+        /// For the bulk "nothing to do here" cases — a run shorter than one segment, a curved run
+        /// — one line per element buries the handful of lines that actually matter under hundreds
+        /// of identical ones. The element still counts as skipped; the reason is reported once,
+        /// with its total, so nothing becomes silent (CLAUDE.md: a skipped element must always say
+        /// why).
+        /// </summary>
+        /// <param name="reasonKey">Stable key identifying the reason; the caller maps it to text.</param>
+        public void SkipQuiet(string reasonKey)
+        {
+            SkipCount++;
+            _quietSkips.TryGetValue(reasonKey, out int n);
+            _quietSkips[reasonKey] = n + 1;
+        }
 
         /// <summary>
         /// Records a failure for a specific element and appends a ✗-prefixed message to <see cref="Log"/>.

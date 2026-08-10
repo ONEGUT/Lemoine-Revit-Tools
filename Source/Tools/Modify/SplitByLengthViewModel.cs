@@ -13,13 +13,19 @@ using WpfGrid = System.Windows.Controls.Grid;
 namespace LemoineTools.Tools.ModifyElements
 {
     /// <summary>
-    /// Step-flow ViewModel for Split by Length: pick the ducts/pipes, set the piece length, run.
+    /// Step-flow ViewModel for Split by Length: pick the line-based elements, choose the view
+    /// scope, set the piece length, run.
     ///
-    /// Step 2's content depends on nothing from step 1, so the eager build StepFlowWindow does at
-    /// construction is correct here and no <c>IStepAware</c> refresh is needed — the only live
-    /// element is the hint line, which is re-worded in place as the gap changes.
+    /// The view step is conditional (<see cref="IConditionalSteps"/>): the scope defaults to the
+    /// active view, so the common path is three steps and the picker only appears when the user
+    /// turns that off. It sits second so the final Review &amp; Run step — which carries the Run
+    /// button and log — is always the last one, as the interface requires.
+    ///
+    /// Steps 3 and 4 depend on nothing that is built later, so the eager content build
+    /// StepFlowWindow does at construction is correct and no <c>IStepAware</c> refresh is needed;
+    /// the only live element is the hint line, re-worded in place as the gap changes.
     /// </summary>
-    public class SplitByLengthViewModel : IStepFlowTool, IReviewableTool, IRunResult, IToolCleanup
+    public class SplitByLengthViewModel : IStepFlowTool, IConditionalSteps, IReviewableTool, IRunResult, IToolCleanup
     {
         // Self-describing result label for the run strip (see IRunResult).
         public string? ResultNoun => "pieces";
@@ -32,16 +38,17 @@ namespace LemoineTools.Tools.ModifyElements
         {
             new StepDefinition("S1", AppStrings.T("modify.splitByLength.steps.S1"), required: true),
             new StepDefinition("S2", AppStrings.T("modify.splitByLength.steps.S2"), required: true),
-            new StepDefinition("S3", AppStrings.T("modify.splitByLength.steps.S3"), required: false),
+            new StepDefinition("S3", AppStrings.T("modify.splitByLength.steps.S3"), required: true),
+            new StepDefinition("S4", AppStrings.T("modify.splitByLength.steps.S4"), required: false),
         };
 
-        // The single group tab shown in step 1. A dictionary key as much as a label, so it stays
-        // hardcoded like every other category group label in the plugin (CLAUDE.md).
-        private const string CategoryGroup = "MEP";
-
         // ── State ─────────────────────────────────────────────────────────────
-        private List<string> _selectedCats  = new List<string>();
-        private bool         _useActiveView = false;
+        private List<string> _selectedCats = new List<string>();
+
+        // Scope defaults to the active view. Turning it off reveals S2 and makes the picked views
+        // the scope — there is no whole-document scope, by design.
+        private bool         _useActiveView   = true;
+        private List<long>   _selectedViewIds = new List<long>();
 
         private double _segLenFeet  = SplitByLengthSettings.Instance.SegmentLengthFeet;
         private double _gapInches   = SplitByLengthSettings.Instance.GapInches;
@@ -50,11 +57,15 @@ namespace LemoineTools.Tools.ModifyElements
         // Live hint under the gap field — re-worded, never re-parented (CLAUDE.md).
         private TextBlock? _hint;
 
-        private readonly int                      _totalElements;
-        private readonly ElementId?               _activeViewId;
-        private readonly IReadOnlyList<ElementId> _preSelectedIds;
-        private readonly IReadOnlyList<string>    _preSelectedCats;
-        private readonly int                      _preSelectedIgnored;
+        private readonly Dictionary<string, List<string>> _categoryGroups;
+        private readonly int                              _totalElements;
+        private readonly ElementId?                       _activeViewId;
+        private readonly string                           _activeViewName;
+        private readonly BrowserTree?                     _browserTree;
+        private readonly IReadOnlyList<long>              _eligibleViewIds;
+        private readonly IReadOnlyList<ElementId>         _preSelectedIds;
+        private readonly IReadOnlyList<string>            _preSelectedCats;
+        private readonly int                              _preSelectedIgnored;
 
         // ── Revit wiring ──────────────────────────────────────────────────────
         private readonly SplitByLengthEventHandler _handler;
@@ -63,7 +74,7 @@ namespace LemoineTools.Tools.ModifyElements
         public event EventHandler? ValidationChanged;
 
         // Null the callbacks parked on the static handler so this VM isn't retained after close,
-        // and drop the step-2 WPF reference so the closed window's visual tree can be collected.
+        // and drop the step-3 WPF reference so the closed window's visual tree can be collected.
         public void OnWindowClosed()
         {
             _hint = null;
@@ -75,32 +86,54 @@ namespace LemoineTools.Tools.ModifyElements
 
         private void OnValidationChanged() => ValidationChanged?.Invoke(this, EventArgs.Empty);
 
-        /// <param name="totalElements">Count of splittable elements in the document, for the count strip.</param>
-        /// <param name="preSelectedIds">Duct/pipe elements the user already had selected (may be empty).</param>
-        /// <param name="preSelectedCats">Distinct category labels present in that selection.</param>
+        /// <param name="categoryGroups">Discipline-grouped categories that actually have line-based elements.</param>
+        /// <param name="totalElements">How many line-based elements the document holds, for the count strip.</param>
+        /// <param name="browserTree">Project Browser tree captured on the Revit main thread.</param>
+        /// <param name="eligibleViewIds">Graphical, non-template views the picker may offer.</param>
         /// <param name="preSelectedIgnored">
-        /// How many selected elements were dropped for being neither duct nor pipe — surfaced in the
-        /// step-1 card so a partly-ignored selection is never silent.
+        /// How many selected elements were dropped for having no straight curve — surfaced in step
+        /// 1 so a partly-ignored selection is never silent.
         /// </param>
         public SplitByLengthViewModel(
-            SplitByLengthEventHandler handler,
-            ExternalEvent             externalEvent,
-            int                       totalElements,
-            ElementId?                activeViewId,
-            IReadOnlyList<ElementId>  preSelectedIds,
-            IReadOnlyList<string>     preSelectedCats,
-            int                       preSelectedIgnored)
+            SplitByLengthEventHandler        handler,
+            ExternalEvent                    externalEvent,
+            Dictionary<string, List<string>> categoryGroups,
+            int                              totalElements,
+            ElementId?                       activeViewId,
+            string                           activeViewName,
+            BrowserTree?                     browserTree,
+            IReadOnlyList<long>              eligibleViewIds,
+            IReadOnlyList<ElementId>         preSelectedIds,
+            IReadOnlyList<string>            preSelectedCats,
+            int                              preSelectedIgnored)
         {
             _handler            = handler;
             _event              = externalEvent;
+            _categoryGroups     = categoryGroups;
             _totalElements      = totalElements;
             _activeViewId       = activeViewId;
+            _activeViewName     = activeViewName ?? "";
+            _browserTree        = browserTree;
+            _eligibleViewIds    = eligibleViewIds;
             _preSelectedIds     = preSelectedIds;
             _preSelectedCats    = preSelectedCats;
             _preSelectedIgnored = preSelectedIgnored;
 
             if (_preSelectedIds.Count > 0)
                 _selectedCats = new List<string>(_preSelectedCats);
+
+            // With no active view to scope to there is nothing for the default to mean, so start
+            // on the picker instead of silently scoping to a view that does not exist.
+            if (_activeViewId == null) _useActiveView = false;
+        }
+
+        // ── IConditionalSteps ─────────────────────────────────────────────────
+        // The view picker is pointless when the scope is the active view, and equally pointless
+        // when the user launched with a selection (that selection IS the scope).
+        public bool IsStepVisible(string stepId)
+        {
+            if (stepId != "S2") return true;
+            return _preSelectedIds.Count == 0 && !_useActiveView;
         }
 
         // ═════════════════════════════════════════════════════════════════════
@@ -112,7 +145,8 @@ namespace LemoineTools.Tools.ModifyElements
             {
                 case "S1": return BuildS1();
                 case "S2": return BuildS2();
-                case "S3": return null;   // framework renders review (IReviewableTool)
+                case "S3": return BuildS3();
+                case "S4": return null;   // framework renders review (IReviewableTool)
                 default:   return null;
             }
         }
@@ -124,9 +158,10 @@ namespace LemoineTools.Tools.ModifyElements
 
             var outer = new StackPanel();
 
+            int catCount = _categoryGroups.Values.Sum(g => g.Count);
             var countStrip = new TextBlock
             {
-                Text         = AppStrings.T("modify.splitByLength.labels.countStrip", _totalElements),
+                Text         = AppStrings.T("modify.splitByLength.labels.countStrip", catCount, _totalElements),
                 TextWrapping = TextWrapping.Wrap,
                 Margin       = new Thickness(0, 0, 0, 6),
             };
@@ -135,12 +170,12 @@ namespace LemoineTools.Tools.ModifyElements
             countStrip.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
             outer.Children.Add(countStrip);
 
-            // Only the categories the tool can actually cut are offered — never shown-then-skipped
-            // (CLAUDE.md UX Philosophy).
-            var groups = new Dictionary<string, List<string>>
+            if (catCount == 0)
             {
-                { CategoryGroup, SplitElementsShared.LengthSplitCategories.Select(c => c.Label).ToList() },
-            };
+                // A zero-result capture says so rather than showing an empty picker (CLAUDE.md).
+                outer.Children.Add(Dim(AppStrings.T("modify.splitByLength.labels.noCategories")));
+                return outer;
+            }
 
             var tabs = new MultiSelectTabs();
             // Subscribe BEFORE SetGroups — that callback is the only thing that populates the
@@ -150,29 +185,32 @@ namespace LemoineTools.Tools.ModifyElements
                 _selectedCats = new List<string>(selected);
                 OnValidationChanged();
             };
-            tabs.SetGroups(groups);
+            tabs.SetGroups(_categoryGroups);
             outer.Children.Add(tabs);
 
-            if (_activeViewId != null)
+            var toggle = new ToggleSwitches();
+            toggle.SetItems(new List<ToggleItem>
             {
-                var toggle = new ToggleSwitches();
-                toggle.SetItems(new List<ToggleItem>
+                new ToggleItem
                 {
-                    new ToggleItem
-                    {
-                        Id        = "activeView",
-                        Label     = AppStrings.T("modify.splitByLength.labels.activeViewLabel"),
-                        Desc      = AppStrings.T("modify.splitByLength.labels.activeViewDesc"),
-                        DefaultOn = false,
-                    },
-                });
-                toggle.StateChanged += state =>
-                {
-                    _useActiveView = state.TryGetValue("activeView", out bool v) && v;
-                    OnValidationChanged();
-                };
-                outer.Children.Add(toggle);
-            }
+                    Id        = "activeView",
+                    Label     = AppStrings.T("modify.splitByLength.labels.activeViewLabel"),
+                    Desc      = _activeViewId != null
+                                    ? AppStrings.T("modify.splitByLength.labels.activeViewDesc", _activeViewName)
+                                    : AppStrings.T("modify.splitByLength.labels.activeViewNone"),
+                    DefaultOn = _useActiveView,
+                },
+            });
+            toggle.StateChanged += state =>
+            {
+                if (!state.TryGetValue("activeView", out bool v)) return;
+                // No active view to scope to — refuse to turn it on rather than scoping to nothing.
+                _useActiveView = v && _activeViewId != null;
+                // Re-raising validation is what makes StepFlowWindow re-evaluate IsStepVisible,
+                // so the view step appears/disappears live.
+                OnValidationChanged();
+            };
+            outer.Children.Add(toggle);
 
             return outer;
         }
@@ -254,7 +292,56 @@ namespace LemoineTools.Tools.ModifyElements
             return card;
         }
 
+        // ── S2: which views the run covers (only when the active-view scope is off) ──
         private FrameworkElement BuildS2()
+        {
+            var outer = new StackPanel();
+
+            if (_browserTree == null || _eligibleViewIds.Count == 0)
+            {
+                outer.Children.Add(Dim(AppStrings.T("modify.splitByLength.labels.noViews")));
+                return outer;
+            }
+
+            var picker = new BrowserTreePicker
+            {
+                Height         = 300,
+                AccessibleName = AppStrings.T("modify.splitByLength.labels.pickerName"),
+            };
+            // Subscribe BEFORE SetTree — its end-of-setup SelectionChanged seeds the mirror list.
+            picker.SelectionChanged += ids =>
+            {
+                _selectedViewIds = ids.ToList();
+                OnValidationChanged();
+            };
+            picker.SetTree(_browserTree, _eligibleViewIds, _selectedViewIds.ToList());
+            outer.Children.Add(picker);
+
+            var note = new Border
+            {
+                BorderThickness = new Thickness(1),
+                CornerRadius    = new CornerRadius(6),
+                Margin          = new Thickness(0, 9, 0, 0),
+            };
+            note.SetResourceReference(Border.PaddingProperty,     "LemoineTh_CardPad");
+            note.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
+            note.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+
+            var noteText = new TextBlock
+            {
+                Text         = AppStrings.T("modify.splitByLength.labels.viewsNote"),
+                TextWrapping = TextWrapping.Wrap,
+            };
+            noteText.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            noteText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextSub");
+            noteText.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            note.Child = noteText;
+            outer.Children.Add(note);
+
+            return outer;
+        }
+
+        private FrameworkElement BuildS3()
         {
             var outer = new StackPanel();
 
@@ -306,8 +393,9 @@ namespace LemoineTools.Tools.ModifyElements
             return outer;
         }
 
-        // Re-words the hint in place. The gap alone decides whether the run can stay connected, so
-        // the hint is how the user learns which strategy their current numbers select.
+        // Re-words the hint in place. The gap alone decides whether a run can stay connected, and
+        // only ducts and pipes can stay connected at all, so the hint is how the user learns what
+        // their current numbers will actually do to each category.
         private void UpdateHint()
         {
             if (_hint == null) return;
@@ -321,21 +409,18 @@ namespace LemoineTools.Tools.ModifyElements
         // ═════════════════════════════════════════════════════════════════════
         public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            ("cats",   AppStrings.T("modify.splitByLength.review.itemCats")),
-            ("scope",  AppStrings.T("modify.splitByLength.review.itemScope")),
-            ("len",    AppStrings.T("modify.splitByLength.review.itemLength")),
-            ("rem",    AppStrings.T("modify.splitByLength.review.itemRemainder")),
-            ("gap",    AppStrings.T("modify.splitByLength.review.itemGap")),
-            ("op",     AppStrings.T("modify.splitByLength.review.itemOp")),
+            ("cats",  AppStrings.T("modify.splitByLength.review.itemCats")),
+            ("scope", AppStrings.T("modify.splitByLength.review.itemScope")),
+            ("len",   AppStrings.T("modify.splitByLength.review.itemLength")),
+            ("rem",   AppStrings.T("modify.splitByLength.review.itemRemainder")),
+            ("gap",   AppStrings.T("modify.splitByLength.review.itemGap")),
+            ("op",    AppStrings.T("modify.splitByLength.review.itemOp")),
         };
 
         public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
         {
             ["cats"]  = _selectedCats.Count == 0 ? "—" : string.Join(", ", _selectedCats),
-            ["scope"] = _preSelectedIds.Count > 0
-                            ? AppStrings.T("modify.splitByLength.review.scopeFromSel", _preSelectedIds.Count)
-                            : _useActiveView ? AppStrings.T("modify.splitByLength.review.scopeActive")
-                                             : AppStrings.T("modify.splitByLength.review.scopeDoc"),
+            ["scope"] = ScopeSummary(),
             ["len"]   = AppStrings.T("modify.splitByLength.review.lenValue", _segLenFeet),
             ["rem"]   = _evenLengths ? AppStrings.T("modify.splitByLength.labels.modeEven")
                                      : AppStrings.T("modify.splitByLength.labels.modeOffcut"),
@@ -344,6 +429,17 @@ namespace LemoineTools.Tools.ModifyElements
                             : AppStrings.T("modify.splitByLength.review.gapValue", _gapInches),
             ["op"]    = AppStrings.T("modify.splitByLength.review.op", _segLenFeet),
         };
+
+        private string ScopeSummary()
+        {
+            if (_preSelectedIds.Count > 0)
+                return AppStrings.T("modify.splitByLength.review.scopeFromSel", _preSelectedIds.Count);
+            if (_useActiveView)
+                return AppStrings.T("modify.splitByLength.review.scopeActive", _activeViewName);
+            return _selectedViewIds.Count == 0
+                ? "—"
+                : AppStrings.T("modify.splitByLength.review.scopeViews", _selectedViewIds.Count);
+        }
 
         public IList<string>? ReviewChips   => null;
         public string?        ReviewNote    => AppStrings.T("modify.splitByLength.review.note");
@@ -357,7 +453,9 @@ namespace LemoineTools.Tools.ModifyElements
         public bool IsValid(string stepId)
         {
             if (stepId == "S1") return _preSelectedIds.Count > 0 || _selectedCats.Count > 0;
-            if (stepId == "S2") return _segLenFeet > 0;
+            // Only reachable while visible, but guard anyway so a hidden step can never block.
+            if (stepId == "S2") return !IsStepVisible("S2") || _selectedViewIds.Count > 0;
+            if (stepId == "S3") return _segLenFeet > 0;
             return true;
         }
 
@@ -370,14 +468,18 @@ namespace LemoineTools.Tools.ModifyElements
                 return _selectedCats.Count == 0 ? "—" : string.Join(", ", _selectedCats);
             }
             if (stepId == "S2")
-                return AppStrings.T("modify.splitByLength.summaries.S2",
+                return _selectedViewIds.Count == 0
+                    ? "—"
+                    : AppStrings.T("modify.splitByLength.summaries.S2", _selectedViewIds.Count);
+            if (stepId == "S3")
+                return AppStrings.T("modify.splitByLength.summaries.S3",
                     _segLenFeet,
                     _evenLengths ? AppStrings.T("modify.splitByLength.labels.modeEven")
                                  : AppStrings.T("modify.splitByLength.labels.modeOffcut"),
                     _gapInches <= 0 ? AppStrings.T("modify.splitByLength.review.gapNone")
                                     : AppStrings.T("modify.splitByLength.review.gapValue", _gapInches));
-            if (stepId == "S3")
-                return AppStrings.T("modify.splitByLength.summaries.S3");
+            if (stepId == "S4")
+                return AppStrings.T("modify.splitByLength.summaries.S4");
             return "—";
         }
 
@@ -389,8 +491,13 @@ namespace LemoineTools.Tools.ModifyElements
             PersistSettings();
 
             _handler.PreSelectedIds        = _preSelectedIds.Count > 0 ? new List<ElementId>(_preSelectedIds) : null;
-            _handler.ActiveViewId          = (_useActiveView && _activeViewId != null) ? _activeViewId : null;
             _handler.SelectedCategoryNames = new List<string>(_selectedCats);
+
+            // Exactly one of these two carries the scope, so the handler never has to guess.
+            _handler.ActiveViewId    = _useActiveView ? _activeViewId : null;
+            _handler.SelectedViewIds = _useActiveView
+                ? null
+                : _selectedViewIds.Select(id => new ElementId(id)).ToList();
 
             _handler.SegmentLengthFeet = _segLenFeet;
             _handler.GapFeet           = _gapInches / 12.0;
@@ -419,6 +526,15 @@ namespace LemoineTools.Tools.ModifyElements
             var tb = new TextBlock { Text = text, Margin = new Thickness(0, 10, 0, 5) };
             tb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             tb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextSub");
+            tb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            return tb;
+        }
+
+        private static TextBlock Dim(string text)
+        {
+            var tb = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 4) };
+            tb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            tb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             tb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
             return tb;
         }
