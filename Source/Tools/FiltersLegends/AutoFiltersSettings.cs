@@ -771,7 +771,7 @@ namespace LemoineTools.Tools.AutoFilters
             "OST_FabricationDuctwork",
             // ── Piping / Plumbing ──────────────────────────────────────────
             "OST_PipeCurves","OST_PipeFitting","OST_PipeAccessory",
-            "OST_PipeInsulations","OST_PipeLinings",
+            "OST_PipeInsulations",
             "OST_FlexPipeCurves","OST_PlumbingFixtures","OST_Sprinklers",
             "OST_FabricationPipework","OST_FabricationHangers","OST_FabricationContainment",
             // ── Electrical ─────────────────────────────────────────────────
@@ -782,9 +782,9 @@ namespace LemoineTools.Tools.AutoFilters
             "OST_DataDevices","OST_TelephoneDevices","OST_NurseCallDevices",
             // ── Structural ─────────────────────────────────────────────────
             "OST_StructuralFraming","OST_StructuralColumns","OST_StructuralFoundation",
-            "OST_StructuralTruss","OST_StructuralStiffener","OST_StructuralConnectionHandlers",
-            "OST_Rebar","OST_AreaReinforcement","OST_PathReinforcement",
-            "OST_FabricReinforcement","OST_FabricArea",
+            "OST_StructuralTruss","OST_StructuralStiffener","OST_StructConnections",
+            "OST_Rebar","OST_AreaRein","OST_PathRein",
+            "OST_FabricReinforcement","OST_FabricAreas",
             // ── Architectural ──────────────────────────────────────────────
             "OST_Walls","OST_Floors","OST_Roofs","OST_Ceilings",
             "OST_Doors","OST_Windows","OST_Stairs","OST_Ramps","OST_Railings",
@@ -871,7 +871,6 @@ namespace LemoineTools.Tools.AutoFilters
             { "OST_PipeFitting",         new[]{ "System Classification","System Type","System Name","Size","Connection Type","Type Name","Family Name","Mark","Comments" } },
             { "OST_PipeAccessory",       new[]{ "System Classification","System Type","System Name","Size","Type Name","Family Name","Mark","Comments" } },
             { "OST_PipeInsulations",     new[]{ "System Classification","System Type","Insulation Type","Type Name","Family Name","Mark" } },
-            { "OST_PipeLinings",         new[]{ "System Classification","System Type","Lining Type","Type Name","Family Name","Mark" } },
             { "OST_FlexPipeCurves",      new[]{ "System Classification","System Type","System Name","Diameter","Type Name","Family Name","Mark" } },
             { "OST_PlumbingFixtures",    new[]{ "System Classification","System Type","System Name","Type Name","Family Name","Mark","Comments","Level" } },
             { "OST_Sprinklers",          new[]{ "System Classification","System Type","System Name","Type Name","Family Name","Mark","Comments","Level" } },
