@@ -7,7 +7,6 @@ using System.Windows.Threading;
 using Autodesk.Revit.UI;
 using LemoineTools.Framework;
 using LemoineTools.Framework.Controls;
-using LemoineTools.Tools.AutoFilters;
 
 using WpfTextBox = System.Windows.Controls.TextBox;
 
@@ -28,11 +27,12 @@ namespace LemoineTools.Tools.CopyFromLink
 
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("source",    AppStrings.T("copy.linear.steps.source"),            required: true),
-            new StepDefinition("filters",   AppStrings.T("copy.linear.steps.filters"), required: false),
-            new StepDefinition("operation", AppStrings.T("copy.linear.steps.operation"),         required: true),
-            new StepDefinition("changes",   AppStrings.T("copy.linear.steps.changes"),  required: false),
-            new StepDefinition("run",       AppStrings.T("copy.linear.steps.run"),      required: false),
+            new StepDefinition("source",     AppStrings.T("copy.linear.steps.source"),     required: true),
+            new StepDefinition("categories", AppStrings.T("copy.linear.steps.categories"), required: true),
+            new StepDefinition("filters",    AppStrings.T("copy.linear.steps.filters"),    required: false),
+            new StepDefinition("operation",  AppStrings.T("copy.linear.steps.operation"),  required: true),
+            new StepDefinition("changes",    AppStrings.T("copy.linear.steps.changes"),    required: false),
+            new StepDefinition("run",        AppStrings.T("copy.linear.steps.run"),        required: false),
         };
 
         // ── Injected ───────────────────────────────────────────────────────────
@@ -139,15 +139,16 @@ namespace LemoineTools.Tools.CopyFromLink
         {
             switch (stepId)
             {
-                case "source":    return BuildSourceStep();
-                case "filters":   return BuildFiltersStep();
-                case "operation": return BuildOperationStep();
-                case "changes":   return BuildChangesStep();
-                default:          return null;   // "run" rendered by framework (IReviewableTool)
+                case "source":     return BuildSourceStep();
+                case "categories": return BuildCategoriesStep();
+                case "filters":    return BuildFiltersStep();
+                case "operation":  return BuildOperationStep();
+                case "changes":    return BuildChangesStep();
+                default:           return null;   // "run" rendered by framework (IReviewableTool)
             }
         }
 
-        // ── Step 1: Source & Filter ─────────────────────────────────────────────
+        // ── Step 1: Source document + worksets ──────────────────────────────────
         private FrameworkElement BuildSourceStep()
         {
             _disp = Dispatcher.CurrentDispatcher;
@@ -181,32 +182,40 @@ namespace LemoineTools.Tools.CopyFromLink
 
             Divider(outer);
 
-            // Categories — all filterable Revit categories, grouped by discipline (same pattern as ClashGroupEditor).
-            outer.Children.Add(Label(AppStrings.T("copy.linear.labels.catsToCopy")));
-            var catTabs = new MultiSelectTabs();
-            catTabs.SelectionChanged += sel =>
-            {
-                var map = AutoFiltersSettings.KnownCategoryMap;
-                _spec.Categories = sel.Select(s => map.TryGetValue(s, out var o) ? o : null)
-                                      .Where(o => o != null).Cast<string>().ToList();
-                ResetScan();
-                Changed();
-            };
-            var catGroups = BuildCategoryGroups();
-            var allCatDisplayNames = new HashSet<string>(catGroups.Values.SelectMany(v => v), StringComparer.Ordinal);
-            var selectedCatLabels = AutoFiltersSettings.KnownCategoryMap
-                .Where(kv => _spec.Categories.Contains(kv.Value) && allCatDisplayNames.Contains(kv.Key))
-                .Select(kv => kv.Key).ToList();
-            catTabs.SetGroups(catGroups, selectedCatLabels);
-            outer.Children.Add(catTabs);
-
-            Divider(outer);
-
             // Worksets (per chosen doc).
             outer.Children.Add(Label(AppStrings.T("copy.linear.labels.worksets")));
             _worksetContainer = new StackPanel { Margin = new Thickness(0, 2, 0, 0) };
             outer.Children.Add(_worksetContainer);
             RebuildWorksets();
+
+            return outer;
+        }
+
+        // ── Step 2: Categories ──────────────────────────────────────────────────
+        // All filterable Revit categories grouped by real discipline (CopyCategoryGroups). The
+        // list is document-wide, not per source document, so it needs no IStepAware refresh.
+        private FrameworkElement BuildCategoriesStep()
+        {
+            var outer = new StackPanel();
+            outer.Children.Add(Label(AppStrings.T("copy.linear.labels.catsToCopy")));
+            outer.Children.Add(Dim(AppStrings.T("copy.linear.labels.catsHelp")));
+
+            var catTabs = new MultiSelectTabs();
+            catTabs.SelectionChanged += sel =>
+            {
+                var map = CopyCategoryGroups.CategoryMap;
+                _spec.Categories = sel.Select(s => map.TryGetValue(s, out var o) ? o : null)
+                                      .Where(o => o != null).Cast<string>().ToList();
+                ResetScan();
+                Changed();
+            };
+            var catGroups = CopyCategoryGroups.BuildGroups();
+            var allCatDisplayNames = new HashSet<string>(catGroups.Values.SelectMany(v => v), StringComparer.Ordinal);
+            var selectedCatLabels = CopyCategoryGroups.CategoryMap
+                .Where(kv => _spec.Categories.Contains(kv.Value) && allCatDisplayNames.Contains(kv.Key))
+                .Select(kv => kv.Key).ToList();
+            catTabs.SetGroups(catGroups, selectedCatLabels);
+            outer.Children.Add(catTabs);
 
             return outer;
         }
@@ -742,21 +751,33 @@ namespace LemoineTools.Tools.CopyFromLink
         {
             switch (stepId)
             {
-                case "source":    return _spec.Categories.Count > 0;
-                case "operation": return _mode == "Replace"
+                case "source":     return _docs.Count > 0 && CurrentDoc() != null;
+                case "categories": return _spec.Categories.Count > 0;
+                case "operation":  return _mode == "Replace"
                                        ? (_familyByKey.ContainsKey(_familyKey) && _intervalFeet > 0)
                                        : _segLenFeet > 0;
-                default:          return true;
+                default:           return true;
             }
         }
+
+        private CopyLinearDocInfo? CurrentDoc() => _docs.FirstOrDefault(d => d.LinkInstId == _spec.LinkInstId);
 
         public string SummaryFor(string stepId)
         {
             switch (stepId)
             {
                 case "source":
+                {
+                    var src = CurrentDoc();
+                    if (src == null) return "—";
+                    int total = src.Worksets?.Count ?? 0;
+                    if (total == 0) return src.Name;
+                    int included = total - _spec.ExcludedWorksetIds.Count;
+                    return AppStrings.T("copy.linear.summaries.sourceWorksets", src.Name, included, total);
+                }
+                case "categories":
                     return _spec.Categories.Count == 0 ? "—"
-                        : AppStrings.T("copy.linear.summaries.source", (_docs.FirstOrDefault(d => d.LinkInstId == _spec.LinkInstId)?.Name ?? "source"), _spec.Categories.Count);
+                        : AppStrings.T("copy.linear.summaries.categories", _spec.Categories.Count);
                 case "filters":
                     return FilterSummary();
                 case "operation":
@@ -818,33 +839,6 @@ namespace LemoineTools.Tools.CopyFromLink
             s.DeletePrevious = _deletePrevious;
             s.OnlyChanged = _onlyChanged; s.DeleteOrphans = _deleteOrphans;
             s.Save();
-        }
-
-        // ── Category grouping (mirrors ClashGroupEditor) ──────────────────────────
-        private static Dictionary<string, List<string>> BuildCategoryGroups()
-        {
-            var groups = new Dictionary<string, List<string>>(StringComparer.Ordinal);
-            foreach (var kv in AutoFiltersSettings.KnownCategoryMap)
-            {
-                string disc = DisciplineOf(kv.Value);
-                if (!groups.ContainsKey(disc)) groups[disc] = new List<string>();
-                groups[disc].Add(kv.Key);
-            }
-            foreach (var k in groups.Keys.ToList())
-                groups[k].Sort(StringComparer.OrdinalIgnoreCase);
-            return groups;
-        }
-
-        private static string DisciplineOf(string ost)
-        {
-            bool C(params string[] needles) => needles.Any(n => ost.IndexOf(n, StringComparison.OrdinalIgnoreCase) >= 0);
-            if (C("Duct", "MechanicalEquipment", "FlexDuct"))                                      return "Mechanical";
-            if (C("Pipe", "Plumbing", "Sprinkler", "FlexPipe", "FabricationPipe",
-                  "FabricationHangers", "FabricationContainment"))                                  return "Piping";
-            if (C("Cable", "Conduit", "Electrical", "Lighting", "Communication",
-                  "FireAlarm", "Security", "Data", "Telephone", "NurseCall"))                       return "Electrical";
-            if (C("Structural", "Rebar", "Reinforcement", "Fabric"))                                return "Structural";
-            return "Architectural / Other";
         }
 
         // ── Small WPF helpers (theme via resource refs only) ─────────────────────
