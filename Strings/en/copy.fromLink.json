@@ -4,24 +4,28 @@
 {
   "title": "Copy Elements from Link",
   "runLabel": "Copy in Revit →",
-  "steps": { "source": "Source Link & Categories", "types": "Families to Copy", "changes": "Change Detection", "run": "Review & Run" },
+  "steps": { "source": "Source Link & Worksets", "categories": "Categories", "types": "Families to Copy", "changes": "Change Detection", "run": "Review & Run" },
   "summaries": {
     "run": "Ready to run",
-    "source": "{0} · {1} cat",
+    // Step 1 — link name plus how many of its worksets are included.
+    "sourceWorksets": "{0} · {1} of {2} worksets",
+    // Step 2 — how many categories are ticked.
+    "categories": "{0} category(ies)",
     "typeCount": "{0} family type(s)"
   },
   "labels": {
     "noLinks":       "No loaded links found. Load a Revit link into the host project first.",
     "sourceLink":    "Source link",
     "catsToCopy":    "Categories to copy",
+    "catsHelp":      "Grouped by discipline. Datums & Reference holds grids, levels, scope boxes and reference planes.",
     "worksets":      "Worksets (unchecked = excluded)",
     "noWorksets":    "No user worksets in this link.",
     "families":      "Families to copy",
     "familiesHelp":  "Tick the family types found in the link for the chosen categories. Everything is selected by default — untick anything you don't want copied.",
     "scanning":      "Scanning link…",
     "scanError":     "Scan error: {0}",
-    "pickCatFirst":  "Pick at least one category in the Source step, then return here.",
-    "confirmToScan": "Confirm the Source step to scan for families.",
+    "pickCatFirst":  "Pick at least one category in the Categories step, then return here.",
+    "confirmToScan": "Confirm the Categories step to scan for families.",
     "noTypes":       "{0} element(s) found — no family types to list.",
     "typesSummary":  "{0} element(s) · {1} family type(s) across {2} category(ies).",
     "changesNote":   "By default each copy is a finished element — once created it is detached from this tool and a later run never deletes it. Turn on delete-previous to keep outputs stamped so a re-run on the same source elements replaces them instead of adding duplicates.",

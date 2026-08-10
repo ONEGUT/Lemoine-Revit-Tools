@@ -8,7 +8,6 @@ using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Framework;
-using LemoineTools.Tools.AutoFilters;
 using LemoineTools.Tools.CopyFromLink;
 
 namespace LemoineTools.Commands
@@ -48,8 +47,9 @@ namespace LemoineTools.Commands
             {
                 var doc = uiApp.ActiveUIDocument.Document;
 
-                // Capture the full filterable-category list on the Revit main thread (same as Copy Linear).
-                AutoFiltersSettings.CaptureFilterableCategories(doc);
+                // Capture the copy tools' filterable-category list on the Revit main thread (same
+                // as Copy Linear), including the datum categories the copy pickers surface.
+                CopyCategoryGroups.Capture(doc);
 
                 var links = CollectLinks(doc);
 

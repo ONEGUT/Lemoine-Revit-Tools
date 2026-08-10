@@ -771,7 +771,7 @@ namespace LemoineTools.Tools.AutoFilters
             "OST_FabricationDuctwork",
             // ── Piping / Plumbing ──────────────────────────────────────────
             "OST_PipeCurves","OST_PipeFitting","OST_PipeAccessory",
-            "OST_PipeInsulations","OST_PipeLinings",
+            "OST_PipeInsulations",
             "OST_FlexPipeCurves","OST_PlumbingFixtures","OST_Sprinklers",
             "OST_FabricationPipework","OST_FabricationHangers","OST_FabricationContainment",
             // ── Electrical ─────────────────────────────────────────────────
@@ -782,9 +782,9 @@ namespace LemoineTools.Tools.AutoFilters
             "OST_DataDevices","OST_TelephoneDevices","OST_NurseCallDevices",
             // ── Structural ─────────────────────────────────────────────────
             "OST_StructuralFraming","OST_StructuralColumns","OST_StructuralFoundation",
-            "OST_StructuralTruss","OST_StructuralStiffener","OST_StructuralConnectionHandlers",
-            "OST_Rebar","OST_AreaReinforcement","OST_PathReinforcement",
-            "OST_FabricReinforcement","OST_FabricArea",
+            "OST_StructuralTruss","OST_StructuralStiffener","OST_StructConnections",
+            "OST_Rebar","OST_AreaRein","OST_PathRein",
+            "OST_FabricReinforcement","OST_FabricAreas",
             // ── Architectural ──────────────────────────────────────────────
             "OST_Walls","OST_Floors","OST_Roofs","OST_Ceilings",
             "OST_Doors","OST_Windows","OST_Stairs","OST_Ramps","OST_Railings",
@@ -871,7 +871,6 @@ namespace LemoineTools.Tools.AutoFilters
             { "OST_PipeFitting",         new[]{ "System Classification","System Type","System Name","Size","Connection Type","Type Name","Family Name","Mark","Comments" } },
             { "OST_PipeAccessory",       new[]{ "System Classification","System Type","System Name","Size","Type Name","Family Name","Mark","Comments" } },
             { "OST_PipeInsulations",     new[]{ "System Classification","System Type","Insulation Type","Type Name","Family Name","Mark" } },
-            { "OST_PipeLinings",         new[]{ "System Classification","System Type","Lining Type","Type Name","Family Name","Mark" } },
             { "OST_FlexPipeCurves",      new[]{ "System Classification","System Type","System Name","Diameter","Type Name","Family Name","Mark" } },
             { "OST_PlumbingFixtures",    new[]{ "System Classification","System Type","System Name","Type Name","Family Name","Mark","Comments","Level" } },
             { "OST_Sprinklers",          new[]{ "System Classification","System Type","System Name","Type Name","Family Name","Mark","Comments","Level" } },
@@ -955,7 +954,6 @@ namespace LemoineTools.Tools.AutoFilters
             { "Pipe Fittings",            "OST_PipeFitting" },
             { "Pipe Accessories",         "OST_PipeAccessory" },
             { "Pipe Insulation",          "OST_PipeInsulations" },
-            { "Pipe Linings",             "OST_PipeLinings" },
             { "Flex Pipes",               "OST_FlexPipeCurves" },
             { "Plumbing Fixtures",        "OST_PlumbingFixtures" },
             { "Sprinklers",               "OST_Sprinklers" },
@@ -983,12 +981,12 @@ namespace LemoineTools.Tools.AutoFilters
             { "Structural Foundations",   "OST_StructuralFoundation" },
             { "Structural Trusses",       "OST_StructuralTruss" },
             { "Structural Stiffeners",    "OST_StructuralStiffener" },
-            { "Structural Connections",   "OST_StructuralConnectionHandlers" },
+            { "Structural Connections",   "OST_StructConnections" },
             { "Rebar",                    "OST_Rebar" },
-            { "Area Reinforcement",       "OST_AreaReinforcement" },
-            { "Path Reinforcement",       "OST_PathReinforcement" },
+            { "Area Reinforcement",       "OST_AreaRein" },
+            { "Path Reinforcement",       "OST_PathRein" },
             { "Fabric Reinforcement",     "OST_FabricReinforcement" },
-            { "Fabric Area",              "OST_FabricArea" },
+            { "Fabric Area",              "OST_FabricAreas" },
             // ── Architectural ──────────────────────────────────────────────
             { "Walls",                    "OST_Walls" },
             { "Floors",                   "OST_Floors" },
@@ -1155,7 +1153,50 @@ namespace LemoineTools.Tools.AutoFilters
         /// </summary>
         public static void CaptureFilterableCategories(Document doc)
         {
-            if (doc == null) return;
+            if (TryCaptureCategories(doc, AllowedNonModelCategories, out var map, out var names, out var subs))
+            {
+                _runtimeCategoryMap   = map;
+                _runtimeDisplayNames  = names;
+                _runtimeSubcategories = subs;
+            }
+        }
+
+        /// <summary>
+        /// Same capture as <see cref="CaptureFilterableCategories"/> but admitting extra non-Model
+        /// categories on top of the shared <see cref="AllowedNonModelCategories"/> allowlist, and
+        /// returning the map instead of storing it. Lets a tool surface categories it specifically
+        /// needs (the copy tools' Scope Boxes / Reference Planes) without widening the shared
+        /// allowlist that Auto Filters' model-element pickers read.
+        ///
+        /// Must be called on the Revit main thread. Returns <see langword="null"/> on failure.
+        /// </summary>
+        public static IReadOnlyDictionary<string, string>? CaptureCategoryMap(
+            Document doc, IEnumerable<BuiltInCategory> extraNonModel)
+        {
+            var allowed = new HashSet<BuiltInCategory>(AllowedNonModelCategories);
+            if (extraNonModel != null)
+                foreach (var bic in extraNonModel) allowed.Add(bic);
+
+            return TryCaptureCategories(doc, allowed, out var map, out _, out _) ? map : null;
+        }
+
+        /// <summary>
+        /// Shared body of the category capture. <paramref name="allowedNonModel"/> is the set of
+        /// non-Model categories admitted alongside every <see cref="CategoryType.Model"/> one.
+        /// Returns <see langword="false"/> (leaving the outputs empty) when nothing usable is read,
+        /// so a caller never overwrites a good snapshot with an empty one.
+        /// </summary>
+        private static bool TryCaptureCategories(
+            Document doc,
+            HashSet<BuiltInCategory> allowedNonModel,
+            out Dictionary<string, string> outMap,
+            out string[] outNames,
+            out Dictionary<string, IReadOnlyList<string>> outSubs)
+        {
+            outMap   = new Dictionary<string, string>(StringComparer.Ordinal);
+            outNames = Array.Empty<string>();
+            outSubs  = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
+            if (doc == null) return false;
             try
             {
                 var ids = ParameterFilterUtilities.GetAllFilterableCategories();
@@ -1169,7 +1210,7 @@ namespace LemoineTools.Tools.AutoFilters
                     if (raw < 0 && (BuiltInCategory)(int)raw != BuiltInCategory.INVALID)
                         filterable.Add(raw);
                 }
-                if (filterable.Count == 0) return;
+                if (filterable.Count == 0) return false;
 
                 // Resolve each filterable category to its real Revit name and real parent.
                 var nodes      = new List<CategoryNode>();
@@ -1183,11 +1224,12 @@ namespace LemoineTools.Tools.AutoFilters
                     try { cat = Category.GetCategory(doc, id); }
                     catch (Exception __cex) { DiagnosticsLog.Swallowed("CaptureFilterableCategories.GetCategory", __cex); }
                     if (cat == null) continue;
-                    // Model categories only, plus an explicit allowlist of datum categories
-                    // (Grids, Levels) that Revit reports as non-Model but are genuinely
-                    // filterable and requested here. All other annotation categories stay out.
+                    // Model categories only, plus the caller's explicit allowlist of datum
+                    // categories that Revit reports as non-Model but are genuinely filterable
+                    // (Grids, Levels — and, for the copy tools, Scope Boxes / Reference Planes).
+                    // All other annotation categories stay out.
                     if (cat.CategoryType != CategoryType.Model &&
-                        !AllowedNonModelCategories.Contains((BuiltInCategory)(int)raw)) continue;
+                        !allowedNonModel.Contains((BuiltInCategory)(int)raw)) continue;
 
                     string name = cat.Name;
                     if (string.IsNullOrWhiteSpace(name)) continue;
@@ -1205,7 +1247,7 @@ namespace LemoineTools.Tools.AutoFilters
                     nodes.Add(new CategoryNode(raw, ((BuiltInCategory)(int)raw).ToString(), name, parentRaw));
                     nameByRaw[raw] = name;
                 }
-                if (nodes.Count == 0) return;
+                if (nodes.Count == 0) return false;
 
                 // Disambiguate duplicate Revit names (e.g. an "Insulation" sub-category under two
                 // different parents) by qualifying with the parent name, so each display token maps
@@ -1245,16 +1287,18 @@ namespace LemoineTools.Tools.AutoFilters
                 var names = displayByRaw.Values.ToList();
                 names.Sort(StringComparer.OrdinalIgnoreCase);
 
-                _runtimeCategoryMap   = map;
-                _runtimeDisplayNames  = names.ToArray();
-                _runtimeSubcategories = subs.ToDictionary(
+                outMap   = map;
+                outNames = names.ToArray();
+                outSubs  = subs.ToDictionary(
                     kv => kv.Key,
                     kv => (IReadOnlyList<string>)kv.Value,
                     StringComparer.Ordinal);
+                return true;
             }
             catch (Exception ex)
             {
-                DiagnosticsLog.Swallowed("AutoFiltersSettings.CaptureFilterableCategories", ex);
+                DiagnosticsLog.Swallowed("AutoFiltersSettings.TryCaptureCategories", ex);
+                return false;
             }
         }
 
@@ -1311,7 +1355,7 @@ namespace LemoineTools.Tools.AutoFilters
             { "Mechanical Equipment", new[]{ "Mechanical Control Devices" } },
             { "Fabrication Ductwork", new[]{ "Fabrication Hangers", "Fabrication Containment" } },
             // ── Piping / Plumbing ──────────────────────────────────────────
-            { "Pipes",                new[]{ "Pipe Fittings", "Pipe Accessories", "Pipe Insulation", "Pipe Linings", "Flex Pipes" } },
+            { "Pipes",                new[]{ "Pipe Fittings", "Pipe Accessories", "Pipe Insulation", "Flex Pipes" } },
             { "Fabrication Pipework", new[]{ "Fabrication Hangers", "Fabrication Containment" } },
             { "Plumbing Fixtures",    new[]{ "Plumbing Equipment" } },
             // ── Electrical ─────────────────────────────────────────────────
