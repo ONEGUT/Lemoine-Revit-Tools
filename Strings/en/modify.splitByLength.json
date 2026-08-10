@@ -1,0 +1,74 @@
+// modify.splitByLength.json — Split Elements by Length tool + handler logs.
+// Cuts native ducts and pipes into fixed-length pieces. Gap = 0 keeps the run connected
+// (Revit's BreakCurve); any gap above zero produces detached pieces instead.
+{
+  "title":    "Split Elements by Length",
+  "runLabel": "Split in Revit →",
+
+  "steps": { "S1": "Select Elements", "S2": "Segment Length", "S3": "Review & Run" },
+
+  "summaries": {
+    // {0} segment length ft · {1} remainder mode · {2} gap phrase
+    "S2": "{0:F1} ft · {1} · {2}",
+    "S3": "Ready to run"
+  },
+
+  "labels": {
+    "countStrip":      "{0} splittable ducts and pipes in document",
+    "activeViewLabel": "Active view elements only",
+    "activeViewDesc":  "When on, only ducts and pipes visible in the current Revit view will be split.",
+
+    "fromSelection":   "FROM CURRENT SELECTION",
+    "preselCount":     "{0} element(s) across {1} categor(ies)",
+    // Shown only when the selection also held things this tool cannot cut.
+    "preselIgnored":   "{0} selected element(s) are neither duct nor pipe and will be left alone.",
+    "preselNote":      "Close and reopen the tool to use category selection instead.",
+
+    "segLength":  "Segment length",
+    "unitFeet":   "ft",
+    "remainder":  "Remainder",
+    // Combo option text. The behaviour is driven by a bool in the ViewModel, not by these
+    // strings' values, so they are safe to translate.
+    "modeOffcut": "Offcut at end",
+    "modeEven":   "Even lengths",
+    "gap":        "Gap between pieces",
+    "unitInches": "in",
+
+    "hintConnected": "Gap is 0 — pieces are cut in place with Break Curve and stay connected as one system, keeping their type, size, insulation and system assignment.",
+    // {0} gap in inches
+    "hintDetached":  "A {0:F2} in gap produces physically separate pieces, so their connectors are released. Set the gap back to 0 to keep the run connected."
+  },
+
+  "review": {
+    "itemCats": "Categories", "itemScope": "Scope", "itemLength": "Segment length",
+    "itemRemainder": "Remainder", "itemGap": "Gap", "itemOp": "Operation",
+
+    "scopeFromSel": "From selection ({0} elements)",
+    "scopeActive":  "Active view only",
+    "scopeDoc":     "Entire document",
+
+    "lenValue": "{0:F1} ft",
+    "gapNone":  "None — pieces stay connected",
+    "gapValue": "{0:F2} in — pieces are detached",
+    "op":       "Cut each run into {0:F1} ft pieces",
+
+    "note":         "Runs shorter than one segment are skipped, as are flex and curved runs — only straight ducts and pipes can be cut to length.",
+    "warnDetached": "A gap above zero splits each run into separate pieces and releases their connectors. The run will no longer be a single connected system."
+  },
+
+  "log": {
+    "preSelected":   "Operating on {0} pre-selected element(s).",
+    // Ids captured at launch can stop resolving if the element was deleted in between.
+    "preSelectedGone": "{0} pre-selected element(s) no longer exist and were left out.",
+    "foundCats":     "Found {0} element(s) across {1} category(ies).",
+    // Zero found is reported explicitly — a silent empty run looks like a broken collector.
+    "foundNone":     "No ducts or pipes found across {0} selected category(ies) — nothing to split.",
+    "splitting":     "Splitting {0} element(s) into {1:F1} ft pieces ({2}).",
+    "modeOffcut":    "offcut at end",
+    "modeEven":      "even lengths",
+    "pathConnected": "Gap is 0 — cutting in place with Break Curve; pieces stay connected.",
+    "pathDetached":  "Gap is {0:F2} in — pieces will be separated and their connectors released.",
+    "done":          "Done — {0} piece(s) created from {1} element(s), {2} skipped, {3} failed.",
+    "error":         "Error: {0}"
+  }
+}

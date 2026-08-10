@@ -3,6 +3,14 @@ using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
 using LemoineTools.Framework;
+using LemoineTools.Tools.CopyFromLink;
+
+// Aliased rather than importing the whole MEP namespaces — this file already lives in a
+// Revit-type-dense scope and only needs these four names.
+using RevitDuct       = Autodesk.Revit.DB.Mechanical.Duct;
+using RevitPipe       = Autodesk.Revit.DB.Plumbing.Pipe;
+using MechanicalUtils = Autodesk.Revit.DB.Mechanical.MechanicalUtils;
+using PlumbingUtils   = Autodesk.Revit.DB.Plumbing.PlumbingUtils;
 
 namespace LemoineTools.Tools.ModifyElements
 {
@@ -88,6 +96,24 @@ namespace LemoineTools.Tools.ModifyElements
             (BuiltInCategory.OST_CableTray,
                 "Cable Trays",
                 "Split at grid plane intersection — curve-based"),
+        };
+
+        /// <summary>
+        /// Defines the Revit element categories that the length-split operation supports.
+        /// Deliberately just ducts and pipes: they are the only categories with a BreakCurve API,
+        /// so they are the only ones that can be cut and stay connected. The split core itself is
+        /// category-agnostic, so adding a row here (plus its collector mapping) is all it takes to
+        /// extend the tool — but nothing else is exposed today.
+        /// </summary>
+        public static readonly IReadOnlyList<(BuiltInCategory Cat, string Label, string Note)>
+            LengthSplitCategories = new[]
+        {
+            (BuiltInCategory.OST_DuctCurves,
+                "Ducts",
+                "Cut into fixed lengths along the run — pieces stay connected"),
+            (BuiltInCategory.OST_PipeCurves,
+                "Pipes",
+                "Cut into fixed lengths along the run — pieces stay connected"),
         };
 
         // ── Level constraint parameters ───────────────────────────────────────
@@ -227,6 +253,84 @@ namespace LemoineTools.Tools.ModifyElements
                 .Select(p => p!.Value)
                 .ToList();
             return SplitByPlanesCore(doc, elements, planes, "reference planes", progress, liveLog);
+        }
+
+        /// <summary>
+        /// Cuts each element in <paramref name="elements"/> into pieces of a fixed length measured
+        /// along its own <see cref="LocationCurve"/>. Unlike every other split here there are no
+        /// cutting planes — the stations come from the run's own length
+        /// (see <see cref="SplitByLengthEngine"/>).
+        ///
+        /// Two strategies, chosen by whether a gap was asked for:
+        ///
+        ///   CONNECTED (gap = 0) — Revit's own <c>MechanicalUtils.BreakCurve</c> /
+        ///   <c>PlumbingUtils.BreakCurve</c> cuts the run in place and rejoins the halves, so the
+        ///   pieces stay one connected system and keep their type, size, insulation and system
+        ///   assignment. Ducts and pipes only: the API has no equivalent for any other category.
+        ///
+        ///   DETACHED (gap &gt; 0) — the copy-and-recurve strategy the plane splits use. Physically
+        ///   separated pieces cannot be connected to one another, so releasing the connectors is
+        ///   inherent to what was asked for rather than a side effect.
+        ///
+        /// Every element-level failure is caught, logged, and skipped; a failed element never
+        /// aborts the enclosing transaction. Each success line names the strategy that ran.
+        /// </summary>
+        /// <param name="doc">The active Revit document. Must be inside an open transaction.</param>
+        /// <param name="elements">The elements to cut.</param>
+        /// <param name="opts">Segment length, gap, and remainder mode.</param>
+        public static SplitStats SplitByLength(
+            Document                doc,
+            IEnumerable<Element>    elements,
+            LengthSplitOptions      opts,
+            RunProgressReporter?    progress = null,
+            Action<string, string>? liveLog  = null)
+        {
+            var stats = new SplitStats(liveLog);
+
+            if (opts == null || opts.SegmentLengthFeet <= SplitByLengthEngine.MinPieceFeet)
+            {
+                stats.Fail("segment length", "Segment length must be greater than zero.");
+                return stats;
+            }
+
+            foreach (Element el in elements)
+            {
+                // Abandon mid-run: stop processing more elements but let the caller's tx.Commit()
+                // still run so every piece cut so far is preserved.
+                if (RunState.CancelRequested) break;
+
+                // Capture the id string up front (see SplitByLevel) so the catch never touches a
+                // possibly-deleted element.
+                string elId = "?";
+                try
+                {
+                    if (el?.Category?.Id == null) { stats.Skip("No category"); continue; }
+                    elId = el.Id.ToString();
+
+                    if (!(el.Location is LocationCurve lc) || !(lc.Curve is Line line))
+                    {
+                        stats.Skip($"{el.Category.Name} {elId}: no straight LocationCurve — flex and curved runs cannot be split by length");
+                        continue;
+                    }
+
+                    if (opts.KeepConnected && SupportsBreakCurve(el))
+                        SplitCurveByLengthConnected(doc, el, line, opts, stats);
+                    else
+                        SplitCurveByLengthDetached(doc, el, line, opts, stats);
+                }
+                catch (Exception ex)
+                {
+                    stats.Fail(elId, ex.Message);
+                }
+                finally
+                {
+                    // Tick every element regardless of outcome so the 5% interval log reflects
+                    // true progress through the selection.
+                    progress?.Tick();
+                }
+            }
+
+            return stats;
         }
 
         private static SplitStats SplitByPlanesCore(
@@ -680,6 +784,278 @@ namespace LemoineTools.Tools.ModifyElements
         }
 
         // ═════════════════════════════════════════════════════════════════════
+        //  Length split implementations
+        // ═════════════════════════════════════════════════════════════════════
+
+        // CONNECTED strategy — Revit cuts the run in place and rejoins the halves.
+        //
+        // BreakCurve returns the id of the piece it CREATED, but which half that is (the part
+        // before or after the cut) is not something the API guarantees, so "break the new one
+        // next" would be an assumption. It does not need to be one: a freshly created element's
+        // curve is correct the moment it exists, so testing only THAT piece says which of the two
+        // carries the next station — and the piece we broke, whose LocationCurve may not have been
+        // re-read yet, never has to be trusted. No doc.Regenerate() anywhere (never per item —
+        // CLAUDE.md); the run's single regen happens once at commit.
+        private static void SplitCurveByLengthConnected(
+            Document doc, Element el, Line line, LengthSplitOptions opts, SplitStats stats)
+        {
+            XYZ    a        = line.GetEndPoint(0);
+            XYZ    b        = line.GetEndPoint(1);
+            double totalLen = a.DistanceTo(b);
+
+            // el is never deleted on this path (Revit cuts it in place), but capture the id and
+            // category once anyway so every log line reads the same as the other strategies.
+            string  elId  = el.Id.ToString();
+            string? elCat = el.Category?.Name;
+
+            var stations = SplitByLengthEngine.CutStations(
+                totalLen, opts.SegmentLengthFeet, opts.EvenLengths);
+
+            if (stations.Count == 0)
+            {
+                stats.Skip($"{elCat} {elId}: {totalLen:F2} ft is shorter than one segment — nothing to cut");
+                return;
+            }
+
+            ElementId targetId   = el.Id;
+            int       pieces     = 1;
+            int       failedCuts = 0;
+
+            for (int i = 0; i < stations.Count; i++)
+            {
+                XYZ       pt = CopyLinearEngine.PointAlong(a, b, stations[i]);
+                ElementId newId;
+
+                try
+                {
+                    newId = BreakCurveAt(doc, targetId, pt);
+                }
+                catch (Exception ex)
+                {
+                    DiagnosticsLog.Error($"SplitElements: BreakCurve on {targetId}", ex);
+                    stats.FailNote($"{elId} cut at {stations[i]:F2} ft failed: {ex.Message}");
+                    failedCuts++;
+                    continue;
+                }
+
+                // A null / invalid result is Revit REFUSING the cut, not a quiet success — report
+                // it rather than counting a piece that was never made.
+                if (newId == null || newId == ElementId.InvalidElementId)
+                {
+                    stats.FailNote($"{elId} cut at {stations[i]:F2} ft refused by Revit.");
+                    failedCuts++;
+                    continue;
+                }
+
+                pieces++;
+
+                // Aim the next cut at whichever of the two pieces now carries its station.
+                if (i + 1 < stations.Count)
+                {
+                    XYZ   next    = CopyLinearEngine.PointAlong(a, b, stations[i + 1]);
+                    bool? carries = CurveCarries(doc, newId, next);
+                    // true  → the new piece carries it.
+                    // null  → unreadable; fall back to Revit's documented behaviour (the new piece
+                    //         is the far half), which is the same answer.
+                    // false → the piece we just broke still carries it, so targetId stays put.
+                    if (carries != false) targetId = newId;
+                }
+            }
+
+            if (pieces <= 1)
+            {
+                stats.Fail(elId, "no cut succeeded; element left intact.");
+                return;
+            }
+
+            if (failedCuts == 0)
+                stats.Split(pieces, $"{elCat} {elId} → {pieces} piece(s), connected");
+            else
+                // Some cuts were refused, so the run is coarser than asked for. Report it as such
+                // rather than a clean success so the user knows to check the result.
+                stats.Split(pieces,
+                    $"{elCat} {elId} → {pieces}/{stations.Count + 1} piece(s), connected ({failedCuts} cut(s) refused)");
+        }
+
+        // DETACHED strategy — one copy of the element per piece, each re-curved to its own cell.
+        // The only way to honour a gap: separated pieces cannot stay connected, so the connectors
+        // are released (the same trade the plane splits make).
+        private static void SplitCurveByLengthDetached(
+            Document doc, Element el, Line line, LengthSplitOptions opts, SplitStats stats)
+        {
+            XYZ    a        = line.GetEndPoint(0);
+            XYZ    b        = line.GetEndPoint(1);
+            double totalLen = a.DistanceTo(b);
+
+            var cells = SplitByLengthEngine.PlanCells(
+                totalLen, opts.SegmentLengthFeet, opts.GapFeet, opts.EvenLengths);
+
+            if (cells.Count <= 1)
+            {
+                // One cell spans the whole run, so re-curving would be a no-op. Say so — a silent
+                // empty result is indistinguishable from a broken collector.
+                stats.Skip($"{el.Category?.Name} {el.Id}: {totalLen:F2} ft is shorter than one segment — nothing to cut");
+                return;
+            }
+
+            SplitCurveByStations(doc, el, a, b, cells, stats);
+        }
+
+        // Core of the detached length split. Makes every piece id FIRST by copying the pristine
+        // full-length element, then re-curves each one to its own cell — copying an already-mutated
+        // element would propagate the first piece's shortened curve to all the rest (same ordering
+        // as SplitCurveElement and CopyLinearRunHandler.BuildSplit).
+        private static void SplitCurveByStations(
+            Document doc, Element el, XYZ a, XYZ b,
+            List<(double Start, double End)> cells, SplitStats stats)
+        {
+            // el is segIds[0] — the ORIGINAL element, re-curved and never deleted here, so its
+            // Id/Category stay valid. Capture them once for the log lines regardless.
+            string  elId  = el.Id.ToString();
+            string? elCat = el.Category?.Name;
+
+            var segIds = new List<ElementId> { el.Id };
+            for (int i = 1; i < cells.Count; i++)
+            {
+                try
+                {
+                    ICollection<ElementId> copied =
+                        ElementTransformUtils.CopyElement(doc, el.Id, XYZ.Zero);
+                    if (copied == null || !copied.Any())
+                        throw new InvalidOperationException("CopyElement returned empty.");
+                    segIds.Add(copied.First());
+                }
+                catch (Exception ex)
+                {
+                    // Clean up every copy made so far before bailing.
+                    foreach (var cid in segIds.Skip(1))
+                        try { doc.Delete(cid); } catch (Exception __lex) { DiagnosticsLog.Swallowed("SplitElements: clean up partial length copies", __lex); }
+                    stats.Fail(elId, $"copy #{i} failed: {ex.Message}");
+                    return;
+                }
+            }
+
+            int success = 0;
+            for (int i = 0; i < segIds.Count && i < cells.Count; i++)
+            {
+                Element seg = doc.GetElement(segIds[i]);
+                if (seg == null)
+                {
+                    // A piece we just created that cannot be read back is a real fault, not a
+                    // no-op: without this line it would only ever surface as an unexplained
+                    // shortfall in the "N/M pieces" tally below.
+                    stats.FailNote($"{elId} piece {i}: could not be read back after copy.");
+                    DiagnosticsLog.Warn("SplitElements: length piece",
+                        $"copy {segIds[i]} of {elId} did not resolve.");
+                    continue;
+                }
+
+                XYZ segA = CopyLinearEngine.PointAlong(a, b, cells[i].Start);
+                XYZ segB = CopyLinearEngine.PointAlong(a, b, cells[i].End);
+
+                if (segA.DistanceTo(segB) < SplitByLengthEngine.MinPieceFeet)
+                {
+                    // Piece 0 IS the original element. If its own cell is degenerate, re-curving it
+                    // would corrupt the original while the copies cover the real cells — leaving
+                    // overlapping duplicate geometry. Abort the whole element instead.
+                    if (i == 0)
+                    {
+                        CleanupCopies(doc, segIds);
+                        stats.Fail(elId, "first piece is degenerate; element left intact.");
+                        return;
+                    }
+                    try { doc.Delete(segIds[i]); } catch (Exception __lex) { DiagnosticsLog.Swallowed("SplitElements: delete degenerate length piece", __lex); }
+                    stats.FailNote($"{elId} piece {i}: degenerate length, removed.");
+                    continue;
+                }
+
+                try
+                {
+                    // Validate geometry before touching connectors: if CreateBound throws, the
+                    // element's connectors are left intact.
+                    Line newCurve = Line.CreateBound(segA, segB);
+                    var  segLc    = seg.Location as LocationCurve;
+                    if (segLc == null) throw new InvalidOperationException("No LocationCurve on copy.");
+                    DisconnectAllConnectors(seg);
+                    segLc.Curve = newCurve;
+                    success++;
+                }
+                catch (Exception ex)
+                {
+                    // Piece 0 failure = the original couldn't take its cell. Abort the whole element
+                    // so the still-full-length original is never left overlapping the copies.
+                    if (i == 0)
+                    {
+                        CleanupCopies(doc, segIds);
+                        stats.Fail(elId, $"first piece curve set failed: {ex.Message}; element left intact.");
+                        return;
+                    }
+                    try { doc.Delete(segIds[i]); } catch (Exception __lex) { DiagnosticsLog.Swallowed("SplitElements: delete orphaned length piece", __lex); }
+                    stats.FailNote($"{elId} piece {i} curve set failed: {ex.Message}");
+                }
+            }
+
+            if (success == segIds.Count)
+                stats.Split(success, $"{elCat} {elId} → {success} piece(s), detached");
+            else if (success > 0)
+                stats.Split(success, $"{elCat} {elId} → {success}/{segIds.Count} piece(s), detached (some failed — result may have an extra gap)");
+            else
+                stats.Fail(elId, "All piece curve assignments failed.");
+        }
+
+        /// <summary>
+        /// Whether Revit can cut this element in place and keep the run connected. Only ducts and
+        /// pipes have a BreakCurve API. FlexDuct and FlexPipe are sibling classes of Duct/Pipe
+        /// (both derive from MEPCurve, neither derives from the other), so they are excluded by
+        /// construction here as well as by the straight-line test upstream.
+        /// </summary>
+        private static bool SupportsBreakCurve(Element el) => el is RevitDuct || el is RevitPipe;
+
+        // Dispatches to whichever BreakCurve owns this element's category, and returns the id of
+        // the piece Revit created. InvalidElementId means the element was neither duct nor pipe;
+        // the caller already screens for that, so it doubles as a refusal signal.
+        private static ElementId BreakCurveAt(Document doc, ElementId id, XYZ point)
+        {
+            Element el = doc.GetElement(id);
+            if (el is RevitDuct) return MechanicalUtils.BreakCurve(doc, id, point);
+            if (el is RevitPipe) return PlumbingUtils.BreakCurve(doc, id, point);
+            return ElementId.InvalidElementId;
+        }
+
+        /// <summary>
+        /// Whether the element's line carries <paramref name="point"/> in its interior. Returns
+        /// null when the answer cannot be read at all, so the caller can fall back to Revit's
+        /// documented behaviour deliberately instead of guessing from a false.
+        /// </summary>
+        private static bool? CurveCarries(Document doc, ElementId id, XYZ point)
+        {
+            try
+            {
+                var el = doc.GetElement(id);
+                if (!(el?.Location is LocationCurve lc) || !(lc.Curve is Line line)) return null;
+
+                XYZ    p0  = line.GetEndPoint(0);
+                XYZ    p1  = line.GetEndPoint(1);
+                double len = p0.DistanceTo(p1);
+                if (len < SplitByLengthEngine.MinPieceFeet) return null;
+
+                XYZ    dir = (p1 - p0).Normalize();
+                double t   = (point - p0).DotProduct(dir);
+                if (t < SplitByLengthEngine.MinPieceFeet || t > len - SplitByLengthEngine.MinPieceFeet)
+                    return false;
+
+                // Off-axis distance too — a point can project inside the span while sitting well
+                // off the line, which is not "carried".
+                return (point - (p0 + t * dir)).GetLength() < 0.01;
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Swallowed($"SplitElements: read piece curve {id}", ex);
+                return null;
+            }
+        }
+
+        // ═════════════════════════════════════════════════════════════════════
         //  Core curve split
         // ═════════════════════════════════════════════════════════════════════
 
@@ -984,6 +1360,43 @@ namespace LemoineTools.Tools.ModifyElements
             }
             catch (Exception __lex) { DiagnosticsLog.Swallowed("SplitElements: disconnect element connectors", __lex); }
         }
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    //  Length split options
+    // ═════════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Everything <see cref="SplitElementsShared.SplitByLength"/> needs from the UI.
+    /// Lengths are in Revit internal units (feet) — the ViewModel converts the gap from the
+    /// inches the user types.
+    /// </summary>
+    public sealed class LengthSplitOptions
+    {
+        /// <summary>Length of each piece, in feet. Must be greater than zero.</summary>
+        public double SegmentLengthFeet { get; set; } = 10.0;
+
+        /// <summary>
+        /// Physical gap left between consecutive pieces, in feet. Zero keeps the run connected;
+        /// anything above zero switches the run to the detached strategy, because separated
+        /// pieces cannot be connected to one another.
+        /// </summary>
+        public double GapFeet { get; set; } = 0.0;
+
+        /// <summary>
+        /// False: every piece is exactly <see cref="SegmentLengthFeet"/> and the tail is whatever
+        /// remains (34 ft at 10 ft → 10 + 10 + 10 + 4).
+        /// True: the run is divided into the fewest equal pieces that all stay at or under that
+        /// length (34 ft at 10 ft → 4 × 8.5 ft), so there is no short offcut.
+        /// </summary>
+        public bool EvenLengths { get; set; } = false;
+
+        /// <summary>
+        /// Whether this configuration can keep the run connected. The gap alone decides it —
+        /// there is no separate switch, because "connected" and "gapped" are mutually exclusive
+        /// physical outcomes rather than independent choices.
+        /// </summary>
+        public bool KeepConnected => GapFeet <= 1e-6;
     }
 
     // ═════════════════════════════════════════════════════════════════════════

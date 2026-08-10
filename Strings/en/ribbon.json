@@ -135,7 +135,7 @@
 
     "splitElements": {
       "label": "Split\nElements",
-      "tip":   "Split elements at level elevations, grid planes, reference planes, or a regular cell grid."
+      "tip":   "Split elements at level elevations, grid planes, reference planes, a regular cell grid, or into fixed lengths."
     },
     "splitByLevel": {
       "label": "Split by Levels",
@@ -152,6 +152,10 @@
     "splitByCell": {
       "label": "Split by Cell",
       "tip":   "Split floors, ceilings, and filled regions into a regular grid of cells."
+    },
+    "splitByLength": {
+      "label": "Split by Length",
+      "tip":   "Cut ducts and pipes into fixed-length pieces. With no gap the pieces stay connected as one system."
     },
     "extendWalls": {
       "label": "Extend\nWalls",

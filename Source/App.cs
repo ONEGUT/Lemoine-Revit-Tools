@@ -171,6 +171,8 @@ namespace LemoineTools
         internal static ExternalEvent?                     SplitByCellEvent             { get; private set; }
         internal static SplitByReferencePlaneEventHandler? SplitByReferencePlaneHandler { get; private set; }
         internal static ExternalEvent?                     SplitByReferencePlaneEvent   { get; private set; }
+        internal static SplitByLengthEventHandler?         SplitByLengthHandler         { get; private set; }
+        internal static ExternalEvent?                     SplitByLengthEvent           { get; private set; }
         internal static ExtendWallsEventHandler?           ExtendWallsHandler           { get; private set; }
         internal static ExternalEvent?                     ExtendWallsEvent             { get; private set; }
 
@@ -335,6 +337,8 @@ namespace LemoineTools
             SplitByCellEvent             = ExternalEvent.Create(SplitByCellHandler);
             SplitByReferencePlaneHandler = new SplitByReferencePlaneEventHandler();
             SplitByReferencePlaneEvent   = ExternalEvent.Create(SplitByReferencePlaneHandler);
+            SplitByLengthHandler         = new SplitByLengthEventHandler();
+            SplitByLengthEvent           = ExternalEvent.Create(SplitByLengthHandler);
             ExtendWallsHandler           = new ExtendWallsEventHandler();
             ExtendWallsEvent             = ExternalEvent.Create(ExtendWallsHandler);
 
@@ -455,6 +459,14 @@ namespace LemoineTools
                 ToolTip    = L.T("ribbon.buttons.splitByCell.tip"),
                 LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE80A)),
                 Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE80A)),
+            });
+
+            splitBtn?.AddPushButton(new PushButtonData(
+                "LT_SplitByLength", L.T("ribbon.buttons.splitByLength.label"), dll, "LemoineTools.Commands.SplitByLengthCommand")
+            {
+                ToolTip    = L.T("ribbon.buttons.splitByLength.tip"),
+                LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE8C6)),  // Cut
+                Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE8C6)),
             });
 
             modifyPanel.AddItem(Btn(
