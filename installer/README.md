@@ -62,6 +62,9 @@ Options:
   publish into. Defaults to the synced VDC library (see below).
 - `-NoPublish` — build locally only; never touch the shared folder.
 - `-KeepOld` — publish the new installer but leave the previous ones in place.
+- `-CheckPublish` — show which folder it resolved to, what's published there now, and
+  what version it would build. Builds nothing and changes nothing. Run this first if
+  publishing isn't working.
 - `-Years 2024,2025` — build only specific years. Default is all four.
 - `-SkipBuild` — don't rebuild; just package whatever is already deployed (e.g. after
   a Visual Studio build).
@@ -122,6 +125,36 @@ ISCC /DMyAppVersion=1.0.2 /DOutputDir="C:\some\folder" installer\LemoineTools.is
 
 Note that this writes the compiler's output directly to that folder and does none of the
 version detection, verification, or old-file cleanup above.
+
+### Troubleshooting: nothing arrives in the shared folder
+
+Run the preflight first — it answers the question in a couple of seconds without a build:
+
+```powershell
+installer\build-installer.ps1 -CheckPublish
+```
+
+It prints the folder it resolved to, whether that folder exists, which installers are in
+it, and the version it would build next.
+
+**If a setup wizard opens asking you to install, the script did not run.**
+`build-installer.ps1` never launches the installer it builds — it only compiles and
+copies. A wizard opening means the **Inno Setup Compiler IDE** compiled it: its
+**Run (F9)** command compiles *and* runs the output. That path knows nothing about
+versioning or publishing, so it stamps the `.iss` default version and leaves the `.exe`
+in `installer\output\`. Either use **Build > Compile (Ctrl+F9)** in that IDE, or run the
+script — the script is what does the versioning and publishing.
+
+Other things worth checking:
+
+- **Run it from PowerShell, from the repo root**, e.g. `installer\build-installer.ps1`.
+  If it's blocked by execution policy, use
+  `powershell -ExecutionPolicy Bypass -File installer\build-installer.ps1`.
+- **Read the first three lines of output.** The script prints `Publish folder: <path>`
+  before it does anything, and warns loudly if that folder doesn't exist.
+- **OneDrive must have the library synced locally.** The path has to exist on disk as a
+  real folder; a library you've only opened in the browser won't be there. Pass
+  `-PublishDir "<path>"` if yours syncs somewhere else.
 
 ## Install / uninstall on a target machine
 

@@ -48,6 +48,15 @@
 
 .EXAMPLE
     installer\build-installer.ps1 -NoPublish        # build locally, don't touch the shared folder
+
+.EXAMPLE
+    installer\build-installer.ps1 -CheckPublish     # just show the publish folder + next version
+
+.NOTES
+    This script NEVER launches the installer it builds. If a setup wizard opens after
+    you "build", the Inno Setup Compiler IDE compiled it, not this script — its Run (F9)
+    command compiles AND runs the output, and it does no versioning or publishing.
+    Use Build > Compile (Ctrl+F9) in that IDE, or run this script instead.
 #>
 [CmdletBinding()]
 param(
@@ -68,6 +77,10 @@ param(
 
     # Publish the new .exe but keep the older ones instead of deleting them.
     [switch] $KeepOld,
+
+    # Report what the publish folder resolves to and which version would be built,
+    # then stop. Builds nothing, copies nothing, deletes nothing.
+    [switch] $CheckPublish,
 
     [string] $Iscc  = "ISCC.exe",
     [int[]]  $Years = @(2024, 2025, 2026, 2027),
@@ -183,6 +196,35 @@ else {
 
 if ($published.Count -gt 1) {
     Write-Warning "Publish folder holds $($published.Count) installers; the highest ($($currentPublished.Version)) was used as the current version."
+}
+
+# -CheckPublish: report and stop. Nothing is built, copied or deleted — this exists
+# to confirm the OneDrive path resolves before committing to a full 4-year build.
+if ($CheckPublish) {
+    Write-Host "`n-- Publish check (nothing built, nothing changed) --" -ForegroundColor Yellow
+    if ($publishDirExists) {
+        Write-Host "Folder exists:          yes" -ForegroundColor Green
+        if ($published.Count -gt 0) {
+            Write-Host "Installers found:" -ForegroundColor DarkGray
+            foreach ($p in $published) { Write-Host "    $($p.File.Name)" -ForegroundColor DarkGray }
+        }
+        else {
+            Write-Host "Installers found:       none matching LemoineToolsSetup-<version>.exe" -ForegroundColor Yellow
+            $anyFile = @(Get-ChildItem -LiteralPath $PublishDir -File -ErrorAction SilentlyContinue | Select-Object -First 10)
+            if ($anyFile.Count -gt 0) {
+                Write-Host "Folder does contain:" -ForegroundColor DarkGray
+                foreach ($f in $anyFile) { Write-Host "    $($f.Name)" -ForegroundColor DarkGray }
+            }
+        }
+        Write-Host "Would build + publish:  LemoineToolsSetup-$Version.exe" -ForegroundColor Cyan
+    }
+    else {
+        Write-Host "Folder exists:          NO" -ForegroundColor Red
+        Write-Host "Nothing would be published. Check that OneDrive has the VDC Department" -ForegroundColor Red
+        Write-Host "library synced to this machine, then re-run. If it syncs to a different" -ForegroundColor Red
+        Write-Host "path, pass -PublishDir '<path>'." -ForegroundColor Red
+    }
+    return
 }
 
 # ---------------------------------------------------------------------------
