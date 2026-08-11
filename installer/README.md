@@ -45,12 +45,23 @@ add-ins are left alone.
 From the repo root, in PowerShell:
 
 ```powershell
-installer\build-installer.ps1 -Version 1.2.0
+installer\build-installer.ps1
 ```
+
+That's the whole command for a routine release. With `LemoineToolsSetup-1.0.1.exe`
+currently in the shared folder, it builds **1.0.2**, copies it there, and deletes
+**1.0.1** — so the folder always holds exactly one, current installer.
 
 Options:
 
-- `-Version <x.y.z>` — stamped into the installer and the output filename. Default `1.0.0`.
+- `-Version <x.y.z>` — set the version by hand instead of auto-detecting it.
+- `-Bump patch|minor|major|none` — which part of the detected version to increment.
+  Default `patch` (`1.0.1` → `1.0.2`); `minor` gives `1.1.0`, `major` gives `2.0.0`,
+  `none` rebuilds the published version in place.
+- `-PublishDir "<path>"` — the shared folder to read the current version from and
+  publish into. Defaults to the synced VDC library (see below).
+- `-NoPublish` — build locally only; never touch the shared folder.
+- `-KeepOld` — publish the new installer but leave the previous ones in place.
 - `-Years 2024,2025` — build only specific years. Default is all four.
 - `-SkipBuild` — don't rebuild; just package whatever is already deployed (e.g. after
   a Visual Studio build).
@@ -58,16 +69,59 @@ Options:
 
 The script:
 
-1. Builds each `Release<year>` to the location the csproj already deploys to
+1. Reads the shared folder, takes the highest `LemoineToolsSetup-<version>.exe` it
+   finds there, and bumps it — that becomes this build's version. (`-Version` skips
+   the detection.)
+2. Builds each `Release<year>` to the location the csproj already deploys to
    (`%ProgramData%\Autodesk\Revit\Addins\<year>\`) — unless `-SkipBuild` is passed.
-2. Detects which years are actually present there and packages only those.
-3. Runs `ISCC`, which copies Lemoine's own files from that same location into
+3. Detects which years are actually present there and packages only those.
+4. Runs `ISCC`, which copies Lemoine's own files from that same location into
    `installer\output\LemoineToolsSetup-<version>.exe`.
+5. Publishes: copies that `.exe` to the shared folder, verifies the copy by SHA256,
+   then deletes the older installers.
 
-`installer\output\` is a git-ignored build artifact.
+`installer\output\` is a git-ignored build artifact — the local copy is kept there
+as well as published, so there's always something to fall back on.
 
 > If you redirected the csproj's `DeployDir` somewhere non-standard, point the
 > installer at it with `ISCC /DAddinsRoot=<parent-of-year-folders> ...`.
+
+## Publishing to the shared VDC folder
+
+`-PublishDir` defaults to the OneDrive-synced VDC Department library:
+
+```
+%USERPROFILE%\The Lemoine Company\VDC Department - Documents\1 General\1.5 Software\Software Resources\Revit\Plugin
+```
+
+It's built from `%USERPROFILE%` rather than hardcoded, so it resolves for anyone who
+has that SharePoint library synced. Pass `-PublishDir "<path>"` for anywhere else.
+
+Safety rules the publish step follows, all of them deliberate:
+
+- **Compile local, then copy.** `ISCC` writes to `installer\output\` first; only a
+  finished `.exe` is copied to the shared folder. An interrupted compile can never
+  leave a half-written installer where people download it from.
+- **Copy first, verify, then delete.** The new installer is copied in and SHA256-checked
+  against the file that was just built *before* any old one is removed — so a failed or
+  corrupted publish leaves the previous version usable rather than an empty folder.
+- **Only our own filenames are ever deleted.** Nothing outside the exact
+  `LemoineToolsSetup-<numeric version>.exe` shape is touched.
+- **A newer installer is never deleted.** If the folder holds a version higher than the
+  one being published (a mistyped `-Version`, or an auto-detect that fell back because
+  OneDrive was offline), it's kept and reported instead of overwritten.
+- **A missing publish folder is not fatal.** If OneDrive hasn't synced the library, the
+  build still completes into `installer\output\` and the script says it did not publish.
+
+If you'd rather have `ISCC` write straight into a folder without the script, the `.iss`
+takes an output-folder override:
+
+```powershell
+ISCC /DMyAppVersion=1.0.2 /DOutputDir="C:\some\folder" installer\LemoineTools.iss
+```
+
+Note that this writes the compiler's output directly to that folder and does none of the
+version detection, verification, or old-file cleanup above.
 
 ## Install / uninstall on a target machine
 

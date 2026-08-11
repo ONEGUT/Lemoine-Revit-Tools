@@ -11,11 +11,15 @@
 ;  files are packaged — that is Revit's SHARED add-ins folder, so other vendors'
 ;  add-ins may sit alongside ours and must never be swept in.
 ;
-;  Build + package in one step:
+;  Build + package in one step (also auto-versions and publishes to the shared
+;  VDC folder — see installer\README.md):
 ;      installer\build-installer.ps1
 ;
 ;  Or, after building the plugin, compile manually:
 ;      ISCC /DMyAppVersion=1.2.3 installer\LemoineTools.iss
+;
+;  Write the .exe somewhere other than installer\output\ with /DOutputDir=...:
+;      ISCC /DMyAppVersion=1.2.3 /DOutputDir="C:\some\shared\folder" installer\LemoineTools.iss
 ;
 ;  Requires Inno Setup 6 (ISPP preprocessor — the default install).
 ; ============================================================================
@@ -26,6 +30,17 @@
 ; Version can be injected by build-installer.ps1 via /DMyAppVersion=...
 #ifndef MyAppVersion
   #define MyAppVersion "1.0.0"
+#endif
+
+; Where the compiled setup.exe is written. Relative paths are resolved against
+; this .iss file's folder, so the default lands in installer\output\. Override
+; with /DOutputDir=... to compile straight into a shared/published folder.
+; build-installer.ps1 deliberately leaves this at the default: it compiles to the
+; local disk first and only then copies the finished .exe to the publish folder,
+; so an interrupted compile can never leave a half-written installer where people
+; download it from.
+#ifndef OutputDir
+  #define OutputDir "output"
 #endif
 
 ; SOURCE root on the BUILD machine = the parent of each year's csproj DeployDir.
@@ -78,7 +93,7 @@ ArchitecturesAllowed=x64compatible
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
-OutputDir=output
+OutputDir={#OutputDir}
 OutputBaseFilename=LemoineToolsSetup-{#MyAppVersion}
 
 [Types]
