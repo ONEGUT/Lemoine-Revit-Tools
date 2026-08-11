@@ -194,10 +194,25 @@ tries to install the plugin on your own machine. Use **Build → Compile (Ctrl+F
 instead. Neither `build-installer.ps1` nor a plain Compile ever launches the installer.
 
 **If the compile stops with "Auto-publish failed",** `publish-version.ps1` didn't
-complete. Open `%TEMP%\LemoineToolsPublish.ini` — its `message=` line says why. The
-usual cause is PowerShell execution policy; the `.iss` already invokes it with
-`-ExecutionPolicy Bypass`, so if that's still blocked it's a machine-level policy. You
-can always compile with `/DAutoPublish=0` to build locally in the meantime.
+produce a version. Run it by hand to see the real error — it prints nothing when the
+compiler launches it:
+
+```powershell
+cd installer
+.\publish-version.ps1 -OutFile test.isi
+type test.isi        # PublishNextVersion on success, PublishError on failure
+```
+
+The most likely cause is PowerShell being blocked from running scripts. The `.iss`
+already invokes it with `-ExecutionPolicy Bypass`, so if it's still blocked that's a
+machine-wide Group Policy, which `Bypass` cannot override — tell me and we'll do the
+versioning without PowerShell. Compile with `/DAutoPublish=0` to keep building locally
+in the meantime.
+
+**If Inno says "The [Setup] section must include an AppVersion or AppVerName
+directive",** you're on an old copy of this script — that was the symptom when the
+version was passed back through an INI file and arrived empty. Pull the latest
+`installer\` and it will report the actual reason instead.
 
 Other things worth checking:
 

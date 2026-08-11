@@ -40,11 +40,11 @@
 ;    3. removes the superseded installer (backed up to %TEMP% first)
 ;    4. stamps the new version and writes setup.exe straight into that folder
 ;
-;  publish-version.ps1 does steps 1-3 and hands the answer back through an INI
-;  file; this script reads it with ReadIni(). The helper writes a separate .ok
-;  marker only when it fully succeeds, so if it crashes, is blocked by execution
-;  policy, or never launches, the #error below aborts the compile rather than
-;  letting a mis-versioned installer out.
+;  publish-version.ps1 does steps 1-3 and writes publish-version.generated.isi
+;  (git-ignored) beside this script, which is #included below. It defines
+;  PublishNextVersion only on success; on failure it defines PublishError instead,
+;  and if it never ran at all the file is absent. All three cases stop the compile
+;  with an explanation rather than letting a mis-versioned installer out.
 ;
 ;  Turn it all off with /DAutoPublish=0 (or by editing the define) to go back to
 ;  a plain local build into installer\output\. build-installer.ps1 always passes
@@ -60,13 +60,17 @@
 #endif
 
 #if AutoPublish
-  #define PublishIni GetEnv("TEMP") + "\LemoineToolsPublish.ini"
-  #define PublishOk  GetEnv("TEMP") + "\LemoineToolsPublish.ok"
+  ; The helper hands its answer back as a GENERATED ISPP INCLUDE beside this script,
+  ; not as a data file to be parsed. That matters: the version arrives as a real
+  ; #define, so it is either correct or absent — it can never arrive as an empty
+  ; string, which Inno would only report much later, and confusingly, as
+  ; "The [Setup] section must include an AppVersion or AppVerName directive."
+  ; The file is git-ignored and rewritten on every compile.
+  #define PublishInc AddBackslash(SourcePath) + "publish-version.generated.isi"
 
-  ; Clear both files from any previous compile FIRST. The .ok marker is written by
-  ; the helper only when it fully succeeds, so if it fails to even launch, the
-  ; absence of a stale marker is what stops last build's version being reused.
-  #expr Exec("cmd.exe", "/c del /q """ + PublishIni + """ """ + PublishOk + """", SourcePath, 1)
+  ; Delete the previous compile's include FIRST, so a helper that fails to launch
+  ; leaves nothing behind to be silently reused.
+  #expr Exec("cmd.exe", "/c del /q """ + PublishInc + """", SourcePath, 1)
 
   ; Pass a version straight through when one was given on the command line
   ; (/DMyAppVersion=1.2.3), so the helper's cleanup uses the same number this
@@ -77,23 +81,39 @@
     #define PublishVersionArg ""
   #endif
 
-  #expr Exec("powershell.exe", "-NoProfile -ExecutionPolicy Bypass -File """ + AddBackslash(SourcePath) + "publish-version.ps1"" -OutFile """ + PublishIni + """ -OkFile """ + PublishOk + """" + PublishVersionArg, SourcePath, 1)
+  #expr Exec("powershell.exe", "-NoProfile -ExecutionPolicy Bypass -File """ + AddBackslash(SourcePath) + "publish-version.ps1"" -OutFile """ + PublishInc + """" + PublishVersionArg, SourcePath, 1)
 
-  #if FileExists(PublishOk)
-    ; Surface what it decided in the IDE's compiler output, so the version bump and
-    ; any removal or warning is visible rather than happening silently.
-    #pragma message "Auto-publish: " + ReadIni(PublishIni, "publish", "message", "(no detail reported)")
-    #pragma message "Auto-publish output folder: " + ReadIni(PublishIni, "publish", "outputdir", "(none)")
+  ; Missing file => the helper never ran (execution policy, powershell.exe not found).
+  ; ISPP reports the unreadable include itself; the #error below then explains it.
+  #if FileExists(PublishInc)
+    #include "publish-version.generated.isi"
+  #endif
 
-    ; #ifndef, so an explicit /DMyAppVersion= or /DOutputDir= still wins.
-    #ifndef MyAppVersion
-      #define MyAppVersion ReadIni(PublishIni, "publish", "next", "")
-    #endif
-    #ifndef OutputDir
-      #define OutputDir ReadIni(PublishIni, "publish", "outputdir", "output")
-    #endif
-  #else
-    #error Auto-publish failed: publish-version.ps1 did not complete, so the version is unknown and nothing was published. Open %TEMP%\LemoineToolsPublish.ini to see why. To build locally without publishing, compile with /DAutoPublish=0
+  ; The helper writes PublishError instead of PublishNextVersion when it fails, so
+  ; its own reason is surfaced verbatim rather than as a generic failure.
+  #ifdef PublishError
+    #pragma error "Auto-publish failed: " + PublishError
+  #endif
+
+  #ifndef PublishNextVersion
+    #error Auto-publish failed: publish-version.ps1 produced no version. It is probably blocked from running - open a PowerShell prompt in the installer folder and run .\publish-version.ps1 -OutFile test.isi to see the real error. To build locally without publishing meanwhile, compile with /DAutoPublish=0
+  #endif
+
+  ; Surface what it decided in the IDE's compiler output, so the version bump and
+  ; any removal or warning is visible rather than happening silently. Guarded so a
+  ; partially written include can only ever produce the errors above, never a
+  ; confusing second failure from an undefined name in here.
+  #ifdef PublishStatus
+    #pragma message "Auto-publish [" + PublishStatus + "]: " + PublishMessage
+    #pragma message "Auto-publish version: " + PublishNextVersion + "  ->  " + PublishOutputDir
+  #endif
+
+  ; #ifndef, so an explicit /DMyAppVersion= or /DOutputDir= still wins.
+  #ifndef MyAppVersion
+    #define MyAppVersion PublishNextVersion
+  #endif
+  #ifndef OutputDir
+    #define OutputDir PublishOutputDir
   #endif
 #endif
 
