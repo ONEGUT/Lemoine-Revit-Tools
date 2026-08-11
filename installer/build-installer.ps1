@@ -258,9 +258,14 @@ Write-Host "`nPackaging Revit years: $($built -join ', ')" -ForegroundColor Cyan
 #    It compiles to the LOCAL installer\output\ first — publishing is a separate
 #    verified copy in step 5, so a failed compile never lands in the shared folder.
 # ---------------------------------------------------------------------------
+#    /DAutoPublish=0 turns OFF the .iss's own compile-time auto-publish. That path
+#    exists for compiling the .iss straight from the Inno Setup IDE; here it would
+#    fight this script — it would pick its own version, write to the shared folder,
+#    and leave installer\output\ empty. This script publishes itself, in step 5,
+#    with a verified copy-then-delete instead.
 if (-not (Test-Path $outdir)) { New-Item -ItemType Directory -Path $outdir | Out-Null }
 Write-Host "`n-- Compiling installer --" -ForegroundColor Yellow
-& $Iscc "/DMyAppVersion=$Version" $iss
+& $Iscc "/DMyAppVersion=$Version" "/DAutoPublish=0" $iss
 if ($LASTEXITCODE -ne 0) {
     throw "ISCC failed (exit $LASTEXITCODE). Is Inno Setup 6 installed and ISCC.exe on PATH? " +
           "Otherwise pass -Iscc 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'."

@@ -42,15 +42,51 @@ add-ins are left alone.
 
 ## Build
 
-From the repo root, in PowerShell:
+There are two ways to release, and **both auto-version and publish to the shared VDC
+folder**. Pick whichever suits you — they agree on version numbering.
+
+### A. From the Inno Setup IDE (compile the `.iss` directly)
+
+1. Build the plugin in Visual Studio as normal, so each Revit year is deployed to
+   `%ProgramData%\Autodesk\Revit\Addins\<year>\`.
+2. Open `installer\LemoineTools.iss` in Inno Setup.
+3. **Build → Compile (Ctrl+F9).**
+
+That's it. While the script preprocesses it runs `publish-version.ps1`, which reads
+the newest `LemoineToolsSetup-<version>.exe` in the shared folder, bumps the patch
+number, and clears the old one out; the compiler then writes the new `setup.exe`
+straight into that folder. With `1.0.1` published, you get `1.0.2` — and `1.0.1` gone.
+
+The version bump, the output folder, and any warning are printed in the IDE's
+compiler output window, e.g.:
+
+```
+Auto-publish: 1.0.1 -> 1.0.2 (patch); removed 1 old installer(s), backed up to C:\...\Temp\LemoineToolsSetup-backup
+Auto-publish output folder: C:\Users\...\Revit\Plugin
+```
+
+> **Use Compile (Ctrl+F9), not Run (F9).** Run compiles *and launches* the installer,
+> so it tries to install the plugin on your own machine. That's the wizard you've been
+> closing — and it's a different code path that does no versioning or publishing.
+
+This mode only packages the Revit years already deployed on your machine; it does not
+build the plugin. Use option B if you want the four-year build done for you too.
+
+To compile without publishing (a local test build into `installer\output\`), use
+`/DAutoPublish=0`, or change `#define AutoPublish 1` to `0` near the top of the `.iss`.
+
+### B. From PowerShell (also builds all four Revit years)
+
+From the repo root:
 
 ```powershell
 installer\build-installer.ps1
 ```
 
-That's the whole command for a routine release. With `LemoineToolsSetup-1.0.1.exe`
-currently in the shared folder, it builds **1.0.2**, copies it there, and deletes
-**1.0.1** — so the folder always holds exactly one, current installer.
+With `LemoineToolsSetup-1.0.1.exe` currently in the shared folder, it builds **1.0.2**,
+copies it there, and deletes **1.0.1**. It passes `/DAutoPublish=0` so the `.iss`'s own
+publishing stays out of its way, and does the publish itself afterwards — compiling
+locally first and verifying the copy by SHA256 before removing anything.
 
 Options:
 
@@ -100,21 +136,36 @@ as well as published, so there's always something to fall back on.
 It's built from `%USERPROFILE%` rather than hardcoded, so it resolves for anyone who
 has that SharePoint library synced. Pass `-PublishDir "<path>"` for anywhere else.
 
-Safety rules the publish step follows, all of them deliberate:
+Safety rules both modes follow, all of them deliberate:
 
-- **Compile local, then copy.** `ISCC` writes to `installer\output\` first; only a
-  finished `.exe` is copied to the shared folder. An interrupted compile can never
-  leave a half-written installer where people download it from.
-- **Copy first, verify, then delete.** The new installer is copied in and SHA256-checked
-  against the file that was just built *before* any old one is removed — so a failed or
-  corrupted publish leaves the previous version usable rather than an empty folder.
 - **Only our own filenames are ever deleted.** Nothing outside the exact
   `LemoineToolsSetup-<numeric version>.exe` shape is touched.
 - **A newer installer is never deleted.** If the folder holds a version higher than the
-  one being published (a mistyped `-Version`, or an auto-detect that fell back because
-  OneDrive was offline), it's kept and reported instead of overwritten.
+  one being published (a mistyped version, or a detect that fell back because OneDrive
+  was offline), it's kept and reported instead of overwritten.
 - **A missing publish folder is not fatal.** If OneDrive hasn't synced the library, the
-  build still completes into `installer\output\` and the script says it did not publish.
+  build still completes into `installer\output\` and says it did not publish.
+- **A failed version lookup aborts the compile.** If `publish-version.ps1` can't run —
+  execution policy, a crash, an unreadable folder — it doesn't write its success marker
+  and the `.iss` stops with an error, rather than stamping a guessed version.
+
+### The two modes differ in *when* the old installer is removed
+
+This is the one real difference, and it's forced by Inno Setup: **ISPP has no
+post-compile hook.** Anything the `.iss` does happens while it preprocesses — before
+`setup.exe` exists.
+
+- **Option A (IDE)** removes the old installer *before* compiling the new one. Every
+  removed file is copied to `%TEMP%\LemoineToolsSetup-backup\` first, and that path is
+  printed in the compiler output. So if the compile then fails, the shared folder is
+  briefly without an installer and you restore it from that backup (or just fix the
+  error and compile again).
+- **Option B (PowerShell)** compiles locally first, copies to the shared folder,
+  SHA256-verifies the copy, and *only then* deletes the old one — so a failure at any
+  point leaves the previous installer in place.
+
+If you want that stronger guarantee, use option B. For a routine release where the
+plugin already builds cleanly, option A is fine and is a single keystroke.
 
 If you'd rather have `ISCC` write straight into a folder without the script, the `.iss`
 takes an output-folder override:
@@ -137,13 +188,16 @@ installer\build-installer.ps1 -CheckPublish
 It prints the folder it resolved to, whether that folder exists, which installers are in
 it, and the version it would build next.
 
-**If a setup wizard opens asking you to install, the script did not run.**
-`build-installer.ps1` never launches the installer it builds — it only compiles and
-copies. A wizard opening means the **Inno Setup Compiler IDE** compiled it: its
-**Run (F9)** command compiles *and* runs the output. That path knows nothing about
-versioning or publishing, so it stamps the `.iss` default version and leaves the `.exe`
-in `installer\output\`. Either use **Build > Compile (Ctrl+F9)** in that IDE, or run the
-script — the script is what does the versioning and publishing.
+**If a setup wizard opens asking you to install, you used Run (F9), not Compile.**
+In the Inno Setup IDE, **Run (F9)** compiles *and then launches* the installer, so it
+tries to install the plugin on your own machine. Use **Build → Compile (Ctrl+F9)**
+instead. Neither `build-installer.ps1` nor a plain Compile ever launches the installer.
+
+**If the compile stops with "Auto-publish failed",** `publish-version.ps1` didn't
+complete. Open `%TEMP%\LemoineToolsPublish.ini` — its `message=` line says why. The
+usual cause is PowerShell execution policy; the `.iss` already invokes it with
+`-ExecutionPolicy Bypass`, so if that's still blocked it's a machine-level policy. You
+can always compile with `/DAutoPublish=0` to build locally in the meantime.
 
 Other things worth checking:
 

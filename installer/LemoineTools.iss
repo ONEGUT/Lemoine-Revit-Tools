@@ -11,15 +11,19 @@
 ;  files are packaged — that is Revit's SHARED add-ins folder, so other vendors'
 ;  add-ins may sit alongside ours and must never be swept in.
 ;
-;  Build + package in one step (also auto-versions and publishes to the shared
-;  VDC folder — see installer\README.md):
+;  TO RELEASE, in the Inno Setup IDE: open this file and use Build > Compile
+;  (Ctrl+F9). It auto-versions and publishes to the shared VDC folder on its own —
+;  see the AUTO-PUBLISH block below. Do NOT use Run (F9): that compiles AND launches
+;  the installer, so it tries to install the plugin on your own machine.
+;
+;  Or from PowerShell, which also builds all four Revit years first:
 ;      installer\build-installer.ps1
 ;
-;  Or, after building the plugin, compile manually:
-;      ISCC /DMyAppVersion=1.2.3 installer\LemoineTools.iss
+;  Or compile by hand with an explicit version and no publishing:
+;      ISCC /DMyAppVersion=1.2.3 /DAutoPublish=0 installer\LemoineTools.iss
 ;
 ;  Write the .exe somewhere other than installer\output\ with /DOutputDir=...:
-;      ISCC /DMyAppVersion=1.2.3 /DOutputDir="C:\some\shared\folder" installer\LemoineTools.iss
+;      ISCC /DMyAppVersion=1.2.3 /DAutoPublish=0 /DOutputDir="C:\some\folder" installer\LemoineTools.iss
 ;
 ;  Requires Inno Setup 6 (ISPP preprocessor — the default install).
 ; ============================================================================
@@ -27,18 +31,81 @@
 #define MyAppName      "Lemoine Tools"
 #define MyAppPublisher "Lemoine Tools"
 
-; Version can be injected by build-installer.ps1 via /DMyAppVersion=...
+; ============================================================================
+;  AUTO-PUBLISH — runs while this script is preprocessed, so compiling straight
+;  from the Inno Setup IDE (Build > Compile, Ctrl+F9) does the whole job:
+;
+;    1. reads the newest LemoineToolsSetup-<version>.exe in the shared VDC folder
+;    2. bumps it by one patch version   (1.0.1 -> 1.0.2)
+;    3. removes the superseded installer (backed up to %TEMP% first)
+;    4. stamps the new version and writes setup.exe straight into that folder
+;
+;  publish-version.ps1 does steps 1-3 and hands the answer back through an INI
+;  file; this script reads it with ReadIni(). The helper writes a separate .ok
+;  marker only when it fully succeeds, so if it crashes, is blocked by execution
+;  policy, or never launches, the #error below aborts the compile rather than
+;  letting a mis-versioned installer out.
+;
+;  Turn it all off with /DAutoPublish=0 (or by editing the define) to go back to
+;  a plain local build into installer\output\. build-installer.ps1 always passes
+;  /DAutoPublish=0 — it does its own publishing, after the compile, so it can
+;  verify the copy before removing the old installer.
+;
+;  ORDERING CAVEAT: ISPP has no post-compile hook, so the old installer is removed
+;  BEFORE the compiler writes the new one. Every removed file is copied to
+;  %TEMP%\LemoineToolsSetup-backup\ first, so a failed compile is recoverable.
+; ============================================================================
+#ifndef AutoPublish
+  #define AutoPublish 1
+#endif
+
+#if AutoPublish
+  #define PublishIni GetEnv("TEMP") + "\LemoineToolsPublish.ini"
+  #define PublishOk  GetEnv("TEMP") + "\LemoineToolsPublish.ok"
+
+  ; Clear both files from any previous compile FIRST. The .ok marker is written by
+  ; the helper only when it fully succeeds, so if it fails to even launch, the
+  ; absence of a stale marker is what stops last build's version being reused.
+  #expr Exec("cmd.exe", "/c del /q """ + PublishIni + """ """ + PublishOk + """", SourcePath, 1)
+
+  ; Pass a version straight through when one was given on the command line
+  ; (/DMyAppVersion=1.2.3), so the helper's cleanup uses the same number this
+  ; script will stamp. With no /D, the helper detects and bumps it.
+  #ifdef MyAppVersion
+    #define PublishVersionArg " -Version " + MyAppVersion
+  #else
+    #define PublishVersionArg ""
+  #endif
+
+  #expr Exec("powershell.exe", "-NoProfile -ExecutionPolicy Bypass -File """ + AddBackslash(SourcePath) + "publish-version.ps1"" -OutFile """ + PublishIni + """ -OkFile """ + PublishOk + """" + PublishVersionArg, SourcePath, 1)
+
+  #if FileExists(PublishOk)
+    ; Surface what it decided in the IDE's compiler output, so the version bump and
+    ; any removal or warning is visible rather than happening silently.
+    #pragma message "Auto-publish: " + ReadIni(PublishIni, "publish", "message", "(no detail reported)")
+    #pragma message "Auto-publish output folder: " + ReadIni(PublishIni, "publish", "outputdir", "(none)")
+
+    ; #ifndef, so an explicit /DMyAppVersion= or /DOutputDir= still wins.
+    #ifndef MyAppVersion
+      #define MyAppVersion ReadIni(PublishIni, "publish", "next", "")
+    #endif
+    #ifndef OutputDir
+      #define OutputDir ReadIni(PublishIni, "publish", "outputdir", "output")
+    #endif
+  #else
+    #error Auto-publish failed: publish-version.ps1 did not complete, so the version is unknown and nothing was published. Open %TEMP%\LemoineToolsPublish.ini to see why. To build locally without publishing, compile with /DAutoPublish=0
+  #endif
+#endif
+
+; Fallbacks for a plain local build (/DAutoPublish=0), or when the helper reported
+; that the shared folder was unreachable.
 #ifndef MyAppVersion
   #define MyAppVersion "1.0.0"
 #endif
 
 ; Where the compiled setup.exe is written. Relative paths are resolved against
 ; this .iss file's folder, so the default lands in installer\output\. Override
-; with /DOutputDir=... to compile straight into a shared/published folder.
-; build-installer.ps1 deliberately leaves this at the default: it compiles to the
-; local disk first and only then copies the finished .exe to the publish folder,
-; so an interrupted compile can never leave a half-written installer where people
-; download it from.
+; with /DOutputDir=... to compile straight into some other folder.
 #ifndef OutputDir
   #define OutputDir "output"
 #endif
