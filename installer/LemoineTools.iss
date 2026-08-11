@@ -11,11 +11,19 @@
 ;  files are packaged — that is Revit's SHARED add-ins folder, so other vendors'
 ;  add-ins may sit alongside ours and must never be swept in.
 ;
-;  Build + package in one step:
+;  TO RELEASE, in the Inno Setup IDE: open this file and use Build > Compile
+;  (Ctrl+F9). It auto-versions and publishes to the shared VDC folder on its own —
+;  see the AUTO-PUBLISH block below. Do NOT use Run (F9): that compiles AND launches
+;  the installer, so it tries to install the plugin on your own machine.
+;
+;  Or from PowerShell, which also builds all four Revit years first:
 ;      installer\build-installer.ps1
 ;
-;  Or, after building the plugin, compile manually:
-;      ISCC /DMyAppVersion=1.2.3 installer\LemoineTools.iss
+;  Or compile by hand with an explicit version and no publishing:
+;      ISCC /DMyAppVersion=1.2.3 /DAutoPublish=0 installer\LemoineTools.iss
+;
+;  Write the .exe somewhere other than installer\output\ with /DOutputDir=...:
+;      ISCC /DMyAppVersion=1.2.3 /DAutoPublish=0 /DOutputDir="C:\some\folder" installer\LemoineTools.iss
 ;
 ;  Requires Inno Setup 6 (ISPP preprocessor — the default install).
 ; ============================================================================
@@ -23,9 +31,103 @@
 #define MyAppName      "Lemoine Tools"
 #define MyAppPublisher "Lemoine Tools"
 
-; Version can be injected by build-installer.ps1 via /DMyAppVersion=...
+; ============================================================================
+;  AUTO-PUBLISH — runs while this script is preprocessed, so compiling straight
+;  from the Inno Setup IDE (Build > Compile, Ctrl+F9) does the whole job:
+;
+;    1. reads the newest LemoineToolsSetup-<version>.exe in the shared VDC folder
+;    2. bumps it by one patch version   (1.0.1 -> 1.0.2)
+;    3. removes the superseded installer (backed up to %TEMP% first)
+;    4. stamps the new version and writes setup.exe straight into that folder
+;
+;  publish-version.ps1 does steps 1-3 and writes publish-version.generated.isi
+;  (git-ignored) beside this script, which is #included below. It defines
+;  PublishNextVersion only on success; on failure it defines PublishError instead,
+;  and if it never ran at all the file is absent. All three cases stop the compile
+;  with an explanation rather than letting a mis-versioned installer out.
+;
+;  Turn it all off with /DAutoPublish=0 (or by editing the define) to go back to
+;  a plain local build into installer\output\. build-installer.ps1 always passes
+;  /DAutoPublish=0 — it does its own publishing, after the compile, so it can
+;  verify the copy before removing the old installer.
+;
+;  ORDERING CAVEAT: ISPP has no post-compile hook, so the old installer is removed
+;  BEFORE the compiler writes the new one. Every removed file is copied to
+;  %TEMP%\LemoineToolsSetup-backup\ first, so a failed compile is recoverable.
+; ============================================================================
+#ifndef AutoPublish
+  #define AutoPublish 1
+#endif
+
+#if AutoPublish
+  ; The helper hands its answer back as a GENERATED ISPP INCLUDE beside this script,
+  ; not as a data file to be parsed. That matters: the version arrives as a real
+  ; #define, so it is either correct or absent — it can never arrive as an empty
+  ; string, which Inno would only report much later, and confusingly, as
+  ; "The [Setup] section must include an AppVersion or AppVerName directive."
+  ; The file is git-ignored and rewritten on every compile.
+  #define PublishInc AddBackslash(SourcePath) + "publish-version.generated.isi"
+
+  ; Delete the previous compile's include FIRST, so a helper that fails to launch
+  ; leaves nothing behind to be silently reused.
+  #expr Exec("cmd.exe", "/c del /q """ + PublishInc + """", SourcePath, 1)
+
+  ; Pass a version straight through when one was given on the command line
+  ; (/DMyAppVersion=1.2.3), so the helper's cleanup uses the same number this
+  ; script will stamp. With no /D, the helper detects and bumps it.
+  #ifdef MyAppVersion
+    #define PublishVersionArg " -Version " + MyAppVersion
+  #else
+    #define PublishVersionArg ""
+  #endif
+
+  #expr Exec("powershell.exe", "-NoProfile -ExecutionPolicy Bypass -File """ + AddBackslash(SourcePath) + "publish-version.ps1"" -OutFile """ + PublishInc + """" + PublishVersionArg, SourcePath, 1)
+
+  ; Missing file => the helper never ran (execution policy, powershell.exe not found).
+  ; ISPP reports the unreadable include itself; the #error below then explains it.
+  #if FileExists(PublishInc)
+    #include "publish-version.generated.isi"
+  #endif
+
+  ; The helper writes PublishError instead of PublishNextVersion when it fails, so
+  ; its own reason is surfaced verbatim rather than as a generic failure.
+  #ifdef PublishError
+    #pragma error "Auto-publish failed: " + PublishError
+  #endif
+
+  #ifndef PublishNextVersion
+    #error Auto-publish failed: publish-version.ps1 produced no version. It is probably blocked from running - open a PowerShell prompt in the installer folder and run .\publish-version.ps1 -OutFile test.isi to see the real error. To build locally without publishing meanwhile, compile with /DAutoPublish=0
+  #endif
+
+  ; Surface what it decided in the IDE's compiler output, so the version bump and
+  ; any removal or warning is visible rather than happening silently. Guarded so a
+  ; partially written include can only ever produce the errors above, never a
+  ; confusing second failure from an undefined name in here.
+  #ifdef PublishStatus
+    #pragma message "Auto-publish [" + PublishStatus + "]: " + PublishMessage
+    #pragma message "Auto-publish version: " + PublishNextVersion + "  ->  " + PublishOutputDir
+  #endif
+
+  ; #ifndef, so an explicit /DMyAppVersion= or /DOutputDir= still wins.
+  #ifndef MyAppVersion
+    #define MyAppVersion PublishNextVersion
+  #endif
+  #ifndef OutputDir
+    #define OutputDir PublishOutputDir
+  #endif
+#endif
+
+; Fallbacks for a plain local build (/DAutoPublish=0), or when the helper reported
+; that the shared folder was unreachable.
 #ifndef MyAppVersion
   #define MyAppVersion "1.0.0"
+#endif
+
+; Where the compiled setup.exe is written. Relative paths are resolved against
+; this .iss file's folder, so the default lands in installer\output\. Override
+; with /DOutputDir=... to compile straight into some other folder.
+#ifndef OutputDir
+  #define OutputDir "output"
 #endif
 
 ; SOURCE root on the BUILD machine = the parent of each year's csproj DeployDir.
@@ -78,7 +180,7 @@ ArchitecturesAllowed=x64compatible
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
-OutputDir=output
+OutputDir={#OutputDir}
 OutputBaseFilename=LemoineToolsSetup-{#MyAppVersion}
 
 [Types]
