@@ -69,7 +69,16 @@
   "multiSelectTabs": {
     "selectedTabLabel": "Selected",
     "noItemsSelected": "No items selected.",
-    "allGroupRow": "All {0}"
+    "allGroupRow": "All {0}",                                  // {0} = group name
+    // ── Built-in search bar ──
+    "searchHint": "Search all groups…",                        // placeholder in the empty search box
+    "resultsTabLabel": "Results",                              // pinned cross-group match tab
+    "clear": "Clear",                                          // clears the search box
+    "matchCount": "{0} matches",                               // {0} = total matches across groups
+    "matchCountOne": "1 match",                                // singular form of matchCount
+    "allMatches": "All {0} matches",                           // Results tab bulk toggle
+    "allMatchesInGroup": "All {0} matches in {1}",              // {0} = count, {1} = group name
+    "noMatches": "No items match “{0}”."                       // {0} = the typed query
   },
   "tagChipInput": {
     "freeTextHint": "Press Enter to add typed value",
