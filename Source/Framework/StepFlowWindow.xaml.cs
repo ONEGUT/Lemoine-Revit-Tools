@@ -543,9 +543,12 @@ namespace LemoineTools.Framework
             ig.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(2) });
             ig.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
-            // CornerRadius(8,0,0,8) matches the left-side curve of the outer step pill.
-            var bar = new Border { CornerRadius = new CornerRadius(8, 0, 0, 8) }; _accentBars[idx] = bar;
+            // The bar carries NO CornerRadius of its own — it is clipped to the row's inner
+            // rounded rect instead, so its ends are cut by exactly the curve the border draws.
+            // See ClipAccentBar for why a 2 DIP strip cannot round its own corners.
+            var bar = new Border(); _accentBars[idx] = bar;
             Grid.SetColumn(bar, 0); ig.Children.Add(bar);
+            bar.SizeChanged += (s, e) => ClipAccentBar(row, bar);
 
             var main = new StackPanel(); Grid.SetColumn(main, 1); ig.Children.Add(main);
             row.Child = ig;
@@ -697,6 +700,38 @@ namespace LemoineTools.Framework
             _contentBorders[idx] = cb;
             main.Children.Add(cb);
             return row;
+        }
+
+        /// <summary>
+        /// Clips a step's accent bar to the inner rounded rectangle of its row border, so the
+        /// bar's top and bottom ends follow the border's curve exactly.
+        /// </summary>
+        /// <remarks>
+        /// The bar is a 2 DIP strip but the row's corner radius is ~10, so the bar cannot carry its
+        /// own <see cref="Border.CornerRadius"/>: WPF clamps the corner's key points to the available
+        /// width but passes the arc radii through untouched, collapsing each end into a spike that
+        /// bulges left of the strip and paints over — even outside — the row's own border. Clipping
+        /// keeps the strip square and lets the row's geometry cut its ends, so the two curves stay
+        /// concentric at any row height, radius token or UI scale. Re-run on every SizeChanged
+        /// because the bar's height tracks the step's expand/collapse animation.
+        /// </remarks>
+        private static void ClipAccentBar(Border row, Border bar)
+        {
+            double h = bar.ActualHeight;
+            if (double.IsNaN(h) || h <= 0) { bar.Clip = null; return; }
+
+            // Concentric curves: the inner edge of a stroked rounded rect sits at
+            // (outer radius - stroke thickness). Read from the row so a change to the
+            // LemoineRadius_Chip token or the border thickness carries through automatically.
+            double r = Math.Max(0, row.CornerRadius.TopLeft - row.BorderThickness.Left);
+
+            // Span the clip across both corner arcs (2r) so its RIGHT corners land well clear of
+            // the 2 DIP bar — only the left arcs are ever able to intersect it.
+            double w = Math.Max(bar.ActualWidth, r * 2);
+
+            var clip = new RectangleGeometry(new Rect(0, 0, w, h), r, r);
+            clip.Freeze();   // never mutated — replaced wholesale on the next SizeChanged
+            bar.Clip = clip;
         }
 
         // ─────────────────── Log tab area ─────────────────────────────────────
