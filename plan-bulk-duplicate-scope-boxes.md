@@ -112,24 +112,31 @@ implement `IConditionalSteps`, so `as IConditionalSteps` is `null` and the
      calls `view.Duplicate(option)` on the **original** source view (not
      chained off a prior copy — same approach
      `ReplicateDependentViewsRunHandler` already uses to mint several
-     dependents from one parent), renames, then applies crop + scope box:
+     dependents from one parent), renames, then binds the scope box:
      ```csharp
-     newView.CropBoxActive = true;
-     newView.CropBoxVisible = true;
-     var cb = newView.CropBox;
-     cb.Min = box.WorldMin; cb.Max = box.WorldMax;
-     newView.CropBox = cb;
      var p = newView.get_Parameter(BuiltInParameter.VIEWER_VOLUME_OF_INTEREST_CROP);
-     if (p != null && !p.IsReadOnly) p.Set(box.Id);
+     if (p == null || p.IsReadOnly) Log(...refused..., "warn");
+     else p.Set(box.Id);
      ```
-     (same call sequence as `ReplicateDependentViewsRunHandler.ApplyCrop`,
-     the proven reference for this exact operation). Unlike that existing
-     helper, a failure here **logs a `pushLog` warning** (not just
-     `DiagnosticsLog.Swallowed`) — for this tool, binding the crop *is* the
-     point of the run, so a silent partial success would hide exactly the
-     thing the user asked for.
-     On any exception during duplicate/name/crop, the orphan copy is
-     deleted, matching the existing catch block.
+     **Assign the scope box parameter only — do NOT write `CropBox`
+     manually.** Revit derives the view's crop from the assigned scope box
+     ("live extents"), which is the entire point of a scope box binding.
+     This corrects an earlier draft of this plan that copied
+     `ReplicateDependentViewsRunHandler.ApplyCrop`: that helper transplants
+     a captured crop between two *dependent views*, where `BoundingBoxXYZ.
+     Min`/`Max` are in the **view's local** coordinate space. A scope box's
+     bounds from `get_BoundingBox(null)` are **world** space, so feeding
+     them into `view.CropBox` would mis-place every crop whose view
+     transform isn't identity. The correct reference is
+     `LinkViewsLevelRunHandler` (the existing By Level mode, which already
+     creates views bound to scope boxes) — parameter only, no crop write.
+     A refusal (`null`/read-only parameter, or a throw) **logs a `pushLog`
+     warning**, matching that same reference: binding the scope box *is*
+     the point of the run, so a silent partial success would hide exactly
+     the thing the user asked for, while still leaving a valid uncropped
+     view rather than failing the whole item.
+     On any exception during duplicate/name, the orphan copy is deleted,
+     matching the existing catch block.
    - Cooperative cancel (`RunState.CancelRequested`) checked in the
      per-pair loop, same as the existing loop and
      `ReplicateDependentViewsRunHandler`'s nested loop.
@@ -188,15 +195,13 @@ existing tool already uses — consistent with today's Duplicate mode, and
 proportionate to what was asked. Noted as a deliberate scope decision, not
 an oversight.
 
-## Known limitation carried over (not introduced by this change)
+## View types that ignore a scope box
 
-`ReplicateDependentViewsRunHandler.ApplyCrop` — the proven reference this
-plan copies — only sets `View.CropBox`, which governs 2D crop (plan/
-section/elevation/detail). It does not special-case `View3D.SetSectionBox`.
-3D source views will get the scope-box **parameter** assigned (so the
-Properties palette is correct) but may not visually re-crop the same way a
-2D view does. This mirrors the existing tool's own behavior, not a
-regression, and is treated as a follow-up rather than in-scope here.
+Scope boxes govern plan/section/elevation-style views. A view type that
+does not accept the parameter (or whose template locks it) reports the
+parameter as `null` or read-only — that path logs a warning naming the
+view and leaves a valid, uncropped duplicate rather than failing the item
+or aborting the run. Same handling as the existing By Level mode.
 
 ## Testing
 

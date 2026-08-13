@@ -123,10 +123,16 @@ namespace LemoineTools.Tools.LinkViews
         }
 
         // ── IConditionalSteps — only the active mode's own steps (+ mode/run) are visible ──
+        // An inner tool may ALSO hide steps of its own (e.g. Duplicate's scope-box step, shown
+        // only when its per-scope-box toggle is on), so a step that belongs to the active mode
+        // is additionally put to that tool's own IsStepVisible. Inner tools that don't implement
+        // IConditionalSteps keep every step visible, exactly as before.
         public bool IsStepVisible(string stepId)
         {
             if (stepId == "mode" || stepId == "run") return true;
-            return stepId.StartsWith(_mode + "_", StringComparison.Ordinal);
+            if (!TrySplit(stepId, out var mode, out var innerId)) return false;
+            if (mode != _mode) return false;
+            return (ModeToInner(mode) as IConditionalSteps)?.IsStepVisible(innerId) ?? true;
         }
 
         // ── Step id routing ──────────────────────────────────────────────────────

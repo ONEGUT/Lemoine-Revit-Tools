@@ -59,6 +59,9 @@
     },
     "placeDependentViews": {
       "sheetNumber": { "label": "Sheet Number (new)" }
+    },
+    "duplicate": {
+      "scopeBoxName": { "label": "Scope Box Name", "desc": "The name of the scope box this copy is bound to." }
     }
   },
 
