@@ -8,16 +8,17 @@ using LemoineTools.Framework;
 namespace LemoineTools.Tools.CopyFromLink
 {
     /// <summary>
-    /// Copies selected grids and levels from a linked document into the host, applying the link
-    /// transform. Grid and level names are both unique in Revit and their setters throw on a
-    /// duplicate, so any datum whose name already exists in the host is skipped and logged rather
-    /// than copied (CLAUDE.md uniqueness rule). One transaction, one regen for both kinds.
+    /// Copies selected grids, levels, and scope boxes from a linked document into the host,
+    /// applying the link transform. All three are name-unique in Revit and their setters throw on
+    /// a duplicate, so any datum whose name already exists in the host is skipped and logged rather
+    /// than copied (CLAUDE.md uniqueness rule). One transaction, one regen for all three kinds.
     /// </summary>
     public sealed class CopyDatumsRunHandler : IExternalEventHandler
     {
-        public long       LinkInstId   { get; set; }
-        public List<long> GridElemIds  { get; set; } = new List<long>();
-        public List<long> LevelElemIds { get; set; } = new List<long>();
+        public long       LinkInstId      { get; set; }
+        public List<long> GridElemIds     { get; set; } = new List<long>();
+        public List<long> LevelElemIds    { get; set; } = new List<long>();
+        public List<long> ScopeBoxElemIds { get; set; } = new List<long>();
 
         public Action<string, string>?     PushLog    { get; set; }
         public Action<int, int, int, int>? OnProgress { get; set; }
@@ -47,6 +48,13 @@ namespace LemoineTools.Tools.CopyFromLink
                 foreach (var lvl in new FilteredElementCollector(doc).OfClass(typeof(Level)).Cast<Level>())
                     hostLevelNames.Add(lvl.Name);
 
+                // Scope boxes have no dedicated class — read as plain Element, scoped by category.
+                var hostScopeBoxNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var sb in new FilteredElementCollector(doc)
+                             .OfCategory(BuiltInCategory.OST_VolumeOfInterest)
+                             .WhereElementIsNotElementType())
+                    hostScopeBoxNames.Add(sb.Name);
+
                 var gridsToCopy = new List<ElementId>();
                 foreach (long id in GridElemIds ?? new List<long>())
                 {
@@ -75,7 +83,21 @@ namespace LemoineTools.Tools.CopyFromLink
                     levelsToCopy.Add(lvl.Id);
                 }
 
-                if (gridsToCopy.Count == 0 && levelsToCopy.Count == 0)
+                var scopeBoxesToCopy = new List<ElementId>();
+                foreach (long id in ScopeBoxElemIds ?? new List<long>())
+                {
+                    var sb = src.Doc.GetElement(new ElementId(id));
+                    if (sb == null || sb.Category?.Id.Value != (long)(int)BuiltInCategory.OST_VolumeOfInterest) { skip++; continue; }
+                    if (hostScopeBoxNames.Contains(sb.Name))
+                    {
+                        skip++;
+                        Log(AppStrings.T("copy.datums.log.scopeBoxExists", sb.Name), "info");
+                        continue;
+                    }
+                    scopeBoxesToCopy.Add(sb.Id);
+                }
+
+                if (gridsToCopy.Count == 0 && levelsToCopy.Count == 0 && scopeBoxesToCopy.Count == 0)
                 {
                     Log(AppStrings.T("copy.datums.log.noDatumsToCopy"), "warn");
                     OnProgress?.Invoke(100, 0, 0, skip);
@@ -153,6 +175,37 @@ namespace LemoineTools.Tools.CopyFromLink
                         }
                     }
 
+                    if (!stopped && RunState.CancelRequested) stopped = true;
+
+                    if (!stopped && scopeBoxesToCopy.Count > 0)
+                    {
+                        try
+                        {
+                            var copied = ElementTransformUtils.CopyElements(src.Doc, scopeBoxesToCopy, doc, src.Transform, opts);
+                            pass += copied?.Count ?? 0;
+                        }
+                        catch (Exception ex)
+                        {
+                            // Fall back to per-box copy so one bad scope box doesn't lose the whole batch.
+                            DiagnosticsLog.Swallowed("CopyDatums: scope box batch copy failed, retrying per box", ex);
+                            foreach (var id in scopeBoxesToCopy)
+                            {
+                                if (RunState.CancelRequested) { stopped = true; break; }
+                                try
+                                {
+                                    var c = ElementTransformUtils.CopyElements(src.Doc, new List<ElementId> { id }, doc, src.Transform, opts);
+                                    pass += c?.Count ?? 0;
+                                }
+                                catch (Exception ex2)
+                                {
+                                    fail++;
+                                    DiagnosticsLog.Error("CopyDatums: copy scope box", ex2);
+                                    Log(AppStrings.T("copy.datums.log.scopeBoxFail", id, ex2.Message), "fail");
+                                }
+                            }
+                        }
+                    }
+
                     // Cancellation always falls through to a single regen + commit, preserving
                     // whatever was copied before the stop request (CLAUDE.md cancellation rule).
                     if (stopped) Log(AppStrings.T("copy.datums.log.stopped", pass), "warn");
@@ -176,8 +229,9 @@ namespace LemoineTools.Tools.CopyFromLink
             finally
             {
                 // Session-long static handler — drop the run's payload.
-                GridElemIds  = new List<long>();
-                LevelElemIds = new List<long>();
+                GridElemIds     = new List<long>();
+                LevelElemIds    = new List<long>();
+                ScopeBoxElemIds = new List<long>();
             }
         }
 

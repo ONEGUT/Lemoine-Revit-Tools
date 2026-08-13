@@ -48,8 +48,8 @@
         },
         "grids": {
           "name": "Copy Datums",
-          "blurb": "Copies grids and levels from a link into the host. Any grid or level whose name already exists is skipped and noted, since both have to be unique.",
-          "example": "link grids A to F and levels L1-L4 come across, and existing names are left alone"
+          "blurb": "Copies grids, levels, and scope boxes from a link into the host. Any datum whose name already exists is skipped and noted, since names have to be unique.",
+          "example": "link grids A to F, levels L1-L4, and their scope boxes come across, and existing names are left alone"
         },
         "elements": {
           "name": "Copy Elements",

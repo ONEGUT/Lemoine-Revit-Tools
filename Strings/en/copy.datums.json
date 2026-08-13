@@ -1,4 +1,4 @@
-// copy.datums.json — Copy Datums from Link tool + run-handler logs (grids and levels).
+// copy.datums.json — Copy Datums from Link tool + run-handler logs (grids, levels, scope boxes).
 // Command: CopyDatumsCommand.
 {
   "title": "Copy Datums from Link",
@@ -6,21 +6,23 @@
   "steps": { "source": "Source Link & Datums", "run": "Review & Run" },
   "summaries": { "run": "Ready to run", "source": "{0} · {1} datum(s)" },
   "labels": {
-    "noLinks":             "No loaded links contain grids or levels.",
-    "sourceLink":          "Source link",
-    "datumsToCopy":        "Datums to copy",
-    "gridsTab":            "Grids",
-    "levelsTab":           "Levels",
-    "noDatums":            "This link has no grids or levels.",
-    "existingSuffix":      "{0} (already in host)",
-    "existingCount":       "{0} datum(s) already exist in the host — shown greyed out above.",
-    "levelNameCollision":  "{0} (Level)"
+    "noLinks":                "No loaded links contain grids, levels, or scope boxes.",
+    "sourceLink":             "Source link",
+    "datumsToCopy":           "Datums to copy",
+    "gridsTab":               "Grids",
+    "levelsTab":              "Levels",
+    "scopeBoxesTab":          "Scope Boxes",
+    "noDatums":               "This link has no grids, levels, or scope boxes.",
+    "existingSuffix":         "{0} (already in host)",
+    "existingCount":          "{0} datum(s) already exist in the host — shown greyed out above.",
+    "levelNameCollision":     "{0} (Level)",
+    "scopeBoxNameCollision":  "{0} (Scope Box)"
   },
   "review": {
     "itemLink":    "Source Link",
     "itemDatums":  "Datums",
     "datumsNone":  "None",
-    "datumsValue": "{0} grid(s), {1} level(s)"
+    "datumsValue": "{0} grid(s), {1} level(s), {2} scope box(es)"
   },
   "log": {
     "handlerMissing": "Run handler not registered.",
@@ -29,10 +31,12 @@
     "srcNotLoaded":   "Source link is not loaded.",
     "gridExists":     "— Grid '{0}' already exists in host, skipped.",
     "levelExists":    "— Level '{0}' already exists in host, skipped.",
-    "noDatumsToCopy": "No datums to copy (all selected grids and levels already exist in the host).",
+    "scopeBoxExists": "— Scope box '{0}' already exists in host, skipped.",
+    "noDatumsToCopy": "No datums to copy (all selected grids, levels, and scope boxes already exist in the host).",
     "stopped":        "Stopped by user — {0} datum(s) copied so far; work preserved.",
     "gridFail":       "✗ Grid {0}: {1}",
     "levelFail":      "✗ Level {0}: {1}",
+    "scopeBoxFail":   "✗ Scope box {0}: {1}",
     "nonFatal":       "{0} non-fatal issue(s) recorded — see diagnostics log.",
     "done":           "Done. {0} datum(s) copied, {1} skipped, {2} failed.",
     "aborted":        "Run aborted: {0}"
