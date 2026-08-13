@@ -69,8 +69,27 @@ namespace LemoineTools.Tools.Ceilings
         private TextBlock?     _rampStatus;
 
         // ── Run options state ────────────────────────────────────────────────────
+        // Elevation tolerance is a fractional-inch quantity in quarter-inch increments:
+        // 1/4 in minimum, 12 in maximum. Every legal value is an exact 2-decimal number, so
+        // it survives InlineStepper's round-to-Decimals commit unchanged.
+        private const double TolMinInches  = 0.25;
+        private const double TolMaxInches  = 12.0;
+        private const double TolStepInches = 0.25;
+
         private bool   _deleteExisting = CeilingHeatmapSettings.Instance.DeleteExisting;
-        private double _elevTolerance  = CeilingHeatmapSettings.Instance.ElevTolerance;
+        private double _elevTolerance  =
+            NormalizeToleranceInches(CeilingHeatmapSettings.Instance.ElevTolerance * 12.0) / 12.0;
+
+        /// <summary>Clamps a tolerance in inches to [1/4, 12] and rounds it to the nearest
+        /// quarter inch. Applied to the persisted value on load too, so a settings file written
+        /// by an older build (whose default was 1/8 in, and which could persist values like
+        /// 0.12 in) is migrated to a legal quarter rather than silently used as-is.</summary>
+        private static double NormalizeToleranceInches(double inches)
+        {
+            if (double.IsNaN(inches)) return TolMinInches;
+            double snapped = Math.Round(inches / TolStepInches, MidpointRounding.AwayFromZero) * TolStepInches;
+            return Math.Min(TolMaxInches, Math.Max(TolMinInches, snapped));
+        }
 
         // ── View selection state ─────────────────────────────────────────────────
         private List<long>                  _selectedViewIds = new List<long>();
@@ -574,21 +593,30 @@ namespace LemoineTools.Tools.Ceilings
 
             var tolRow = new StackPanel { Orientation = Orientation.Horizontal };
 
-            double displayInches = Math.Round(_elevTolerance * 12.0, 2);
+            // Quarter-inch increments only: 0.25 is exactly representable at 2 decimals, so the
+            // value survives InlineStepper.CommitValue's round-to-Decimals untouched. (The old
+            // field was 2 decimals with a 1/8" default — 0.125 banker's-rounded to 0.12 in the
+            // box, and the first commit silently persisted 0.12" as the tolerance.)
             var tolStepper = new InlineStepper
             {
-                Value             = displayInches,
-                // A zero tolerance makes AddBucket require exact double equality (hundreds of
-                // one-off buckets) and the equals-rule never match a stored offset — floor it
-                // just below the 1/8" default so it can never reach 0.
-                MinValue          = 0.0625,
-                MaxValue          = 24,
-                Step              = 0.25,
+                Value             = NormalizeToleranceInches(_elevTolerance * 12.0),
+                MinValue          = TolMinInches,
+                MaxValue          = TolMaxInches,
+                Step              = TolStepInches,
                 Decimals          = 2,
                 ValueWidth        = 56,
                 VerticalAlignment = VerticalAlignment.Center,
             };
-            tolStepper.ValueChanged += (s, v) => _elevTolerance = v / 12.0;
+            tolStepper.ValueChanged += (s, v) =>
+            {
+                // The ± buttons always land on a quarter, but the centre field is typeable —
+                // snap whatever is committed and write it back so the box shows the value the
+                // run will actually use. Assigning Value only refreshes the text (ValueChanged
+                // is raised from CommitValue alone), so this cannot recurse.
+                double snapped = NormalizeToleranceInches(v);
+                _elevTolerance = snapped / 12.0;
+                if (Math.Abs(snapped - v) > 1e-9) tolStepper.Value = snapped;
+            };
             tolRow.Children.Add(tolStepper);
 
             var tolUnit = new TextBlock { Text = AppStrings.T("ceilings.heatmap.labels.inUnit"), VerticalAlignment = VerticalAlignment.Center };
@@ -688,8 +716,9 @@ namespace LemoineTools.Tools.Ceilings
                 return;
             }
 
-            // Guard against a persisted zero tolerance from an older settings file.
-            if (_elevTolerance < 1e-9) _elevTolerance = 1.0 / 96.0;
+            // Re-normalize before the run: clamps a stray value (older settings file, or a
+            // typed entry committed while the field still had focus) to a legal quarter inch.
+            _elevTolerance = NormalizeToleranceInches(_elevTolerance * 12.0) / 12.0;
 
             // Persist run options back to settings
             CeilingHeatmapSettings.Instance.ElevTolerance  = _elevTolerance;

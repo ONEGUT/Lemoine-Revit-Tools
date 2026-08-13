@@ -32,10 +32,12 @@ namespace LemoineTools.Tools.Ceilings
         public string ColorHigh     { get; set; } = "#FF0000";
 
         /// <summary>
-        /// Snap tolerance in Revit internal units (feet).
-        /// Default: 1/8 inch ≈ 0.01042 ft.
+        /// Grouping tolerance in Revit internal units (feet) — ceilings whose height offsets
+        /// fall within this range share one color bucket. It never alters the height a bucket
+        /// reports. Default: 1/4 inch ≈ 0.02083 ft; the UI clamps it to quarter-inch steps
+        /// between 1/4 in and 12 in, and normalizes a value persisted by an older build.
         /// </summary>
-        public double ElevTolerance { get; set; } = 1.0 / 96.0;
+        public double ElevTolerance { get; set; } = 1.0 / 48.0;
 
         // PlaceTags was removed along with the ceiling-tag toggle. XmlSerializer ignores
         // unknown elements on load, so an older settings file still carrying

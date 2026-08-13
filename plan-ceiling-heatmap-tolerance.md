@@ -67,7 +67,11 @@ from 0.125" to 0.12"**, and every bucket goes crooked from then on.
   Sorted input makes this fully deterministic and order-independent — the property the
   current grid snap was introduced to guarantee is preserved.
 - Each bucket carries `(min, max)`. The rule becomes
-  `CreateEqualsRule(paramId, (min+max)/2, Math.Max((max-min)/2, 1e-6))`.
+  `CreateEqualsRule(paramId, (min+max)/2, (max-min)/2 + 1e-6)`.
+  **The floor is added, not `Math.Max`'d** — a randomized sweep over 4000 synthetic models
+  caught the difference: `(min+max)*0.5` is itself rounded, so an endpoint can sit up to an
+  ulp further from the midpoint than the exact half-width, and with `Math.Max` a bucket's own
+  outermost ceiling landed just outside its window and matched no filter at all.
   **When every ceiling in a bucket shares one height (the normal case) `min == max`, so the
   filter carries the exact real value — 10'-8" stays 10'-8".** The 1e-6 ft floor
   (0.000012") is far below any display rounding and far above double noise.
@@ -77,22 +81,31 @@ from 0.125" to 0.12"**, and every bucket goes crooked from then on.
 - `chRules` stores the representative value; widen its format from `"0.######"` to
   `"0.#########"` so the persisted rule string round-trips without truncation.
 
-### 2. `CeilingHeatmapViewModel.cs` — make the tolerance field able to hold a fractional inch
+### 2. `CeilingHeatmapViewModel.cs` — quarter-inch increments only
 
-- Seed the stepper with `Math.Round(_elevTolerance * 12.0, 4)` (line 577) so 0.125 survives.
-- `Decimals = 4`, `Step = 0.0625`, `MinValue = 0`, `MaxValue = 24` — 1/16" increments are
-  then exactly representable and the value no longer degrades on commit.
-- `MinValue = 0` makes "no grouping" reachable, which the user asked for: every distinct
-  height gets its own filter at its exact value. Remove the
-  `if (_elevTolerance < 1e-9) _elevTolerance = 1.0 / 96.0` reset (line 692) and the
-  handler's matching `> 1e-9 ? ... : 1/96` guards, which currently make 0 impossible.
-  Clamp negatives to 0 instead.
+Per the user's follow-up: the tolerance is a fractional-inch quantity in **quarter-inch
+steps, 1/4" minimum, 1/4" default**, up to 12".
+
+- `MinValue = 0.25`, `Step = 0.25`, `MaxValue = 12`, `Decimals = 2`. Every legal value is an
+  exact 2-decimal number, so it survives `InlineStepper.CommitValue`'s round-to-`Decimals`
+  untouched — which is what the old 1/8" default did not (0.125 banker's-rounded to 0.12 in
+  the box, and the first commit silently persisted 0.12" as the tolerance).
+- `NormalizeToleranceInches` clamps and snaps to a quarter, applied in three places: on load
+  (migrating a settings file from the old 1/8" default), on the stepper's `ValueChanged`
+  (the centre field is typeable, so the snapped value is written back to the box), and once
+  more before the run.
+- This supersedes the earlier "allow tolerance = 0" idea — the 1/4" floor stays, and it is no
+  longer needed: with the clustering fix the tolerance never distorts a reported height, so
+  turning it off is not required to get exact numbers.
+- The settings default (`CeilingHeatmapSettings.ElevTolerance`) moves from `1.0/96.0` (1/8")
+  to `1.0/48.0` (1/4").
 
 ### 3. Run-log honesty
 
-- With tolerance 0 a busy model can yield a great many filters. Keep the existing
-  `foundBuckets` line and add a `warn` when the bucket count exceeds ~60, naming the count
-  and the tolerance, so a filter explosion is visible rather than a surprise in the browser.
+- A model with widely varied ceiling heights can still yield a great many filters. Keep the
+  existing `foundBuckets` line and add a `warn` when the bucket count exceeds 60, naming the
+  count and the tolerance, so a filter explosion is visible rather than a surprise in the
+  browser.
 
 ### 4. `Strings/en/ceilings.heatmap.json`
 
