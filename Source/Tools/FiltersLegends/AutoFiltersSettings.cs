@@ -1168,16 +1168,80 @@ namespace LemoineTools.Tools.AutoFilters
         /// needs (the copy tools' Scope Boxes / Reference Planes) without widening the shared
         /// allowlist that Auto Filters' model-element pickers read.
         ///
-        /// Must be called on the Revit main thread. Returns <see langword="null"/> on failure.
+        /// <para><b>The extras are resolved directly, not merely allowed through.</b>
+        /// <see cref="TryCaptureCategories"/> only ever walks
+        /// <c>ParameterFilterUtilities.GetAllFilterableCategories()</c>, so its non-Model allowlist
+        /// is a *gate* on categories already in that list — it can never add one. Grids and Levels
+        /// are filterable (only their <see cref="CategoryType"/> is non-Model) so the gate is enough
+        /// for them, but Scope Boxes and Reference Planes are not view-filterable at all and never
+        /// enter the loop. Passing them as <paramref name="extraNonModel"/> therefore did nothing,
+        /// and the copy pickers silently lacked the two categories their own help text advertised.
+        /// Each extra is now resolved through <c>Category.GetCategory(Document, BuiltInCategory)</c>
+        /// and merged in after the filterable pass.</para>
+        ///
+        /// Must be called on the Revit main thread. Returns <see langword="null"/> when the
+        /// filterable pass reads nothing usable — never a map holding only the extras, which the
+        /// caller would take as a healthy snapshot and lose every model category from its picker.
         /// </summary>
         public static IReadOnlyDictionary<string, string>? CaptureCategoryMap(
             Document doc, IEnumerable<BuiltInCategory> extraNonModel)
         {
+            if (doc == null) return null;
+
             var allowed = new HashSet<BuiltInCategory>(AllowedNonModelCategories);
             if (extraNonModel != null)
                 foreach (var bic in extraNonModel) allowed.Add(bic);
 
-            return TryCaptureCategories(doc, allowed, out var map, out _, out _) ? map : null;
+            // A failed filterable pass must return null, not a map holding only the extras: the
+            // caller would take that two-entry map as the snapshot and the picker would silently
+            // lose every model category. Null sends it to its hardcoded fallback, which already
+            // carries the extras.
+            if (!TryCaptureCategories(doc, allowed, out var map, out _, out _))
+            {
+                DiagnosticsLog.Warn("AutoFiltersSettings.CaptureCategoryMap",
+                    "Filterable-category capture failed — returning null so the caller falls back to its hardcoded list.");
+                return null;
+            }
+
+            var byOst = new HashSet<string>(map.Values, StringComparer.Ordinal);
+            foreach (var bic in extraNonModel ?? Enumerable.Empty<BuiltInCategory>())
+            {
+                string ost = bic.ToString();
+                if (byOst.Contains(ost)) continue;   // the filterable pass already produced it
+
+                Category? cat = null;
+                try { cat = Category.GetCategory(doc, bic); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed($"CaptureCategoryMap.GetCategory {ost}", ex); }
+
+                string name = "";
+                try { name = cat?.Name ?? ""; }
+                catch (Exception ex) { DiagnosticsLog.Swallowed($"CaptureCategoryMap.Name {ost}", ex); }
+
+                if (string.IsNullOrWhiteSpace(name))
+                {
+                    // Never drop it silently — a picker missing a category it claims to offer is
+                    // exactly the failure this method exists to fix.
+                    DiagnosticsLog.Warn("AutoFiltersSettings.CaptureCategoryMap",
+                        $"{ost} did not resolve to a named category in this document — it will not appear in the picker.");
+                    continue;
+                }
+
+                // Same collision guard TryCaptureCategories applies, so map keys stay unique.
+                string display = name;
+                if (map.TryGetValue(display, out var taken) && taken != ost)
+                    display = display + " [" + ost + "]";
+                if (map.ContainsKey(display))
+                {
+                    DiagnosticsLog.Warn("AutoFiltersSettings.CaptureCategoryMap",
+                        $"{ost} resolves to display name '{display}', which is already taken — it will not appear in the picker.");
+                    continue;
+                }
+
+                map[display] = ost;
+                byOst.Add(ost);
+            }
+
+            return map;   // non-empty by construction — TryCaptureCategories returns false on an empty read
         }
 
         /// <summary>
