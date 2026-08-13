@@ -1,0 +1,87 @@
+// ceilings.tags.json — Tag Ceilings tool window + handler logs.
+// Command: TagCeilingsCommand. Reads every ceiling in the selected RCPs once, plans tag
+// points off-model (centroid for compact ceilings, one per stretch for corridors, extra
+// tags every MaxTagSpacing), then writes them all in a single transaction.
+{
+  "title":    "Tag Ceilings",
+  "runLabel": "Place Tags →",
+
+  // Plural noun for the run strip and the 5% progress lines.
+  "noun": "tags",
+
+  "steps": {
+    "S1": "Select Ceiling Plan Views",
+    "S2": "Tag Options",
+    "S3": "Review & Run"
+  },
+
+  "summaries": {
+    "S3":            "Ready to run",
+    "viewsSelected": "{0} view(s) selected",       // {0} = selected view count
+    "options":       "{0}' spacing · {1}",          // {0} = spacing ft, {1} = replace/keep
+    "replace":       "replace existing",
+    "keep":          "keep existing"
+  },
+
+  "labels": {
+    "noViews":        "No reflected ceiling plan views found in this document.",
+    "pickerName":     "Ceiling plan views",
+    "viewsCaption":   "Ceiling plans to tag",
+    "viewsHint":      "Host and linked ceilings in each view are read once, then all placement is computed off-model.",
+
+    "tagTypeCaption": "Ceiling tag type",
+    "tagTypeHint":    "Ceiling tag types already loaded in this project. No family is loaded automatically.",
+    "noTagTypes":     "No ceiling tag types are loaded in this project. Load a ceiling tag family in Revit, then reopen this tool.",
+
+    "spacingCaption": "Maximum tag spacing (ft)",
+    "spacingHint":    "A corridor stretch longer than this gets evenly spaced extra tags. Corners always start a new stretch, however short.",
+
+    "behaviourCaption":    "Behaviour",
+    "toggleReplaceLabel":  "Replace existing ceiling tags",
+    "toggleReplaceDesc":   "Deletes ceiling-category tags in each selected view before placing new ones.",
+    "toggleCoveredLabel":  "Account for covered ceilings",
+    "toggleCoveredDesc":   "A ceiling hidden by a lower one is tagged only on the part still visible."
+  },
+
+  "review": {
+    "itemViews":      "Views",
+    "itemTagType":    "Tag type",
+    "itemSpacing":    "Max spacing",
+    "itemReplace":    "Replace existing",
+    "itemCovered":    "Covered ceilings",
+    "viewsValue":     "{0} selected",               // {0} = view count
+    "spacingValue":   "{0} ft",                     // {0} = whole feet
+    "yes":            "Yes",
+    "no":             "No",
+    "coveredVisible": "Visible part only",
+    "coveredWhole":   "Whole footprint",
+    "note":           "Every ceiling is read once, then all tag points are computed off-model and written in a single transaction.",
+    "warnNoTagType":  "No ceiling tag type is loaded in this project — the run cannot place tags."
+  },
+
+  "log": {
+    "starting":             "Starting ceiling tag placement…",
+    "reading":              "Reading ceilings — {0} view(s)…",           // {0} = view count
+    "viewScanned":          "{0}: {1} host + {2} linked ceiling(s).",     // {0}=view {1}=host {2}=linked
+    "viewPlanned":          "{0}: planned {1} tag(s) across {2} ceiling(s) ({3} corridor).", // {0}=view {1}=tags {2}=ceilings {3}=corridors
+    "planned":              "Planned {0} tag(s) across {1} view(s).",     // {0}=tags {1}=views
+    "fullyHidden":          "{0} ceiling(s) fully hidden by lower ceilings — skipped.",
+    "partlyHidden":         "{0} ceiling(s) partly covered — tagged on the visible part only.",
+    "regionSkipped":        "Skipped '{0}': {1}.",                        // {0}=ceiling {1}=reason
+    "noGeometry":           "{0} ceiling(s) in '{1}' have no usable bottom face — skipped.", // {0}=count {1}=view
+    "noCeilingsInView":     "No ceilings found in view '{0}'.",
+    "viewSkipped":          "View {0} is not a plan view — skipped.",
+    "noViews":              "No views selected.",
+    "noTagType":            "No ceiling tag type selected, or it does not exist in this document.",
+    "nothingToPlace":       "No tags to place — every ceiling was hidden or too small to tag.",
+    "cancelledBeforeWrite": "Stopped by user before any tag was written — the model is unchanged.",
+    "placed":               "Placed {0} ceiling tag(s).",                 // {0} = placed
+    "placedReplaced":       "Placed {0} ceiling tag(s), replacing {1}.",  // {0}=placed {1}=deleted
+    "refFailed":            "Could not build a tag reference for element {0}: {1}",
+    "tagHostFailed":        "Host ceiling {0} — tag failed: {1}",
+    "tagLinkedFailed":      "Linked ceiling {0} — tag failed: {1}",
+    "noRefForRegion":       "Planned tag for region {0} has no Revit reference — skipped.",
+    "runHandlerMissing":    "Revit event handler unavailable — cannot run.",
+    "error":                "Ceiling tagging failed: {0}"
+  }
+}

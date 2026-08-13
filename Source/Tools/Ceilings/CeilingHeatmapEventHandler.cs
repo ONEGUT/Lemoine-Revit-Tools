@@ -40,13 +40,6 @@ namespace LemoineTools.Tools.Ceilings
         public string                   GenerateSuffix      { get; set; } = "_Heatmap";
         public ElementId                GenerateTemplateId  { get; set; } = ElementId.InvalidElementId;
         public bool                     DeleteExisting  { get; set; } = true;
-        // Ceiling tagging is disabled and no longer exposed in the UI: IndependentTag.Create
-        // against linked ceilings ran ~2s per tag (20 min for 580) because each call
-        // regenerates the view, and no batching API exists (Creation.Document has no generic
-        // NewTag; PostableCommand.TagAllNotTagged is modal, async and active-view-only). The
-        // implementation below is kept intact so it can be revived once that cost is solved —
-        // nothing sets this true today.
-        public bool                     PlaceTags       { get; set; } = false;
         // No elevation tolerance: ceilings are bucketed by their exact height offset. Grouping
         // near-equal heights meant a bucket spanning two real heights had to report a value that
         // was neither of them (its midpoint), which is how an exact 10'-0" ceiling sharing a
@@ -61,8 +54,8 @@ namespace LemoineTools.Tools.Ceilings
         public Action<int, int, int>?      OnComplete { get; set; }
         public Action<IReadOnlyList<ResultChip>>? OnResultChips { get; set; }
 
-        // Per-run breakdown surfaced for the result chips (filters vs tags).
-        private int _filtersCreated, _filtersReused, _tagsPlaced;
+        // Per-run breakdown surfaced for the result chips.
+        private int _filtersCreated, _filtersReused;
 
         public string GetName() => "LemoineTools.Tools.Ceilings.CeilingHeatmapEventHandler";
 
@@ -70,7 +63,7 @@ namespace LemoineTools.Tools.Ceilings
         {
             var doc  = app.ActiveUIDocument.Document;
             int pass = 0, fail = 0, skip = 0;
-            _filtersCreated = _filtersReused = _tagsPlaced = 0;
+            _filtersCreated = _filtersReused = 0;
 
             try
             {
@@ -93,10 +86,6 @@ namespace LemoineTools.Tools.Ceilings
             {
                 new ResultChip("filters", _filtersCreated + _filtersReused, "LemoineGreen"),
             };
-            // Tagging is off (see PlaceTags) — only show the chip when a run actually tagged
-            // something, so the results don't carry a permanently-zero "tags" count.
-            if (_tagsPlaced > 0)
-                chips.Add(new ResultChip("tags", _tagsPlaced, "LemoineGreen"));
             chips.Add(new ResultChip("failed",  fail, "LemoineRed"));
             chips.Add(new ResultChip("skipped", skip, "LemoineTextDim"));
             OnResultChips?.Invoke(chips);
@@ -382,10 +371,6 @@ namespace LemoineTools.Tools.Ceilings
             if (!cancelledInApply)
                 RegisterCeilingHeatmapTrade(chRules);
 
-            // ── Phase 5: Place ceiling tags (90–98%) ──────────────────────────────
-            if (PlaceTags && !cancelledInApply)
-                PlaceCeilingTags(doc, ref pass, ref fail, ref skip);
-
             // ── Summary ───────────────────────────────────────────────────────────
             double lowFt  = UnitUtils.ConvertFromInternalUnits(heightBuckets[0],       UnitTypeId.Feet);
             double highFt = UnitUtils.ConvertFromInternalUnits(heightBuckets.Last(),    UnitTypeId.Feet);
@@ -394,341 +379,6 @@ namespace LemoineTools.Tools.Ceilings
             Log(AppStrings.T("ceilings.heatmap.log.complete", created, reused), "pass");
             Log(AppStrings.T("ceilings.heatmap.log.range", FormatFtIn(lowFt), FormatFtIn(highFt)), "info");
             Log(AppStrings.T("ceilings.heatmap.log.appliedTo", SelectedViewIds.Count), "info");
-        }
-
-        // ── Phase 5: Place ceiling tags ───────────────────────────────────────────
-        private void PlaceCeilingTags(Document doc, ref int pass, ref int fail, ref int skip)
-        {
-            Log(AppStrings.T("ceilings.heatmap.log.placingTags"), "info");
-
-            FamilySymbol? tagSymbol = GetOrLoadTagSymbol(doc);
-            if (tagSymbol == null)
-            {
-                Log(AppStrings.T("ceilings.heatmap.log.tagFamilyMissing"), "fail");
-                fail++; return;
-            }
-
-            if (!tagSymbol.IsActive)
-            {
-                using (var txActivate = new Transaction(doc, "Activate Ceiling Tag Symbol"))
-                {
-                    ConfigureFailures(txActivate);
-                    txActivate.Start();
-                    tagSymbol.Activate();
-                    txActivate.Commit();
-                }
-            }
-
-            int viewCount  = SelectedViewIds.Count;
-            int tagPlaced  = 0;
-            int tagDeleted = 0;
-
-            var ceilingTagCatId = new ElementId(BuiltInCategory.OST_CeilingTags);
-
-            using (var tx = new Transaction(doc, "Place Ceiling Tags"))
-            {
-                ConfigureFailures(tx);
-                tx.Start();
-
-                for (int vi = 0; vi < viewCount; vi++)
-                {
-                    if (RunState.CancelRequested)
-                    {
-                        Log(AppStrings.T("common.log.stoppedByUser", vi, viewCount), "warn");
-                        break;
-                    }
-
-                    var viewId = SelectedViewIds[vi];
-                    var vp     = doc.GetElement(viewId) as ViewPlan;
-                    if (vp == null) continue;   // already counted as skipped in the scan pass
-
-                    foreach (var staleId in new FilteredElementCollector(doc, viewId)
-                        .OfClass(typeof(IndependentTag))
-                        .Cast<IndependentTag>()
-                        .Where(t => t.Category?.Id == ceilingTagCatId)
-                        .Select(t => t.Id)
-                        .ToList())
-                    {
-                        try { doc.Delete(staleId); tagDeleted++; }
-                        catch (Exception __lex) { DiagnosticsLog.Swallowed("CeilingHeatmap: delete element (protected or already gone)", __lex); }
-                    }
-
-                    var hostCeilings = new FilteredElementCollector(doc, viewId)
-                        .OfClass(typeof(Ceiling))
-                        .WhereElementIsNotElementType()
-                        .ToList();
-
-                    var linkInstances = new FilteredElementCollector(doc, viewId)
-                        .OfClass(typeof(RevitLinkInstance))
-                        .Cast<RevitLinkInstance>()
-                        .Where(li => li.GetLinkDocument() != null)
-                        .ToList();
-
-                    var linkedCeilings = new List<(RevitLinkInstance Link, Document LinkDoc, Transform Xform, Element El)>();
-                    foreach (RevitLinkInstance link in linkInstances)
-                    {
-                        Document  linkDoc = link.GetLinkDocument();
-                        Transform xform   = link.GetTotalTransform();
-                        var bbFilter = GetViewBoundsFilter(vp, xform.Inverse);
-
-                        foreach (Element el in new FilteredElementCollector(linkDoc)
-                            .OfClass(typeof(Ceiling))
-                            .WherePasses(bbFilter)
-                            .WhereElementIsNotElementType())
-                            linkedCeilings.Add((link, linkDoc, xform, el));
-                    }
-
-                    // A single view can hold thousands of ceilings, so the per-view progress
-                    // band alone goes silent here — report tag placement at 5% intervals.
-                    var tagProgress = new RunProgressReporter(
-                        Log, hostCeilings.Count + linkedCeilings.Count,
-                        $"ceiling tags (view {vi + 1} of {viewCount})");
-
-                    // Phase A — compute every tag's anchor point up front (pure geometry
-                    // reads, no model mutation). Interleaving IndependentTag.Create (a
-                    // mutation) with GetTagPoint's get_Geometry call forced Revit to
-                    // regenerate the whole model before every single read — the per-tag
-                    // "graphics regeneration" the user saw. Batching all reads, then all
-                    // creates, drops that to at most one regen for the view.
-                    var placements = new List<(Reference Ref, XYZ Pt, bool Linked, ElementId ElId)>();
-
-                    foreach (Element el in hostCeilings)
-                    {
-                        XYZ? tagPt = GetTagPoint(el as Ceiling, doc);
-                        if (tagPt == null)
-                        {
-                            Log(AppStrings.T("ceilings.heatmap.log.tagNoPoint", el.Id), "warn");
-                            skip++;
-                        }
-                        else
-                        {
-                            // Guard the reference build per element so one bad ceiling fails
-                            // only its own tag (as before) instead of throwing out of the read
-                            // phase and aborting the whole run.
-                            try { placements.Add((new Reference(el), tagPt, false, el.Id)); }
-                            catch (Exception ex)
-                            {
-                                Log(AppStrings.T("ceilings.heatmap.log.tagHostFailed", el.Id, ex.Message), "fail");
-                                fail++;
-                            }
-                        }
-                        tagProgress.Tick();
-                    }
-
-                    foreach (var lc in linkedCeilings)
-                    {
-                        XYZ? localPt = GetTagPoint(lc.El as Ceiling, lc.LinkDoc);
-                        if (localPt == null)
-                        {
-                            Log(AppStrings.T("ceilings.heatmap.log.tagNoPoint", lc.El.Id), "warn");
-                            skip++;
-                        }
-                        else
-                        {
-                            // CreateLinkReference can throw for a linked element that won't
-                            // produce a valid reference — keep it inside the per-element guard
-                            // (as the original create loop did) so it fails just this tag, not
-                            // the whole read phase.
-                            try
-                            {
-                                Reference linkedRef = new Reference(lc.El).CreateLinkReference(lc.Link);
-                                placements.Add((linkedRef, lc.Xform.OfPoint(localPt), true, lc.El.Id));
-                            }
-                            catch (Exception ex)
-                            {
-                                Log(AppStrings.T("ceilings.heatmap.log.tagLinkedFailed", lc.El.Id, ex.Message), "fail");
-                                fail++;
-                            }
-                        }
-                        tagProgress.Tick();
-                    }
-
-                    // Phase B — create every tag from the precomputed points (pure
-                    // mutations, no geometry reads interleaved, so no forced per-tag
-                    // regeneration).
-                    foreach (var p in placements)
-                    {
-                        try
-                        {
-                            IndependentTag.Create(
-                                doc, viewId, p.Ref,
-                                false, TagMode.TM_ADDBY_CATEGORY,
-                                TagOrientation.Horizontal, p.Pt);
-                            tagPlaced++;   // folded into the pass total at the end of this method
-                        }
-                        catch (Exception ex)
-                        {
-                            Log(AppStrings.T(
-                                p.Linked ? "ceilings.heatmap.log.tagLinkedFailed"
-                                         : "ceilings.heatmap.log.tagHostFailed",
-                                p.ElId, ex.Message), "fail");
-                            fail++;
-                        }
-                    }
-
-                    Progress(90 + (int)((vi + 1) * 8.0 / viewCount), pass, fail, skip);
-                }
-
-                tx.Commit();
-            }
-
-            if (tagDeleted > 0)
-                Log(AppStrings.T("ceilings.heatmap.log.tagsPlacedReplaced", tagPlaced, tagDeleted, Math.Max(0, tagPlaced - tagDeleted)), "pass");
-            else
-                Log(AppStrings.T("ceilings.heatmap.log.tagsPlacedNone", tagPlaced), "pass");
-
-            // Tags are a primary deliverable of the heatmap — count them toward pass so the
-            // headline total reflects the ceilings tagged, not just the bucket filters created.
-            pass += tagPlaced;
-            _tagsPlaced = tagPlaced;
-        }
-
-        private FamilySymbol? GetOrLoadTagSymbol(Document doc)
-        {
-            const string FamilyName   = "Ceiling Tag";
-            const string ResourceName = "LemoineTools.Source.Resources.RevitFamilys.Ceiling Tag.rfa";
-
-            Family? existing = new FilteredElementCollector(doc)
-                .OfClass(typeof(Family))
-                .Cast<Family>()
-                .FirstOrDefault(f => f.Name.Equals(FamilyName, StringComparison.OrdinalIgnoreCase));
-
-            if (existing != null)
-                return existing.GetFamilySymbolIds()
-                    .Select(id => doc.GetElement(id) as FamilySymbol)
-                    .FirstOrDefault(s => s != null);
-
-            string tempPath = Path.Combine(Path.GetTempPath(), "Ceiling Tag.rfa");
-            try
-            {
-                using (Stream? stream = System.Reflection.Assembly
-                           .GetExecutingAssembly()
-                           .GetManifestResourceStream(ResourceName))
-                {
-                    if (stream == null)
-                    {
-                        Log(AppStrings.T("ceilings.heatmap.log.resourceMissing", ResourceName), "fail");
-                        return null;
-                    }
-                    using (var fs = new FileStream(tempPath, FileMode.Create, FileAccess.Write))
-                        stream.CopyTo(fs);
-                }
-
-                Family? loaded;
-                using (var tx = new Transaction(doc, "Load Ceiling Tag Family"))
-                {
-                    ConfigureFailures(tx);
-                    tx.Start();
-                    doc.LoadFamily(tempPath, out loaded);
-                    tx.Commit();
-                }
-
-                return loaded?.GetFamilySymbolIds()
-                    .Select(id => doc.GetElement(id) as FamilySymbol)
-                    .FirstOrDefault(s => s != null);
-            }
-            catch (Exception ex)
-            {
-                Log(AppStrings.T("ceilings.heatmap.log.tagFamilyLoadFailed", ex.Message), "fail");
-                return null;
-            }
-            finally
-            {
-                try { if (File.Exists(tempPath)) File.Delete(tempPath); } catch (Exception __lex) { DiagnosticsLog.Swallowed("CeilingHeatmap: delete temp image file", __lex); }
-            }
-        }
-
-        private static XYZ? GetTagPoint(Ceiling? ceiling, Document doc)
-        {
-            if (ceiling == null) return null;
-
-            var opts = new Options { ComputeReferences = false, IncludeNonVisibleObjects = false };
-            GeometryElement? geom = ceiling.get_Geometry(opts);
-
-            Face? bottomFace = null;
-            if (geom != null)
-            {
-                foreach (GeometryObject obj in geom)
-                {
-                    var solid = obj as Solid;
-                    if (solid == null || solid.Volume <= 1e-9) continue;
-                    foreach (Face face in solid.Faces)
-                    {
-                        try
-                        {
-                            BoundingBoxUV fbb = face.GetBoundingBox();
-                            UV mid = new UV(
-                                (fbb.Min.U + fbb.Max.U) * 0.5,
-                                (fbb.Min.V + fbb.Max.V) * 0.5);
-                            XYZ n = face.ComputeNormal(mid);
-                            if (n.Z < -0.9) { bottomFace = face; break; }
-                        }
-                        catch (Exception __lex) { DiagnosticsLog.Swallowed("CeilingHeatmap: skip malformed face", __lex); }
-                    }
-                    if (bottomFace != null) break;
-                }
-            }
-
-            if (bottomFace != null)
-            {
-                BoundingBoxUV uvBox = bottomFace.GetBoundingBox();
-
-                UV uvMid = new UV(
-                    (uvBox.Min.U + uvBox.Max.U) * 0.5,
-                    (uvBox.Min.V + uvBox.Max.V) * 0.5);
-                if (bottomFace.IsInside(uvMid))
-                    return bottomFace.Evaluate(uvMid);
-
-                UV? uvCentroid = ComputeOuterLoopCentroidUV(bottomFace);
-                if (uvCentroid != null && bottomFace.IsInside(uvCentroid))
-                    return bottomFace.Evaluate(uvCentroid);
-
-                const int N = 7;
-                for (int ui = 1; ui < N; ui++)
-                for (int vi = 1; vi < N; vi++)
-                {
-                    var uv = new UV(
-                        uvBox.Min.U + (uvBox.Max.U - uvBox.Min.U) * ui / N,
-                        uvBox.Min.V + (uvBox.Max.V - uvBox.Min.V) * vi / N);
-                    if (bottomFace.IsInside(uv))
-                        return bottomFace.Evaluate(uv);
-                }
-            }
-
-            BoundingBoxXYZ? bb = ceiling.get_BoundingBox(null);
-            if (bb != null)
-                return new XYZ(
-                    (bb.Min.X + bb.Max.X) * 0.5,
-                    (bb.Min.Y + bb.Max.Y) * 0.5,
-                     bb.Min.Z);
-            return null;   // no point found — caller skips-and-logs rather than tagging the origin
-        }
-
-        private static UV? ComputeOuterLoopCentroidUV(Face face)
-        {
-            try
-            {
-                EdgeArrayArray loops = face.EdgeLoops;
-                if (loops.Size == 0) return null;
-                EdgeArray outerLoop = loops.get_Item(0);
-
-                double uSum = 0, vSum = 0;
-                int    count = 0;
-
-                foreach (Edge edge in outerLoop)
-                {
-                    foreach (XYZ pt in edge.Tessellate())
-                    {
-                        IntersectionResult? ir = face.Project(pt);
-                        if (ir == null) continue;
-                        uSum  += ir.UVPoint.U;
-                        vSum  += ir.UVPoint.V;
-                        count++;
-                    }
-                }
-                return count > 0 ? new UV(uSum / count, vSum / count) : null;
-            }
-            catch { return null; }
         }
 
         private static BoundingBoxIntersectsFilter GetViewBoundsFilter(
