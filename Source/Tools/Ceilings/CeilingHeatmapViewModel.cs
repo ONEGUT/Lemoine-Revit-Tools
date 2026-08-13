@@ -69,27 +69,10 @@ namespace LemoineTools.Tools.Ceilings
         private TextBlock?     _rampStatus;
 
         // ── Run options state ────────────────────────────────────────────────────
-        // Elevation tolerance is a fractional-inch quantity in quarter-inch increments:
-        // 1/4 in minimum, 12 in maximum. Every legal value is an exact 2-decimal number, so
-        // it survives InlineStepper's round-to-Decimals commit unchanged.
-        private const double TolMinInches  = 0.25;
-        private const double TolMaxInches  = 12.0;
-        private const double TolStepInches = 0.25;
-
+        // No elevation tolerance: ceilings are bucketed by their exact height offset, so every
+        // filter reports a height that exists in the model. Any grouping scheme has to give a
+        // bucket spanning two real heights a value that is neither of them.
         private bool   _deleteExisting = CeilingHeatmapSettings.Instance.DeleteExisting;
-        private double _elevTolerance  =
-            NormalizeToleranceInches(CeilingHeatmapSettings.Instance.ElevTolerance * 12.0) / 12.0;
-
-        /// <summary>Clamps a tolerance in inches to [1/4, 12] and rounds it to the nearest
-        /// quarter inch. Applied to the persisted value on load too, so a settings file written
-        /// by an older build (whose default was 1/8 in, and which could persist values like
-        /// 0.12 in) is migrated to a legal quarter rather than silently used as-is.</summary>
-        private static double NormalizeToleranceInches(double inches)
-        {
-            if (double.IsNaN(inches)) return TolMinInches;
-            double snapped = Math.Round(inches / TolStepInches, MidpointRounding.AwayFromZero) * TolStepInches;
-            return Math.Min(TolMaxInches, Math.Max(TolMinInches, snapped));
-        }
 
         // ── View selection state ─────────────────────────────────────────────────
         private List<long>                  _selectedViewIds = new List<long>();
@@ -582,63 +565,6 @@ namespace LemoineTools.Tools.Ceilings
             };
             outer.Children.Add(tog);
 
-            // ── Elevation tolerance ───────────────────────────────────────────────
-            outer.Children.Add(new FrameworkElement { Height = 14 });
-
-            var tolLabel = new TextBlock { Text = AppStrings.T("ceilings.heatmap.labels.elevTol"), Margin = new Thickness(0, 0, 0, 6) };
-            tolLabel.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            tolLabel.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            tolLabel.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            outer.Children.Add(tolLabel);
-
-            var tolRow = new StackPanel { Orientation = Orientation.Horizontal };
-
-            // Quarter-inch increments only: 0.25 is exactly representable at 2 decimals, so the
-            // value survives InlineStepper.CommitValue's round-to-Decimals untouched. (The old
-            // field was 2 decimals with a 1/8" default — 0.125 banker's-rounded to 0.12 in the
-            // box, and the first commit silently persisted 0.12" as the tolerance.)
-            var tolStepper = new InlineStepper
-            {
-                Value             = NormalizeToleranceInches(_elevTolerance * 12.0),
-                MinValue          = TolMinInches,
-                MaxValue          = TolMaxInches,
-                Step              = TolStepInches,
-                Decimals          = 2,
-                ValueWidth        = 56,
-                VerticalAlignment = VerticalAlignment.Center,
-            };
-            tolStepper.ValueChanged += (s, v) =>
-            {
-                // The ± buttons always land on a quarter, but the centre field is typeable —
-                // snap whatever is committed and write it back so the box shows the value the
-                // run will actually use. Assigning Value only refreshes the text (ValueChanged
-                // is raised from CommitValue alone), so this cannot recurse.
-                double snapped = NormalizeToleranceInches(v);
-                _elevTolerance = snapped / 12.0;
-                if (Math.Abs(snapped - v) > 1e-9) tolStepper.Value = snapped;
-            };
-            tolRow.Children.Add(tolStepper);
-
-            var tolUnit = new TextBlock { Text = AppStrings.T("ceilings.heatmap.labels.inUnit"), VerticalAlignment = VerticalAlignment.Center };
-            tolUnit.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            tolUnit.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-            tolUnit.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            tolRow.Children.Add(tolUnit);
-
-            outer.Children.Add(tolRow);
-
-            var tolHint = new TextBlock
-            {
-                Text         = AppStrings.T("ceilings.heatmap.labels.tolHint"),
-                TextWrapping = TextWrapping.Wrap,
-                Margin       = new Thickness(0, 4, 0, 0),
-                FontStyle    = FontStyles.Italic,
-            };
-            tolHint.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            tolHint.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            tolHint.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            outer.Children.Add(tolHint);
-
             return outer;
         }
 
@@ -650,7 +576,6 @@ namespace LemoineTools.Tools.Ceilings
             ("views",  AppStrings.T("ceilings.heatmap.review.itemViews")),
             ("ramp",   AppStrings.T("ceilings.heatmap.review.itemRamp")),
             ("delete", AppStrings.T("ceilings.heatmap.review.itemDelete")),
-            ("tol",    AppStrings.T("ceilings.heatmap.review.itemTol")),
         };
 
         public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
@@ -662,7 +587,6 @@ namespace LemoineTools.Tools.Ceilings
                     : AppStrings.T("ceilings.heatmap.review.viewsValue", _selectedViewIds.Count)),
             ["ramp"]   = AppStrings.T("ceilings.heatmap.labels.rampDisplay", _colorLow, _colorMid, _colorHigh),
             ["delete"] = _deleteExisting ? AppStrings.T("ceilings.heatmap.review.yes") : AppStrings.T("ceilings.heatmap.review.no"),
-            ["tol"]    = AppStrings.T("ceilings.heatmap.review.tolValue", Math.Round(_elevTolerance * 12.0, 4)),
         };
 
         public IList<string>? ReviewChips   => null;
@@ -693,10 +617,9 @@ namespace LemoineTools.Tools.Ceilings
                 return AppStrings.T("ceilings.heatmap.labels.rampDisplay", _colorLow, _colorMid, _colorHigh);
             if (stepId == "S2")
             {
-                var parts = new List<string>();
-                if (_deleteExisting) parts.Add(AppStrings.T("ceilings.heatmap.summaries.s2Delete"));
-                parts.Add(AppStrings.T("ceilings.heatmap.summaries.s2Tol", Math.Round(_elevTolerance * 12.0, 4)));
-                return string.Join(" · ", parts);
+                return AppStrings.T(_deleteExisting
+                    ? "ceilings.heatmap.summaries.s2Delete"
+                    : "ceilings.heatmap.summaries.s2Keep");
             }
             if (stepId == "S3") return AppStrings.T("ceilings.heatmap.summaries.S3");
             return "—";
@@ -716,12 +639,7 @@ namespace LemoineTools.Tools.Ceilings
                 return;
             }
 
-            // Re-normalize before the run: clamps a stray value (older settings file, or a
-            // typed entry committed while the field still had focus) to a legal quarter inch.
-            _elevTolerance = NormalizeToleranceInches(_elevTolerance * 12.0) / 12.0;
-
             // Persist run options back to settings
-            CeilingHeatmapSettings.Instance.ElevTolerance  = _elevTolerance;
             CeilingHeatmapSettings.Instance.DeleteExisting = _deleteExisting;
             SaveColorsToSettings();
 
@@ -744,7 +662,6 @@ namespace LemoineTools.Tools.Ceilings
             // relying on the default, because the handler is a session-long static and would
             // otherwise keep a true set by an earlier build.
             _handler.PlaceTags       = false;
-            _handler.ElevTolerance   = _elevTolerance;
             _handler.ColorLow        = ParseRevitColor(_colorLow,  0,   0, 255);
             _handler.ColorMid        = ParseRevitColor(_colorMid,  0, 255,   0);
             _handler.ColorHigh       = ParseRevitColor(_colorHigh, 255,  0,   0);

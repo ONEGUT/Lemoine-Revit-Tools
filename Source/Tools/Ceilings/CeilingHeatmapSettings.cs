@@ -31,13 +31,9 @@ namespace LemoineTools.Tools.Ceilings
         /// <summary>High-end color as #RRGGBB hex string. Default: red.</summary>
         public string ColorHigh     { get; set; } = "#FF0000";
 
-        /// <summary>
-        /// Grouping tolerance in Revit internal units (feet) — ceilings whose height offsets
-        /// fall within this range share one color bucket. It never alters the height a bucket
-        /// reports. Default: 1/4 inch ≈ 0.02083 ft; the UI clamps it to quarter-inch steps
-        /// between 1/4 in and 12 in, and normalizes a value persisted by an older build.
-        /// </summary>
-        public double ElevTolerance { get; set; } = 1.0 / 48.0;
+        // ElevTolerance was removed: ceilings are bucketed by their exact height offset, so
+        // there is nothing to tune. XmlSerializer ignores unknown elements on load, so a
+        // settings file still carrying <ElevTolerance> degrades harmlessly.
 
         // PlaceTags was removed along with the ceiling-tag toggle. XmlSerializer ignores
         // unknown elements on load, so an older settings file still carrying

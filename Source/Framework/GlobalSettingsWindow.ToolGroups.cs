@@ -171,10 +171,6 @@ namespace LemoineTools.Framework
                 AddColorRow(body, AppStrings.T("globalSettings.groups.lowColor"),    () => hm.ColorLow,  v => { hm.ColorLow  = v; hm.Save(); });
                 AddColorRow(body, AppStrings.T("globalSettings.groups.midColor"),    () => hm.ColorMid,  v => { hm.ColorMid  = v; hm.Save(); });
                 AddColorRow(body, AppStrings.T("globalSettings.groups.highColor"),   () => hm.ColorHigh, v => { hm.ColorHigh = v; hm.Save(); });
-                AddCfgStepper(body, AppStrings.T("globalSettings.groups.elevTol"),
-                    AppStrings.T("globalSettings.groups.elevTolDesc"),
-                    hm.ElevTolerance * 12.0, 0, 12, 0.0625, 4,
-                    v => { hm.ElevTolerance = v / 12.0; hm.Save(); });
             }));
 
             // ── Make Ceiling Grids ───────────────────────────────────────────

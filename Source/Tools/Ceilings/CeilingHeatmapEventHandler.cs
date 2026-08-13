@@ -18,20 +18,16 @@ namespace LemoineTools.Tools.Ceilings
         private const string CHTradeColor = "#3FA7FF";
 
         // ── Bucketing constants ───────────────────────────────────────────────
-        /// <summary>Default grouping tolerance: 1/4 in, in feet. The UI clamps to quarter-inch
-        /// steps with this as the minimum, so a bucket can never be narrower than 1/4 in.</summary>
-        private const double DefaultToleranceFt = 1.0 / 48.0;
+        /// <summary>Match epsilon for a bucket's equals-rule, in feet (1.2e-5 in). Revit needs a
+        /// non-zero epsilon to match a double, so this is as close to an exact-value match as the
+        /// API allows. It is far below any display rounding (1/256 in is 3.3e-4 ft), so a rule
+        /// always reads as the real ceiling height, and far above double noise at ~10 ft (1 ulp
+        /// is ~1.8e-15), so a height can never fall outside its own rule.</summary>
+        private const double RuleEpsilonFt = 1e-6;
 
-        /// <summary>Padding added to every bucket's equals-rule epsilon, in feet (1.2e-5 in). A
-        /// bucket whose ceilings all share one height has zero width, and Revit needs a non-zero
-        /// epsilon to match it. Far below any display rounding (1/256 in is 3.3e-4 ft) so it can
-        /// never make the rule read as anything but the real height, and far above double noise
-        /// at ~10 ft (1 ulp is ~1.8e-15). See <see cref="BuildBucketFilter"/> for why it is added
-        /// rather than used as a lower bound.</summary>
-        private const double MinRuleEpsilonFt = 1e-6;
-
-        /// <summary>Bucket count past which the run log warns — that many filters is usually a
-        /// sign the tolerance is too tight for how varied the model's ceiling heights are.</summary>
+        /// <summary>Bucket count past which the run log warns. Heights are bucketed exactly, so a
+        /// model whose ceilings vary by hair's-breadth amounts yields one filter per variant —
+        /// that is the honest answer, but it is worth saying out loud.</summary>
         private const int BucketCountWarnThreshold = 60;
 
         // ── Inputs (set by ViewModel before Raise()) ──────────────────────────
@@ -51,7 +47,10 @@ namespace LemoineTools.Tools.Ceilings
         // implementation below is kept intact so it can be revived once that cost is solved —
         // nothing sets this true today.
         public bool                     PlaceTags       { get; set; } = false;
-        public double                   ElevTolerance   { get; set; } = DefaultToleranceFt;
+        // No elevation tolerance: ceilings are bucketed by their exact height offset. Grouping
+        // near-equal heights meant a bucket spanning two real heights had to report a value that
+        // was neither of them (its midpoint), which is how an exact 10'-0" ceiling sharing a
+        // bucket with a 10' 0 1/64" one came out labelled 10' 0 1/128".
         public Autodesk.Revit.DB.Color  ColorLow        { get; set; } = new Autodesk.Revit.DB.Color(0,   0,   255);
         public Autodesk.Revit.DB.Color  ColorMid        { get; set; } = new Autodesk.Revit.DB.Color(0,   255, 0);
         public Autodesk.Revit.DB.Color  ColorHigh       { get; set; } = new Autodesk.Revit.DB.Color(255, 0,   0);
@@ -125,10 +124,10 @@ namespace LemoineTools.Tools.Ceilings
             // ── Phase 1: Scan ceiling height offsets (0–20%) ─────────────────────
             Log(AppStrings.T("ceilings.heatmap.log.scanning"), "info");
 
-            // Every ceiling's exact height offset, as read from the parameter. Nothing is
-            // rounded or snapped here — the tolerance is applied later, and only to decide
-            // which heights share a bucket. Identical ceilings yield bit-identical doubles
-            // from the same parameter, so the HashSet dedupes exactly.
+            // Every ceiling's exact height offset, as read from the parameter — never rounded,
+            // snapped or averaged. Ceilings at the same height yield bit-identical doubles from
+            // the same parameter, so the HashSet groups them exactly and each distinct height
+            // becomes one bucket, one filter, one real value.
             var observedHeights = new HashSet<double>();
             // A ceiling visible in several selected views must be counted once, not once
             // per view — dedupe host ceilings by element id and linked ceilings by
@@ -171,15 +170,15 @@ namespace LemoineTools.Tools.Ceilings
             int hostCeilings = hostSeen.Count, linkedCeilings = linkedSeen.Count;
             Log(AppStrings.T("ceilings.heatmap.log.scanned", hostCeilings, linkedCeilings), "info");
 
-            // Group the exact heights. The UI clamps the tolerance to quarter-inch steps at or
-            // above 1/4 in, but this is a session-long static handler — guard anyway.
-            double tolFt = ElevTolerance > 1e-9 ? ElevTolerance : DefaultToleranceFt;
-            var heightBuckets = BuildBuckets(observedHeights, tolFt);
+            // One bucket per distinct height, ascending. Ceilings at the same height give
+            // bit-identical doubles from the same parameter, so the HashSet already grouped
+            // them exactly — there is nothing left to do but order the result.
+            var heightBuckets = observedHeights.ToList();
+            heightBuckets.Sort();
 
             DiagnosticsLog.Info("CeilingHeatmap",
                 $"scan complete — {hostCeilings} host + {linkedCeilings} linked ceilings across "
-                + $"{viewCount} view(s); {observedHeights.Count} distinct height(s) → "
-                + $"{heightBuckets.Count} bucket(s) at {tolFt * 12.0:0.####} in tolerance.");
+                + $"{viewCount} view(s); {heightBuckets.Count} distinct height(s).");
 
             // Cancelled during the scan → bail out BEFORE deleting or creating anything,
             // so an existing heatmap is left untouched (the previous behaviour deleted the
@@ -195,14 +194,12 @@ namespace LemoineTools.Tools.Ceilings
                 fail++; return;
             }
 
-            // BuildBuckets returns them already in ascending order (its input is sorted).
             Log(AppStrings.T("ceilings.heatmap.log.foundBuckets", heightBuckets.Count), "info");
 
-            // A large bucket count means one filter per bucket in every selected view. Say so
+            // A large bucket count means one filter per height in every selected view. Say so
             // rather than letting the user discover it in the Filters dialog.
             if (heightBuckets.Count > BucketCountWarnThreshold)
-                Log(AppStrings.T("ceilings.heatmap.log.manyBuckets",
-                    heightBuckets.Count, Math.Round(tolFt * 12.0, 4)), "warn");
+                Log(AppStrings.T("ceilings.heatmap.log.manyBuckets", heightBuckets.Count), "warn");
 
             // ── Phase 2: Resolve Revit parameters (20–30%) ───────────────────────
             // "Height Offset From Level" is a built-in parameter, so its ElementId is
@@ -246,7 +243,7 @@ namespace LemoineTools.Tools.Ceilings
             var usedNames = new HashSet<string>(StringComparer.Ordinal);
             for (int i = 0; i < heightBuckets.Count; i++)
             {
-                double repFt = BucketValue(heightBuckets[i]);
+                double repFt = heightBuckets[i];
                 double ft = UnitUtils.ConvertFromInternalUnits(repFt, UnitTypeId.Feet);
                 string baseName = $"{FormatFtIn(ft)} AFF";
                 string name = baseName;
@@ -297,8 +294,7 @@ namespace LemoineTools.Tools.Ceilings
                         break;
                     }
 
-                    var    bucket       = heightBuckets[i];
-                    double heightOffset = BucketValue(bucket);
+                    double heightOffset = heightBuckets[i];
                     Autodesk.Revit.DB.Color color = rampColors[i];
 
                     string ruleName    = ruleNames[i];
@@ -307,10 +303,11 @@ namespace LemoineTools.Tools.Ceilings
                     ParameterFilterElement? pfe;
                     if (existingFilters.TryGetValue(filterName, out pfe))
                     {
-                        // Rebuild the rule in place so a tolerance changed in the UI takes effect
-                        // on a reused filter. SetElementFilter keeps the ElementId, so existing
-                        // view assignments and legend links survive.
-                        try { pfe.SetElementFilter(BuildBucketFilter(heightParamId, bucket.min, bucket.max)); }
+                        // Rebuild the rule in place so a filter reused from an earlier run picks
+                        // up this run's value — notably one created by an older build, whose rule
+                        // still carries a tolerance-snapped height. SetElementFilter keeps the
+                        // ElementId, so existing view assignments and legend links survive.
+                        try { pfe.SetElementFilter(BuildBucketFilter(heightParamId, heightOffset)); }
                         catch (Exception ex) { DiagnosticsLog.Swallowed($"CeilingHeatmap: rebuild rule for reused filter '{filterName}'", ex); }
                         reused++;
                     }
@@ -321,7 +318,7 @@ namespace LemoineTools.Tools.Ceilings
                             pfe = ParameterFilterElement.Create(
                                 doc, filterName,
                                 new List<ElementId> { ceilingCatId },
-                                BuildBucketFilter(heightParamId, bucket.min, bucket.max));
+                                BuildBucketFilter(heightParamId, heightOffset));
                             existingFilters[filterName] = pfe;
                             created++;
                         }
@@ -390,9 +387,8 @@ namespace LemoineTools.Tools.Ceilings
                 PlaceCeilingTags(doc, ref pass, ref fail, ref skip);
 
             // ── Summary ───────────────────────────────────────────────────────────
-            // Report the real extremes the scan saw, not the bucket midpoints.
-            double lowFt  = UnitUtils.ConvertFromInternalUnits(heightBuckets[0].min,        UnitTypeId.Feet);
-            double highFt = UnitUtils.ConvertFromInternalUnits(heightBuckets.Last().max,    UnitTypeId.Feet);
+            double lowFt  = UnitUtils.ConvertFromInternalUnits(heightBuckets[0],       UnitTypeId.Feet);
+            double highFt = UnitUtils.ConvertFromInternalUnits(heightBuckets.Last(),    UnitTypeId.Feet);
 
             _filtersCreated = created; _filtersReused = reused;
             Log(AppStrings.T("ceilings.heatmap.log.complete", created, reused), "pass");
@@ -904,7 +900,7 @@ namespace LemoineTools.Tools.Ceilings
                     rule.BuiltInCategories = new List<string> { "OST_Ceilings" };
                     rule.MatchType         = "equals";
                     // 9 decimals of feet (~1.2e-8 in) so the stored value round-trips well inside
-                    // MinRuleEpsilonFt — at 6 decimals a height like 10.666666666' was written as
+                    // RuleEpsilonFt — at 6 decimals a height like 10.666666666' was written as
                     // "10.666667", a third of the epsilon away from the value it describes.
                     rule.Match             = new List<string> { offset.ToString("0.#########") };
 
@@ -948,80 +944,24 @@ namespace LemoineTools.Tools.Ceilings
         private static string ToHex(RevitColor c)
             => $"#{c.Red:X2}{c.Green:X2}{c.Blue:X2}";
 
-        /// <summary>The value a bucket reports and matches on — the centre of the real heights it
-        /// was built from. A bucket whose ceilings all share one height reports that exact
-        /// height.</summary>
-        private static double BucketValue((double min, double max) bucket)
-            => (bucket.min + bucket.max) * 0.5;
-
         /// <summary>
-        /// Groups the observed ceiling heights into buckets, each keeping the real min/max it
-        /// was built from.
+        /// Builds the equals-rule filter for one ceiling height — the exact value read from the
+        /// model, matched with the smallest epsilon the API needs.
         ///
-        /// The tolerance decides only WHICH heights share a bucket — never what value a bucket
-        /// reports. The previous implementation snapped every height onto a grid of tolerance
-        /// multiples (<c>Math.Round(h / tol) * tol</c>) and stored that grid point as the
-        /// bucket's value, so unless a ceiling's height happened to be an exact multiple of the
-        /// tolerance, the number written into the Revit rule drifted by up to half a tolerance
-        /// (an exact 10'-8" ceiling came out as 10' 7 251/256" at a 0.54 in tolerance).
-        ///
-        /// Sorting first makes the grouping independent of scan order — the property the grid
-        /// snap existed to guarantee — and anchoring each bucket on its own minimum caps its
-        /// width at one tolerance, so near-equal heights cannot chain into an arbitrarily wide
-        /// bucket the way plain neighbour-to-neighbour grouping would.
+        /// There is no tolerance and no grouping of near-equal heights, deliberately. Both
+        /// earlier schemes had to report a number no ceiling actually had: snapping to a grid of
+        /// tolerance multiples turned an exact 10'-8" ceiling into 10' 7 251/256", and grouping
+        /// by tolerance made a bucket spanning two real heights report their midpoint, which
+        /// turned an exact 10'-0" ceiling sharing a bucket with a 10' 0 1/64" one into
+        /// 10' 0 1/128". One filter per distinct height is the only scheme where every value
+        /// Revit displays is a height that exists in the model.
         /// </summary>
-        private static List<(double min, double max)> BuildBuckets(IEnumerable<double> observed, double tol)
-        {
-            var sorted = observed.ToList();
-            sorted.Sort();
-
-            var buckets = new List<(double min, double max)>();
-            foreach (double v in sorted)
-            {
-                int last = buckets.Count - 1;
-                if (last >= 0 && v - buckets[last].min <= tol)
-                    buckets[last] = (buckets[last].min, v);   // input is sorted → v is the new max
-                else
-                    buckets.Add((v, v));
-            }
-            return buckets;
-        }
-
-        /// <summary>
-        /// Builds the equals-rule filter for one height bucket, centred on the bucket's real
-        /// span with half that span as the epsilon.
-        ///
-        /// When every ceiling in the bucket sits at one height — the normal case — min == max,
-        /// so this is an exact-value match on a real ceiling height and the rule Revit displays
-        /// reads as that height rather than a synthetic grid multiple.
-        ///
-        /// Adjacent buckets stay disjoint by construction: the next bucket's min is more than
-        /// one tolerance above this one's min (or they would have merged), hence strictly above
-        /// this one's max. So the buckets still tile the elevation axis without overlap, and
-        /// every scanned ceiling now falls strictly INSIDE its own bucket instead of sitting on
-        /// the boundary — under the old grid snap a ceiling exactly half a tolerance from the
-        /// grid point sat on the epsilon edge and could fail to match its own filter.
-        ///
-        /// The epsilon floor is ADDED to the half-width rather than <c>Math.Max</c>'d with it,
-        /// and that is load-bearing: <c>(min + max) * 0.5</c> is itself rounded, so an endpoint
-        /// can sit up to an ulp further from the midpoint than the exact half-width — with a
-        /// plain Max, a bucket's own outermost ceiling could land a hair outside its window and
-        /// match no filter at all. Adding the floor puts both endpoints strictly inside. (The
-        /// theoretical cost is that two buckets whose real heights differ by under 2.4e-5 in
-        /// would both match a ceiling in the overlap; a ceiling matching two filters merely
-        /// picks up one of two indistinguishable colors, where matching none is an invisible
-        /// ceiling. Ceiling heights that close cannot occur in practice.)
-        /// </summary>
-        private ElementParameterFilter BuildBucketFilter(ElementId heightParamId, double min, double max)
-        {
-            double mid = (min + max) * 0.5;
-            double eps = (max - min) * 0.5 + MinRuleEpsilonFt;
-            return new ElementParameterFilter(
-                ParameterFilterRuleFactory.CreateEqualsRule(heightParamId, mid, eps));
-        }
+        private ElementParameterFilter BuildBucketFilter(ElementId heightParamId, double heightOffset)
+            => new ElementParameterFilter(
+                ParameterFilterRuleFactory.CreateEqualsRule(heightParamId, heightOffset, RuleEpsilonFt));
 
         /// <summary>Scans every visible link in <paramref name="view"/> for ceilings,
-        /// adding their height offsets to <paramref name="buckets"/>. Each linked ceiling is
+        /// adding their exact height offsets to <paramref name="observed"/>. Each linked ceiling is
         /// recorded in <paramref name="seen"/> as (link instance id, element id) so a ceiling
         /// visible in more than one selected view is only counted once.</summary>
         private void ScanLinkedCeilings(

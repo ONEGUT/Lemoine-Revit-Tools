@@ -48,88 +48,74 @@ from 0.125" to 0.12"**, and every bucket goes crooked from then on.
    `10'-8" AFF` while its rule matches 10' 7 251/256" — the label looks right, hiding the
    drift.
 
-## Fix — tolerance groups, it never rewrites the number
+## Outcome — the tolerance is removed entirely
 
-### 1. `CeilingHeatmapEventHandler.cs` — replace snap-to-grid with real-value clustering
+Two intermediate schemes were built and both still reported a number no ceiling had:
 
-- Scan phase collects **exact observed heights** into a `HashSet<double>` (values read from
-  the same parameter are bit-identical, so exact dedupe is correct). `AddBucket` is
-  replaced by a plain `observed.Add(hParam.AsDouble())` at both call sites (lines 140, 966).
-- After the scan, sort the distinct values and cluster greedily, anchored on each cluster's
-  minimum so cluster width can never exceed `tol` (no single-linkage chaining):
+1. **Snap to a grid of tolerance multiples** (the original). `Math.Round(h / tol) * tol` moved
+   the value by up to half a tolerance — an exact 10'-8" ceiling became **10' 7 251/256"** at a
+   0.54 in tolerance.
+2. **Group near-equal heights, report the bucket's midpoint.** Fixed the case where a bucket
+   held one height, but a bucket spanning two real heights still had to report a value that was
+   neither: an exact 10'-0" ceiling sharing a bucket with a 10' 0 1/64" one came out as
+   **10' 0 1/128"** (their exact average).
 
-  ```csharp
-  foreach (double v in sorted)
-      if (clusters.Count > 0 && v - clusters[last].min <= tol) clusters[last].max = v;
-      else clusters.Add((min: v, max: v));
-  ```
+The tolerance is therefore gone. **One filter per distinct height offset, matched at its exact
+value** — the only scheme where every number Revit displays is a height that exists in the model.
 
-  Sorted input makes this fully deterministic and order-independent — the property the
-  current grid snap was introduced to guarantee is preserved.
-- Each bucket carries `(min, max)`. The rule becomes
-  `CreateEqualsRule(paramId, (min+max)/2, (max-min)/2 + 1e-6)`.
-  **The floor is added, not `Math.Max`'d** — a randomized sweep over 4000 synthetic models
-  caught the difference: `(min+max)*0.5` is itself rounded, so an endpoint can sit up to an
-  ulp further from the midpoint than the exact half-width, and with `Math.Max` a bucket's own
-  outermost ceiling landed just outside its window and matched no filter at all.
-  **When every ceiling in a bucket shares one height (the normal case) `min == max`, so the
-  filter carries the exact real value — 10'-8" stays 10'-8".** The 1e-6 ft floor
-  (0.000012") is far below any display rounding and far above double noise.
-- Adjacent clusters are provably disjoint (`nextMin > prevMin + tol >= prevMax`), so the
-  buckets still tile the elevation axis without overlap, and every scanned ceiling now sits
-  strictly *inside* its own bucket's window rather than on its boundary — fixing defect (1).
-- `chRules` stores the representative value; widen its format from `"0.######"` to
-  `"0.#########"` so the persisted rule string round-trips without truncation.
+### What that means in code
 
-### 2. `CeilingHeatmapViewModel.cs` — quarter-inch increments only
+- **`CeilingHeatmapEventHandler.cs`** — the scan collects exact `AsDouble()` values into a
+  `HashSet<double>` (ceilings at the same height give bit-identical doubles from the same
+  parameter, so the set groups them exactly); the buckets are that set, sorted. The rule is
+  `CreateEqualsRule(paramId, height, 1e-6 ft)` — 1.2e-5 in, the smallest epsilon that still
+  matches a double, far below any display rounding and far above double noise at ~10 ft.
+  `ElevTolerance`, `BuildBuckets` and `BucketValue` are deleted.
+- **`CeilingHeatmapViewModel.cs`** — the tolerance stepper, its label, hint, review row and
+  step summary are removed. Step 2 now carries only the "Delete existing heatmap filters"
+  toggle; its summary reads "Delete existing" / "Keep existing".
+- **`CeilingHeatmapSettings.cs`** — `ElevTolerance` removed. `XmlSerializer` ignores unknown
+  elements, so a settings file still carrying `<ElevTolerance>` degrades harmlessly.
+- **`GlobalSettingsWindow.ToolGroups.cs`** — the second tolerance stepper on the Global
+  Settings → Ceilings page is removed too (it would otherwise have written to a deleted
+  property).
+- **Strings** — the tolerance keys are dropped from `ceilings.heatmap.json` and
+  `globalSettings.json`; `foundBuckets` and the review note now speak of distinct ceiling
+  heights rather than buckets; `manyBuckets` warns past 60 heights without mentioning a
+  tolerance.
 
-Per the user's follow-up: the tolerance is a fractional-inch quantity in **quarter-inch
-steps, 1/4" minimum, 1/4" default**, up to 12".
+### Accepted trade-off
 
-- `MinValue = 0.25`, `Step = 0.25`, `MaxValue = 12`, `Decimals = 2`. Every legal value is an
-  exact 2-decimal number, so it survives `InlineStepper.CommitValue`'s round-to-`Decimals`
-  untouched — which is what the old 1/8" default did not (0.125 banker's-rounded to 0.12 in
-  the box, and the first commit silently persisted 0.12" as the tolerance).
-- `NormalizeToleranceInches` clamps and snaps to a quarter, applied in three places: on load
-  (migrating a settings file from the old 1/8" default), on the stepper's `ValueChanged`
-  (the centre field is typeable, so the snapped value is written back to the box), and once
-  more before the run.
-- This supersedes the earlier "allow tolerance = 0" idea — the 1/4" floor stays, and it is no
-  longer needed: with the clustering fix the tolerance never distorts a reported height, so
-  turning it off is not required to get exact numbers.
-- The settings default (`CeilingHeatmapSettings.ElevTolerance`) moves from `1.0/96.0` (1/8")
-  to `1.0/48.0` (1/4").
+A model whose ceilings vary by hair's-breadth amounts now gets one filter per variant instead of
+a few grouped bands. That is the honest answer, and it is what makes the reported values exact —
+but it is worth knowing, so the run log warns past 60 distinct heights.
 
-### 3. Run-log honesty
+### Also fixed along the way
 
-- A model with widely varied ceiling heights can still yield a great many filters. Keep the
-  existing `foundBuckets` line and add a `warn` when the bucket count exceeds 60, naming the
-  count and the tolerance, so a filter explosion is visible rather than a surprise in the
-  browser.
-
-### 4. `Strings/en/ceilings.heatmap.json`
-
-- Reword `labels.tolHint` to state the corrected semantics: ceilings within this range
-  share one colour, and the filter reports a real ceiling height — 0 means group only
-  ceilings at exactly the same height.
-- Add the new bucket-count warning key.
+- **`FormatFtIn` filter names** were always whole-inch correct (`10'-8" AFF`), which is what
+  masked the drift: the filter was *labelled* right while its rule matched a different number.
+- **The persisted Auto Filters rule value** was written at 6 decimals of feet (`10.666667`),
+  a third of the match epsilon away from the value it described. Now 9 decimals.
+- **A latent boundary miss.** The old epsilon was exactly half the grid spacing, so a ceiling
+  half a tolerance from the grid point sat on the match edge and could fail its own filter —
+  an uncoloured ceiling with nothing logged. With exact-value rules the height *is* the rule
+  value, so this cannot occur.
 
 ## Files touched
 
 | File | Change |
 |---|---|
-| `Source/Tools/Ceilings/CeilingHeatmapEventHandler.cs` | Replace `AddBucket` snap with sorted real-value clustering; `BuildBucketFilter` takes `(min, max)`; drop the `1/96` fallbacks; widen the persisted rule format; bucket-count warning |
-| `Source/Tools/Ceilings/CeilingHeatmapViewModel.cs` | Tolerance stepper `Decimals`/`Step`/`MinValue`; 4-decimal seed; remove the zero-tolerance reset |
-| `Strings/en/ceilings.heatmap.json` | Reworded tolerance hint + new warning string |
+| `Source/Tools/Ceilings/CeilingHeatmapEventHandler.cs` | Exact-height buckets; `ElevTolerance`/`BuildBuckets`/`BucketValue` deleted; exact-value equals-rule; 9-decimal persisted value; many-heights warning |
+| `Source/Tools/Ceilings/CeilingHeatmapViewModel.cs` | Tolerance stepper, review row and summary removed |
+| `Source/Tools/Ceilings/CeilingHeatmapSettings.cs` | `ElevTolerance` removed (load-compatible) |
+| `Source/Framework/GlobalSettingsWindow.ToolGroups.cs` | Global Settings tolerance stepper removed |
+| `Strings/en/ceilings.heatmap.json`, `Strings/en/globalSettings.json` | Tolerance strings removed; bucket wording updated |
 
-No change to filter naming (`FormatFtIn`), the colour ramp, view handling, or the Auto
-Filters trade registration beyond the value written into each rule. Existing filters are
-matched by name as before, so a re-run updates them in place and view assignments survive.
+Filter naming, the colour ramp, view handling and the Auto Filters trade registration are
+otherwise unchanged, so a re-run updates existing filters in place (rewriting any rule an older
+build left tolerance-snapped) and view assignments survive.
 
 ## Notes
 
-- Cannot be compiled here (Linux; see CLAUDE.md "Build Environment") — needs a Windows build
-  and a Revit run to confirm the rule values display as exact feet-inches.
-- UI change is a property tweak on an existing `InlineStepper` (no layout change), so
-  `/revit-navisworks-ui` will be invoked before writing it, but no mockup render is
-  warranted — nothing moves on screen.
+- Cannot be compiled here (Linux; see CLAUDE.md "Build Environment") — needs a Windows build and
+  a Revit run to confirm the rule values display as exact feet-inches.
