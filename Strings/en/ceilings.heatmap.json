@@ -48,6 +48,8 @@
     "rampDisplay":      "{0} → {1} → {2}",      // low → mid → high hex; used in summary and review
     "toggleDeleteLabel":"Delete existing heatmap filters",
     "toggleDeleteDesc": "Remove all \"Ceiling Heatmap\" view filters from the project before applying the new set.",
+    // The tag strings (toggleTags*, itemTags, tagsWarning, s2Tags, and the log.tag* set) are
+    // currently unreferenced — the ceiling-tag toggle was removed for cost. Kept for revival.
     "toggleTagsLabel":  "Place ceiling tags",
     "toggleTagsDesc":   "Place a Ceiling Tag at the center of each ceiling after applying the heatmap. Any existing ceiling tags in the selected views are deleted and replaced.",
     "elevTol":          "ELEVATION TOLERANCE",

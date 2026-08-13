@@ -27,6 +27,12 @@ namespace LemoineTools.Tools.Ceilings
         public string                   GenerateSuffix      { get; set; } = "_Heatmap";
         public ElementId                GenerateTemplateId  { get; set; } = ElementId.InvalidElementId;
         public bool                     DeleteExisting  { get; set; } = true;
+        // Ceiling tagging is disabled and no longer exposed in the UI: IndependentTag.Create
+        // against linked ceilings ran ~2s per tag (20 min for 580) because each call
+        // regenerates the view, and no batching API exists (Creation.Document has no generic
+        // NewTag; PostableCommand.TagAllNotTagged is modal, async and active-view-only). The
+        // implementation below is kept intact so it can be revived once that cost is solved —
+        // nothing sets this true today.
         public bool                     PlaceTags       { get; set; } = false;
         public double                   ElevTolerance   { get; set; } = 1.0 / 96.0; // 1/8 in → ft
         public Autodesk.Revit.DB.Color  ColorLow        { get; set; } = new Autodesk.Revit.DB.Color(0,   0,   255);
@@ -67,13 +73,17 @@ namespace LemoineTools.Tools.Ceilings
             }
 
             Progress(100, pass, fail, skip);
-            OnResultChips?.Invoke(new List<ResultChip>
+            var chips = new List<ResultChip>
             {
                 new ResultChip("filters", _filtersCreated + _filtersReused, "LemoineGreen"),
-                new ResultChip("tags",    _tagsPlaced,                      "LemoineGreen"),
-                new ResultChip("failed",  fail,                             "LemoineRed"),
-                new ResultChip("skipped", skip,                             "LemoineTextDim"),
-            });
+            };
+            // Tagging is off (see PlaceTags) — only show the chip when a run actually tagged
+            // something, so the results don't carry a permanently-zero "tags" count.
+            if (_tagsPlaced > 0)
+                chips.Add(new ResultChip("tags", _tagsPlaced, "LemoineGreen"));
+            chips.Add(new ResultChip("failed",  fail, "LemoineRed"));
+            chips.Add(new ResultChip("skipped", skip, "LemoineTextDim"));
+            OnResultChips?.Invoke(chips);
             Complete(pass, fail, skip);
         }
 
