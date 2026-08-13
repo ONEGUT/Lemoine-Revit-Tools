@@ -55,6 +55,9 @@ namespace LemoineTools
         internal static ExternalEvent?                        AutoFiltersEvent                { get; private set; }
         internal static LegendCreatorEventHandler?            LegendCreatorHandler            { get; private set; }
         internal static ExternalEvent?                        LegendCreatorEvent              { get; private set; }
+        // Read-only probe backing the Legend Creator's smart-filtering preview.
+        internal static SmartLegendPreviewEventHandler?       SmartLegendPreviewHandler       { get; private set; }
+        internal static ExternalEvent?                        SmartLegendPreviewEvent         { get; private set; }
         internal static DeleteFiltersEventHandler?            DeleteFiltersHandler            { get; private set; }
         internal static ExternalEvent?                        DeleteFiltersEvent              { get; private set; }
         internal static DeleteFiltersFromProjectEventHandler? DeleteFiltersFromProjectHandler { get; private set; }
@@ -244,6 +247,8 @@ namespace LemoineTools
             AutoFiltersEvent                = ExternalEvent.Create(AutoFiltersHandler);
             LegendCreatorHandler            = new LegendCreatorEventHandler();
             LegendCreatorEvent              = ExternalEvent.Create(LegendCreatorHandler);
+            SmartLegendPreviewHandler       = new SmartLegendPreviewEventHandler();
+            SmartLegendPreviewEvent         = ExternalEvent.Create(SmartLegendPreviewHandler);
             DeleteFiltersHandler            = new DeleteFiltersEventHandler();
             DeleteFiltersEvent              = ExternalEvent.Create(DeleteFiltersHandler);
             DeleteFiltersFromProjectHandler = new DeleteFiltersFromProjectEventHandler();
