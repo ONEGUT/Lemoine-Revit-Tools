@@ -1,5 +1,10 @@
 # Plan — Rebuild Ceiling Tag Placement (prebuild model, no per-tag regen)
 
+**Decided:** standalone **Tag Ceilings** tool (not revived inside Ceiling Heatmap).
+**Decided:** the core is built around a category-agnostic taggable-region abstraction so
+**rooms** can be added to the tag list later under the same placement rules — see
+"Room-ready seam". Rooms are **not implemented in this pass**; ceilings get validated first.
+
 ## Why
 
 The old ceiling tagging lived inside `CeilingHeatmapEventHandler.PlaceCeilingTags` and was
@@ -12,7 +17,7 @@ one regeneration (the transaction commit), never one per tag.
 
 ## What the tool does
 
-A standalone **Tag Ceilings** step-flow tool (recommendation — see Open Decisions):
+A standalone **Tag Ceilings** step-flow tool:
 
 1. **Read phase** (`CeilingTagEngine`, read-only): per selected RCP view, one collector pass
    gathers host + linked ceilings (reusing the heatmap's collector pattern and
@@ -57,6 +62,41 @@ A standalone **Tag Ceilings** step-flow tool (recommendation — see Open Decisi
    creates. Cancellation via `RunState` at the 5% progress cadence, committing work done so
    far.
 
+## Room-ready seam (designed now, built later)
+
+The placement rules — visible-region occlusion, centroid, corridor stretches, 30′ spacing,
+snap-to-interior — must apply unchanged to rooms. So the core never mentions ceilings:
+
+```
+TaggableRegion            // Revit-free: Id, Kind, outer polygon + holes,
+                          // OcclusionLayer, SortDepth, DisplayName
+  → TagPointPlanner       // shared: occlusion → centroid / stretches / spacing → points
+  → TagPlacement[]        // Revit-free: RegionId, 2D point, StretchIndex
+```
+
+Three seams, one per phase:
+
+- **Read** — `IRegionSource` produces `TaggableRegion`s plus a parallel Revit bundle
+  (reference/element id/link). `CeilingRegionSource` (this pass) extracts bottom-face loops
+  via `Face.GetEdgesAsCurveLoops()`. A future `RoomRegionSource` extracts
+  `SpatialElement.GetBoundarySegments(options)` (verified present) — cheaper, no solid
+  needed, and linked rooms transform the same way.
+- **Plan** — untouched by kind. Occlusion is computed **per `OcclusionLayer`**, so ceilings
+  only ever hide ceilings; rooms would form their own layer and never interact with ceiling
+  coverage. `SortDepth` (bottom-face Z for ceilings) decides who hides whom within a layer.
+- **Commit** — `ITagEmitter` per kind, because **the Revit call genuinely differs**
+  (confirmed in `libs/RevitAPI.dll` metadata):
+  - ceilings → `IndependentTag.Create(doc, symId, viewId, reference, addLeader, orientation, XYZ)`
+  - rooms → `Autodesk.Revit.Creation.Document.NewRoomTag(LinkElementId, UV, viewId)` →
+    returns a `RoomTag`, takes a **UV** (not an `XYZ`) and a `LinkElementId` (not a
+    `Reference`)
+  Putting the seam at the emitter keeps that difference out of the planner entirely.
+
+The Options step's tag-type picker becomes per-kind when rooms land (a ceiling tag type and
+a room tag type); this pass ships the ceiling row only. Nothing room-specific is written
+now — only the abstraction boundaries above, so adding rooms is a new source + a new
+emitter, not a refactor of the placement math.
+
 ## Tag family
 
 The tag to use **already lives in the project**: the Options step lists the project's loaded
@@ -92,14 +132,17 @@ any UI code is written.
 ## Files
 
 New — `Source/Tools/Ceilings/CeilingTags/`:
+- `TagCore/TaggableRegion.cs` — Revit-free region DTO (kind, polygons, occlusion layer,
+  sort depth) — the room-ready abstraction
 - `TagCore/PolyRaster.cs` — grid model: rasterize polygon+holes, occlusion subtract,
   connected components, distance transform
 - `TagCore/RegionSkeleton.cs` — thinning, centerline trace, corner split → legs
 - `TagCore/TagPointPlanner.cs` — compact vs corridor, spacing subdivision, snap-to-interior
-- `TagCore/CeilingTagPlan.cs` — Revit-free plan DTO + per-ceiling diagnostics
-- `CeilingTagEngine.cs` — read side (collect, extract, build model, call planner; parallel
-  `Reference` bundle keyed like `PlannedRefBundle`)
-- `CeilingTagCommit.cs` — mutation side
+- `TagCore/TagPlan.cs` — Revit-free plan DTO + per-region diagnostics
+- `CeilingRegionSource.cs` — `IRegionSource` for ceilings (read side: collect, extract
+  bottom-face loops, parallel `Reference` bundle keyed like `PlannedRefBundle`)
+- `CeilingTagEngine.cs` — drives sources → planner, returns plan + Revit bundles
+- `CeilingTagCommit.cs` — mutation side, ceiling `ITagEmitter`
 - `CeilingTagEventHandler.cs` — `IExternalEventHandler`, parked on `App`, payload cleared in
   `finally`
 - `CeilingTagViewModel.cs` — step-flow tool, `IToolCleanup`
@@ -119,12 +162,7 @@ Modified:
 
 ## Open decisions
 
-1. **Standalone tool vs. revive inside Ceiling Heatmap.** Recommended: **standalone** —
-   tagging is useful without recoloring, keeps the heatmap's runtime predictable, and the
-   heatmap can simply say "use Tag Ceilings". Alternative: re-expose `PlaceTags` in the
-   heatmap flow (fewer ribbon buttons, but couples an expensive annotation pass to every
-   heatmap run).
-2. **Corner sensitivity** for stretch splitting (~40° threshold) and the compact-vs-corridor
+1. **Corner sensitivity** for stretch splitting (~40° threshold) and the compact-vs-corridor
    ratio are internal constants to start; promote to settings only if real models demand it.
 
 ## Honest limits
