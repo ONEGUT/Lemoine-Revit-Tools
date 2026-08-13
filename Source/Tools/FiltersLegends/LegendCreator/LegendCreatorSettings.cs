@@ -184,6 +184,35 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
         [XmlAttribute] public string GroupHeaderTypeName { get; set; } = "";
         [XmlAttribute] public string LabelTypeName       { get; set; } = "";
 
+        /// <summary>
+        /// When true the legend draws only the colours actually used in the view(s) it
+        /// serves, instead of every filter in the library. See <see cref="SmartLegendScope"/>.
+        /// </summary>
+        [XmlAttribute] public bool SmartFilterEnabled { get; set; } = false;
+
+        /// <summary>
+        /// Sheet NUMBER this entry was generated from by the Smart Legend tool, empty for a
+        /// hand-built legend. This is how a re-run finds the entry it made for a sheet last
+        /// time and updates it in place instead of adding a second one — the entry's own Id
+        /// keys the stamp on the Revit legend view, so it must survive the re-run.
+        ///
+        /// A sheet NUMBER, not an ElementId: this entry travels inside the .rvt and the
+        /// shared seed library, where an ElementId means nothing (see the note above).
+        /// </summary>
+        [XmlAttribute] public string SourceSheetNumber { get; set; } = "";
+
+        /// <summary>
+        /// Explicit target views for smart filtering, by NAME. Empty means auto-detect from
+        /// the sheet(s) the legend view is placed on.
+        ///
+        /// Names for the same reason the text styles above are names: this entry is
+        /// serialized into the .rvt and into the shared seed library, and an ElementId means
+        /// nothing outside its own document. Revit enforces View.Name uniqueness, so a name
+        /// resolves deterministically within a document and travels between them.
+        /// </summary>
+        [XmlArray("SmartTargetViews"), XmlArrayItem("View")]
+        public List<string> SmartTargetViewNames { get; set; } = new List<string>();
+
         [XmlElement("Layout")]
         public LegendLayoutConfig Layout { get; set; } = new LegendLayoutConfig();
 
@@ -205,6 +234,9 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
             SubtitleTypeName    = SubtitleTypeName,
             GroupHeaderTypeName = GroupHeaderTypeName,
             LabelTypeName       = LabelTypeName,
+            SmartFilterEnabled   = SmartFilterEnabled,
+            SmartTargetViewNames = new List<string>(SmartTargetViewNames ?? new List<string>()),
+            SourceSheetNumber    = SourceSheetNumber,
             Layout            = LegendCreatorSettings.DeepCopy(Layout),
             Rows              = LegendCreatorSettings.DeepCopy(Rows),
             PreviewVisible    = PreviewVisible,

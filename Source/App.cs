@@ -55,6 +55,12 @@ namespace LemoineTools
         internal static ExternalEvent?                        AutoFiltersEvent                { get; private set; }
         internal static LegendCreatorEventHandler?            LegendCreatorHandler            { get; private set; }
         internal static ExternalEvent?                        LegendCreatorEvent              { get; private set; }
+        // Read-only probe backing the Legend Creator's smart-filtering preview.
+        internal static SmartLegendPreviewEventHandler?       SmartLegendPreviewHandler       { get; private set; }
+        internal static ExternalEvent?                        SmartLegendPreviewEvent         { get; private set; }
+        // Smart Legend — builds a legend per sheet from what is actually coloured on it.
+        internal static LemoineTools.Tools.FiltersLegends.SmartLegend.SmartLegendRunHandler? SmartLegendRunHandler { get; private set; }
+        internal static ExternalEvent?                        SmartLegendRunEvent             { get; private set; }
         internal static DeleteFiltersEventHandler?            DeleteFiltersHandler            { get; private set; }
         internal static ExternalEvent?                        DeleteFiltersEvent              { get; private set; }
         internal static DeleteFiltersFromProjectEventHandler? DeleteFiltersFromProjectHandler { get; private set; }
@@ -244,6 +250,10 @@ namespace LemoineTools
             AutoFiltersEvent                = ExternalEvent.Create(AutoFiltersHandler);
             LegendCreatorHandler            = new LegendCreatorEventHandler();
             LegendCreatorEvent              = ExternalEvent.Create(LegendCreatorHandler);
+            SmartLegendPreviewHandler       = new SmartLegendPreviewEventHandler();
+            SmartLegendPreviewEvent         = ExternalEvent.Create(SmartLegendPreviewHandler);
+            SmartLegendRunHandler           = new LemoineTools.Tools.FiltersLegends.SmartLegend.SmartLegendRunHandler();
+            SmartLegendRunEvent             = ExternalEvent.Create(SmartLegendRunHandler);
             DeleteFiltersHandler            = new DeleteFiltersEventHandler();
             DeleteFiltersEvent              = ExternalEvent.Create(DeleteFiltersHandler);
             DeleteFiltersFromProjectHandler = new DeleteFiltersFromProjectEventHandler();
@@ -577,6 +587,11 @@ namespace LemoineTools
                 "LT_LegendSettings", L.T("ribbon.buttons.legendCreation.label"), "OpenLegendSettingsCommand",
                 L.T("ribbon.buttons.legendCreation.tip"),
                 char.ConvertFromUtf32(0xE713)));  // Settings
+
+            filtersPanel.AddItem(Btn(
+                "LT_SmartLegend", L.T("ribbon.buttons.smartLegend.label"), "SmartLegendCommand",
+                L.T("ribbon.buttons.smartLegend.tip"),
+                char.ConvertFromUtf32(0xE945)));  // Lightning (auto / from the model)
 
             // ── Dimensioning ──────────────────────────────────────────────────
             var dimensioningPanel = application.CreateRibbonPanel("Lemoine Tools", L.T("ribbon.panels.dimensioning"));

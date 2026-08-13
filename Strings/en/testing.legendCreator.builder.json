@@ -63,6 +63,30 @@
     "titleBar": {
       "title": "Legend Creation"
     },
+    // ── Smart filtering card (right panel, between TEXT STYLES and PALETTE) ──
+    // Draws only the colours actually used in the view(s) the legend serves.
+    // The scope strings are also used by the run handler's preview probe.
+    "smart": {
+      "header":        "SMART FILTERING",
+      "toggleLabel":   "Only show colours used in the view",
+      "toggleDesc":    "Rows with nothing to colour are left out",
+      "scopeRow":      "Scope",
+      "chooseViews":   "Choose views\u2026",
+      "clearOverride": "Clear override",
+      "refresh":       "Refresh",
+      "done":          "Done",
+      "clear":         "Clear",
+      "notChecked":    "Press Refresh to check the model",
+      "scopeNone":     "Not placed on a sheet \u2014 no scope",
+      "scopeManual":   "Manual \u2014 {0} view(s)",
+      "scopeSheet":    "Auto \u2014 sheet {0} ({1} views)",
+      "scopeSheets":   "Auto \u2014 {0} sheets (union of {1} views)",
+      "sheetsHint":    "Split into one legend per area for per-area content",
+      "countPending":  "\u2014 of {0} rows will be drawn",
+      "count":         "{0} of {1} rows will be drawn",
+      "probeFailed":   "Could not check the model: {0}",
+      "pickerTitle":   "Views this legend serves"
+    },
     "actions": {
       "previewTooltip": "Toggle a live preview of the legend",
       "createTooltip": "Create or update the Legend view in Revit",

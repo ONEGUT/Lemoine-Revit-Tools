@@ -27,6 +27,12 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
         public Action<int, int, int>?      OnComplete     { get; set; }
         /// <summary>Fired after a successful Create (not Update) with the new view's ElementId.</summary>
         public Action<ElementId>?          OnLegendCreated { get; set; }
+        /// <summary>
+        /// Fired with (rows drawn, rows visible) when smart filtering actually narrowed the
+        /// legend. This window has no run-log pane, so without it the user would see
+        /// "Legend updated" and no hint that 27 rows were dropped on purpose.
+        /// </summary>
+        public Action<int, int>?           OnSmartFiltered { get; set; }
 
         // Layout and rows to render — set by the caller before raising the event.
         public LegendLayoutConfig?    Layout { get; set; }
@@ -37,6 +43,13 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
 
         // Null → fall back to matching by Layout.Title name.
         public ElementId? TargetLegendId { get; set; }
+
+        /// <summary>
+        /// Name for the Revit legend VIEW, when it should differ from the title drawn inside
+        /// the legend (the Smart Legend tool names views "A-101 - LEGEND" while drawing a
+        /// plain "LEGEND" heading). Null → the view is named from Layout.Title, as before.
+        /// </summary>
+        public string? ViewNameOverride { get; set; }
 
         /// <summary>
         /// False (default) → duplicate a template legend and create a new view.
@@ -51,6 +64,20 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
         /// claimed a legend in every project the user opened.
         /// </summary>
         public string? EntryId { get; set; }
+
+        /// <summary>
+        /// When true the legend draws only the colours actually used in the view(s) it
+        /// serves. Resolution and the liveness test live in <see cref="SmartLegendScope"/>;
+        /// both run BEFORE the transaction opens, so a run that resolves to nothing can
+        /// abort without having cleared an existing legend.
+        /// </summary>
+        public bool SmartFilterEnabled { get; set; }
+
+        /// <summary>
+        /// Explicit target view NAMES for smart filtering. Empty → auto-detect from the
+        /// sheet(s) the legend view is placed on.
+        /// </summary>
+        public List<string>? SmartTargetViewNames { get; set; }
 
         // Per-role TextNoteType element IDs. Null → fall back to first in document.
         public ElementId? TitleTypeId       { get; set; }
@@ -75,9 +102,12 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
             finally
             {
                 // Session-long static handler — drop the run's payload.
-                Layout  = null;
-                Rows    = null;
-                EntryId = null;
+                Layout               = null;
+                Rows                 = null;
+                EntryId              = null;
+                SmartTargetViewNames = null;
+                OnSmartFiltered      = null;
+                ViewNameOverride     = null;
             }
             Progress(100, pass, fail, skip);
             Complete(pass, fail, skip);
@@ -86,7 +116,14 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
         // ─────────────────────────────────────────────────────────────────────
         // Core legend creation
         // ─────────────────────────────────────────────────────────────────────
-        private void CreateLegend(Document doc, ref int pass, ref int fail, ref int skip)
+        /// <summary>
+        /// Draws the configured legend into the document. Internal rather than private so the
+        /// Smart Legend tool can reuse this exact drawing engine — swatch types, layout maths,
+        /// text placement and the update-in-place path — instead of growing a second copy of
+        /// it that would drift. Callers set the same properties the ExternalEvent path sets,
+        /// then call this directly (they are already on the Revit thread).
+        /// </summary>
+        internal void CreateLegend(Document doc, ref int pass, ref int fail, ref int skip)
         {
             var layout = this.Layout ?? new LegendLayoutConfig();
             var rows   = this.Rows   ?? new List<LegendRowConfig>();
@@ -155,6 +192,32 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
             }
             catch (Exception __lex) { DiagnosticsLog.Swallowed("LegendCreator: load AutoFilters rule map", __lex); }
 
+            // block → ParameterFilterElement name. Shared with the window's preview pass so
+            // both resolve a block to exactly the same filter.
+            var filterNameForBlock = SmartLegendScope.BuildFilterNameResolver();
+
+            // ── Smart filtering (read-only, BEFORE the transaction) ───────────
+            // Null means "not in effect" — every visible block is drawn, exactly as before.
+            HashSet<string>? liveNames = null;
+            if (SmartFilterEnabled)
+            {
+                var smart = RunSmartPass(doc, layout, rows, filterNameForBlock);
+                if (smart.Abort) { skip += CountVisibleBlocks(rows); return; }
+                liveNames = smart.Live;
+                if (liveNames != null) OnSmartFiltered?.Invoke(smart.DrawnRows, smart.VisibleRows);
+            }
+
+            // True when a block reaches the drawing: the user's own eye toggle first, then
+            // (when smart filtering is on) proof that its filter colours something in view.
+            bool IsBlockDrawn(LegendBlockConfig b)
+            {
+                if (b == null || !b.Visible) return false;
+                if (liveNames == null) return true;
+                string? fn = filterNameForBlock(b);
+                if (fn == null) return true;          // custom swatch — untestable, so kept
+                return liveNames.Contains(fn);
+            }
+
             // ── Collect needed (colorHex, fill) pairs → display name for FRT ──
             // First block with a given (color, fill) pair wins the name slot.
             var neededFrts = new Dictionary<(string ColorHex, string Fill), string>();
@@ -162,7 +225,7 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
                 foreach (var grp in row.Groups ?? new List<LegendGroupConfig>())
                     foreach (var blk in grp.Blocks ?? new List<LegendBlockConfig>())
                     {
-                        if (!blk.Visible) continue;
+                        if (!IsBlockDrawn(blk)) continue;
                         var rgb = ResolveColor(blk, ruleMap);
                         if (!rgb.HasValue) continue;
                         var key = (ToHex(rgb.Value), blk.Fill ?? "solid");
@@ -179,7 +242,11 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
             // ── Generate unique legend view name ───────────────────────────────
             // Computed in both modes: create uses it directly, and an update whose
             // target view is gone falls back to creating a fresh view with it.
-            string baseTitle  = string.IsNullOrWhiteSpace(layout.Title) ? "Legend" : layout.Title.Trim();
+            // The view's name: the caller's override when it names views separately from the
+            // heading it draws, else the legend title (the Legend Creator's own behaviour).
+            string baseTitle  = !string.IsNullOrWhiteSpace(ViewNameOverride) ? ViewNameOverride!.Trim()
+                              : string.IsNullOrWhiteSpace(layout.Title)      ? "Legend"
+                              : layout.Title.Trim();
             string legendName = baseTitle;
             {
                 var existingNames = new FilteredElementCollector(doc)
@@ -270,16 +337,9 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
                         dv = doc.GetElement(TargetLegendId) as View;
                     else
                     {
-                        var legends = new FilteredElementCollector(doc)
-                            .OfCategory(BuiltInCategory.OST_Views).Cast<View>()
-                            .Where(v => v.ViewType == ViewType.Legend)
-                            .ToList();
                         // Revit auto-suffixes a duplicated legend with " (n)"; match the exact title
                         // first, then fall back to a "<title> (n)" variant so an update still finds it.
-                        dv = legends.FirstOrDefault(v => v.Name == baseTitle)
-                          ?? legends.FirstOrDefault(v =>
-                                 v.Name.StartsWith(baseTitle + " (", StringComparison.Ordinal) &&
-                                 v.Name.EndsWith(")", StringComparison.Ordinal));
+                        dv = FindLegendByTitle(doc, baseTitle);
                     }
                     if (dv == null || dv.ViewType != ViewType.Legend)
                     {
@@ -416,7 +476,7 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
                 }
 
                 int totalBlocks = rows.Sum(r =>
-                    r.Groups?.Sum(g => g.Blocks?.Count(b => b.Visible) ?? 0) ?? 0);
+                    r.Groups?.Sum(g => g.Blocks?.Count(IsBlockDrawn) ?? 0) ?? 0);
                 int blocksDone = 0;
                 bool cancelled = false;
 
@@ -431,6 +491,18 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
                     foreach (var grp in row.Groups ?? new List<LegendGroupConfig>())
                     {
                         if (cancelled) break;
+
+                        // Resolve the group's drawable blocks FIRST: a group whose blocks are
+                        // all hidden must not place a header, or the legend shows a title with
+                        // nothing under it — and must not advance the column stride either.
+                        var drawnBlocks = new List<LegendBlockConfig>();
+                        foreach (var candidate in grp.Blocks ?? new List<LegendBlockConfig>())
+                        {
+                            if (IsBlockDrawn(candidate)) drawnBlocks.Add(candidate);
+                            else                         skip++;
+                        }
+                        if (drawnBlocks.Count == 0) continue;
+
                         // Group header: cy is the band top; the Middle-aligned note goes
                         // at the band centre.
                         string header = string.IsNullOrWhiteSpace(grp.Title)
@@ -442,7 +514,7 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
                         int    visCount  = 0;
                         double maxLabelW = 0;
 
-                        foreach (var blk in grp.Blocks ?? new List<LegendBlockConfig>())
+                        foreach (var blk in drawnBlocks)
                         {
                             if (RunState.CancelRequested)
                             {
@@ -450,7 +522,6 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
                                 Log(AppStrings.T("testing.legendCreator.log.stoppedByUser", blocksDone, totalBlocks), "warn");
                                 break;   // breaks block loop; the group/row loops break on the cancelled flag
                             }
-                            if (!blk.Visible) { skip++; continue; }
 
                             var rgb     = ResolveColor(blk, ruleMap);
                             string hex  = rgb.HasValue ? ToHex(rgb.Value) : "#888888";
@@ -502,7 +573,9 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
                         cx += Math.Max(entryW, headerW) + colGapFt;
                     }
 
-                    cy = rowStartY - rowMaxDepth - rowGapFt;
+                    // A row whose groups all resolved empty must not consume vertical space —
+                    // otherwise smart filtering leaves a gap where the row used to be.
+                    if (rowMaxDepth > 0) cy = rowStartY - rowMaxDepth - rowGapFt;
                 }
 
                 tx.Commit();
@@ -520,6 +593,178 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
                     : AppStrings.T("testing.legendCreator.log.updatedSummary", baseTitle, pass, skip, fail),
                     fail > 0 ? "fail" : "pass");
             }
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // Smart filtering
+        // ─────────────────────────────────────────────────────────────────────
+
+        private sealed class SmartPassResult
+        {
+            /// <summary>Stop the run without mutating anything.</summary>
+            public bool Abort { get; set; }
+            /// <summary>Filter names to draw. Null means "no filtering" — draw every visible block.</summary>
+            public HashSet<string>? Live { get; set; }
+            /// <summary>Rows that survive the filter, and rows the user has visible today.</summary>
+            public int DrawnRows { get; set; }
+            public int VisibleRows { get; set; }
+        }
+
+        /// <summary>
+        /// Resolves which of this legend's colours are actually used in the view(s) it serves.
+        ///
+        /// Read-only and deliberately OUTSIDE the transaction: a run that resolves to nothing
+        /// must be able to abort with the existing legend still intact, and clearing the
+        /// legend first would have already destroyed it.
+        /// </summary>
+        private SmartPassResult RunSmartPass(
+            Document doc,
+            LegendLayoutConfig layout,
+            List<LegendRowConfig> rows,
+            Func<LegendBlockConfig, string?> filterNameForBlock)
+        {
+            var res = new SmartPassResult();
+
+            // Candidate filters: those behind the blocks that would otherwise be drawn.
+            var candidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var row in rows)
+                foreach (var grp in row.Groups ?? new List<LegendGroupConfig>())
+                    foreach (var blk in grp.Blocks ?? new List<LegendBlockConfig>())
+                    {
+                        if (blk == null || !blk.Visible) continue;
+                        string? fn = filterNameForBlock(blk);
+                        if (fn != null) candidates.Add(fn);
+                    }
+
+            if (candidates.Count == 0)
+            {
+                // Every block is a custom swatch — there is nothing testable, and saying so
+                // beats leaving the user to wonder why smart filtering changed nothing.
+                Log(AppStrings.T("testing.legendCreator.log.smartNoCandidates"), "info");
+                return res;
+            }
+
+            // Only a legend that already exists can be placed on a sheet, so a first-time
+            // Create has no scope to auto-detect and correctly draws in full.
+            ElementId? legendViewId = null;
+            if (TargetLegendId != null && TargetLegendId != ElementId.InvalidElementId)
+            {
+                legendViewId = TargetLegendId;
+            }
+            else if (UpdateMode)
+            {
+                string baseTitle = string.IsNullOrWhiteSpace(layout.Title) ? "Legend" : layout.Title.Trim();
+                legendViewId = FindLegendByTitle(doc, baseTitle)?.Id;
+            }
+
+            var scope = SmartLegendScope.ResolveScope(doc, legendViewId, SmartTargetViewNames);
+
+            foreach (string n in scope.UnresolvedViewNames)
+                Log(AppStrings.T("testing.legendCreator.log.smartUnresolvedView", n), "warn");
+            if (scope.FellBackFromManual)
+                Log(AppStrings.T("testing.legendCreator.log.smartFellBack"), "warn");
+
+            if (!scope.HasScope)
+            {
+                // Never a dead end: no scope means the full legend, and a line saying why.
+                Log(AppStrings.T("testing.legendCreator.log.smartNoScope"), "warn");
+                return res;
+            }
+
+            if (scope.Source == SmartScopeSource.Manual)
+                Log(AppStrings.T("testing.legendCreator.log.smartScopeManual", scope.ViewIds.Count), "info");
+            else if (scope.SheetLabels.Count <= 1)
+                Log(AppStrings.T("testing.legendCreator.log.smartScopeSheet",
+                    scope.SheetLabels.Count > 0 ? scope.SheetLabels[0] : "", scope.ViewIds.Count), "info");
+            else
+                // One legend view renders identically on every sheet it sits on, so the union
+                // IS the correct content — but the user should know to split the entry.
+                Log(AppStrings.T("testing.legendCreator.log.smartScopeSheets",
+                    scope.SheetLabels.Count, scope.ViewIds.Count), "warn");
+
+            var usage = SmartLegendScope.ComputeUsage(
+                doc, scope.ViewIds, candidates, () => RunState.CancelRequested);
+
+            if (usage.Cancelled)
+            {
+                Log(AppStrings.T("testing.legendCreator.log.smartStopped"), "warn");
+                res.Abort = true;
+                return res;
+            }
+
+            foreach (var kv in usage.Hidden)
+                Log(AppStrings.T("testing.legendCreator.log.smartHidden", kv.Key, ReasonText(kv.Value)), "info");
+            foreach (string n in usage.Unprovable)
+                Log(AppStrings.T("testing.legendCreator.log.smartUnprovable", n), "warn");
+            foreach (string l in usage.NonCascadingLinks)
+                Log(AppStrings.T("testing.legendCreator.log.smartNonCascadingLink", l), "warn");
+
+            Log(AppStrings.T("testing.legendCreator.log.smartSummary",
+                usage.Live.Count, usage.CandidateCount, usage.Hidden.Count), "info");
+
+            // Count what would actually be drawn — custom swatches survive the filter, so
+            // "no live filter" does not necessarily mean "empty legend".
+            int drawn = 0;
+            foreach (var row in rows)
+                foreach (var grp in row.Groups ?? new List<LegendGroupConfig>())
+                    foreach (var blk in grp.Blocks ?? new List<LegendBlockConfig>())
+                    {
+                        if (blk == null || !blk.Visible) continue;
+                        string? fn = filterNameForBlock(blk);
+                        if (fn == null || usage.Live.Contains(fn)) drawn++;
+                    }
+
+            if (drawn == 0)
+            {
+                // Leave the existing legend alone rather than replacing it with a blank view.
+                Log(AppStrings.T("testing.legendCreator.log.smartNothingLive"), "warn");
+                res.Abort = true;
+                return res;
+            }
+
+            res.Live        = usage.Live;
+            res.DrawnRows   = drawn;
+            res.VisibleRows = CountVisibleBlocks(rows);
+            return res;
+        }
+
+        private static string ReasonText(SmartHideReason reason)
+        {
+            switch (reason)
+            {
+                case SmartHideReason.NoFilterElement: return AppStrings.T("testing.legendCreator.log.smartReason.noFilterElement");
+                case SmartHideReason.Disabled:        return AppStrings.T("testing.legendCreator.log.smartReason.disabled");
+                case SmartHideReason.HiddenByFilter:  return AppStrings.T("testing.legendCreator.log.smartReason.hiddenByFilter");
+                case SmartHideReason.NoMatch:         return AppStrings.T("testing.legendCreator.log.smartReason.noMatch");
+                default:                              return AppStrings.T("testing.legendCreator.log.smartReason.notApplied");
+            }
+        }
+
+        private static int CountVisibleBlocks(List<LegendRowConfig> rows)
+        {
+            int n = 0;
+            foreach (var row in rows)
+                foreach (var grp in row.Groups ?? new List<LegendGroupConfig>())
+                    foreach (var blk in grp.Blocks ?? new List<LegendBlockConfig>())
+                        if (blk != null && blk.Visible) n++;
+            return n;
+        }
+
+        /// <summary>
+        /// The legend view carrying this title, matching Revit's " (n)" suffix on a duplicate.
+        /// Shared by the smart pass (before the transaction) and the update path (inside it),
+        /// so both resolve to the same view.
+        /// </summary>
+        private static View? FindLegendByTitle(Document doc, string baseTitle)
+        {
+            var legends = new FilteredElementCollector(doc)
+                .OfCategory(BuiltInCategory.OST_Views).Cast<View>()
+                .Where(v => v.ViewType == ViewType.Legend)
+                .ToList();
+            return legends.FirstOrDefault(v => v.Name == baseTitle)
+                ?? legends.FirstOrDefault(v =>
+                       v.Name.StartsWith(baseTitle + " (", StringComparison.Ordinal) &&
+                       v.Name.EndsWith(")", StringComparison.Ordinal));
         }
 
         // ── Shape helpers ─────────────────────────────────────────────────────
