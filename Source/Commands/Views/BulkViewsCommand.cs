@@ -79,7 +79,7 @@ namespace LemoineTools.Commands
                 var eligibleForDuplicate = CollectDuplicatableViews(doc);
                 var duplicate = new ViewsBulkDuplicateViewModel(
                     App.ViewsBulkDuplicateRunHandler!, App.ViewsBulkDuplicateRunEvent!,
-                    eligibleForDuplicate, browserTree);
+                    eligibleForDuplicate, browserTree, scopeBoxes);
 
                 var eligibleForTemplate = new FilteredElementCollector(doc)
                     .OfClass(typeof(View)).Cast<View>()

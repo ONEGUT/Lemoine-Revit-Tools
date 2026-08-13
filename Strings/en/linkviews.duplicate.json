@@ -1,21 +1,27 @@
 // linkviews.duplicate.json — Bulk Duplicate Views tool + run-handler logs.
-// Command: ViewsBulkDuplicateCommand. NOTE: duplicate-mode strings (Duplicate /
-// Duplicate with Detailing / Duplicate as Dependent) stay in code — they map to the
-// run handler's mode and are compared by value.
+// Opened as the "Duplicate" mode of BulkViewsCommand. NOTE: duplicate-mode strings
+// (Duplicate / Duplicate with Detailing / Duplicate as Dependent) stay in code — they
+// map to the run handler's mode and are compared by value.
+// The tool has two naming patterns with separate remembered values: the standard one
+// (labels.namePattern) and the per-scope-box one (labels.namePatternScopeBox), the
+// latter used only when S1's "one copy per scope box" toggle is on.
 {
   "title": "Bulk Duplicate Views",
   "runLabel": "Duplicate in Revit →",
 
   "steps": {
     "S1": "Source Views",
+    "SB": "Scope Boxes",
     "S2": "Duplicate Mode",
     "S3": "View Naming",
     "S4": "Review & Run"
   },
 
   "summaries": {
-    "S4":        "Ready to run",
-    "viewCount": "{0} view(s)"
+    "S4":              "Ready to run",
+    "viewCount":       "{0} view(s)",
+    "viewCountScoped": "{0} view(s) × each scope box",
+    "scopeBoxCount":   "{0} scope box(es)"
   },
 
   "labels": {
@@ -26,19 +32,34 @@
     "hintDependent":   "Creates a dependent view that shares the parent's crop region and stays linked to it.",
     "namePattern":     "NAME PATTERN",
     "exView":          "Floor Plan 01",
-    "exType":          "Floor Plan"
+    "exType":          "Floor Plan",
+
+    // Per-scope-box mode (S1 toggle + the conditional "SB" step)
+    "perScopeBox":     "Create one copy per scope box",
+    "perScopeBoxHint": "Instead of one copy per source view, generate a separate copy for every scope box selected in the next step, each bound to that box. Off by default.",
+    "scopeBoxHeader":  "SCOPE BOXES",
+    "scopeBoxes":      "Scope boxes",
+    "noScopeBoxes":    "No scope boxes found in this project. Draw one in Revit (View → Scope Box), then reopen this tool.",
+    "unnamedScopeBox": "(unnamed scope box {0})",              // {0}=element id
+    "scopeBoxDisambiguated": "{0} ({1})",                      // {0}=name {1}=occurrence number
+    "namePatternScopeBox":   "NAME PATTERN (PER SCOPE BOX)",
+    "exScopeBox":      "Zone A"
   },
 
   "review": {
-    "itemViews":   "Source views",
-    "itemMode":    "Duplicate mode",
-    "itemPattern": "Name pattern",
-    "itemTotal":   "Views to create",
+    "itemViews":      "Source views",
+    "itemScopeBoxes": "Scope boxes",
+    "itemMode":       "Duplicate mode",
+    "itemPattern":    "Name pattern",
+    "itemTotal":      "Views to create",
 
-    "viewsValue": "{0} view(s)",
-    "totalValue": "up to {0}",
-    "note":       "Each selected view is duplicated once. Copies whose name already exists are skipped; a view that does not support the chosen duplicate mode is reported as failed.",
-    "warnSameName":"Name pattern resolves to each view's own name — every copy would collide with its source and be skipped. Add a suffix or token to differentiate."
+    "viewsValue":      "{0} view(s)",
+    "scopeBoxesValue": "{0} scope box(es)",
+    "totalValue":      "up to {0}",
+    "note":         "Each selected view is duplicated once. Copies whose name already exists are skipped; a view that does not support the chosen duplicate mode is reported as failed.",
+    "noteScopeBox": "Each selected view is duplicated once per selected scope box, and every copy is bound to its box (which drives its crop). Copies whose name already exists are skipped; a view that does not support the chosen duplicate mode is reported as failed. A view type that cannot carry a scope box is still created, uncropped, with a warning.",
+    "warnSameName":"Name pattern resolves to each view's own name — every copy would collide with its source and be skipped. Add a suffix or token to differentiate.",
+    "warnNoScopeBoxToken":"Name pattern has no {ScopeBoxName} token — every copy of a view would resolve to the same name, so all but the first would be skipped. Add the token to give each scope box its own view."
   },
 
   "log": {
@@ -47,6 +68,11 @@
     "error":      "Error: {0}",
     "nonFatal":   "{0} non-fatal issue(s) recorded — see diagnostics log.",
     "nothingToDo":"Nothing to do — no valid views selected.",
+    "noScopeBoxes":"Nothing to do — per-scope-box mode is on but no scope boxes were selected.",
+    "planScoped": "Fanning out {0} view(s) across {1} scope box(es) — up to {2} copies.",
+    "boxAssignRefused": "Created '{0}' but could not bind it to scope box '{1}': {2}",   // {0}=view {1}=box {2}=reason
+    "boxParamUnavailable": "the Scope Box parameter is unavailable or read-only for this view type",
+    "boxSetRejected": "Revit rejected the assignment",
     "skipExists": "Skip '{0}' (name already exists).",
     "skipMode":   "Skip '{0}' — cannot {1}.",                   // {0}=view {1}=mode (lowercased)
     "created":    "Created '{0}'",
