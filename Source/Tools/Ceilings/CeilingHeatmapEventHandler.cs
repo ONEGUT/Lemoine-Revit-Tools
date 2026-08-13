@@ -735,19 +735,14 @@ namespace LemoineTools.Tools.Ceilings
             ViewPlan view, Transform invLinkXform)
         {
             double levelElev = view.GenLevel?.Elevation ?? 0.0;
-            double zMaxWorld = levelElev + 30.0;
-            try
-            {
-                Level? nextLevel = new FilteredElementCollector(view.Document)
-                    .OfClass(typeof(Level))
-                    .Cast<Level>()
-                    .Where(l => l.Elevation > levelElev + 1.0)
-                    .OrderBy(l => l.Elevation)
-                    .FirstOrDefault();
-                if (nextLevel != null)
-                    zMaxWorld = nextLevel.Elevation;
-            }
-            catch (Exception __lex) { DiagnosticsLog.Swallowed("CeilingHeatmap: find next level elevation", __lex); }
+            // No upper cap keyed to "the next level up" or a fixed 30' — either one can sit
+            // below a real ceiling's height offset (a double-height space's ceiling can run
+            // well past a nearby mezzanine/roof level), which silently dropped that ceiling
+            // from the scan before its actual "Height Offset From Level" was ever read. The
+            // height offset value read later is what matters; this box only needs to be wide
+            // enough to never be the thing that excludes a real ceiling, so it goes as wide as
+            // the X/Y fallback below already does for the uncropped case.
+            double zMaxWorld = levelElev + 1e6;
 
             double zMin = invLinkXform.OfPoint(new XYZ(0, 0, levelElev - 1.0)).Z;
             double zMax = invLinkXform.OfPoint(new XYZ(0, 0, zMaxWorld)).Z;
