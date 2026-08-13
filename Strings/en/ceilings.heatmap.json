@@ -54,7 +54,7 @@
     "toggleTagsDesc":   "Place a Ceiling Tag at the center of each ceiling after applying the heatmap. Any existing ceiling tags in the selected views are deleted and replaced.",
     "elevTol":          "ELEVATION TOLERANCE",
     "inUnit":           "  in",
-    "tolHint":          "Ceilings within this elevation range share one color filter bucket."
+    "tolHint":          "Ceilings within this elevation range share one color filter bucket. Quarter-inch steps, 1/4 in minimum. Each filter still reports a real ceiling height — the tolerance only decides what gets grouped."
   },
 
   "review": {
@@ -89,6 +89,8 @@
     "scanned":           "Scanned {0} host ceiling(s) and {1} linked ceiling(s).",
     "noOffsets":         "No ceiling height offsets found in the selected views (checked the host model and every visible link).",
     "foundBuckets":      "Found {0} distinct height-offset bucket(s).",
+    // {0} = bucket count, {1} = tolerance in inches
+    "manyBuckets":       "{0} buckets at a {1} in tolerance — that many filters will be created and applied to every selected view. Raise the tolerance to group more ceilings together.",
     "noSolidFill":       "Solid fill pattern not found — color overrides will be applied without a fill pattern.",
     "creatingFilters":   "Creating and applying view filters…",
     "filterCreateError": "Error creating filter '{0}': {1}.",       // {0}=name {1}=error
