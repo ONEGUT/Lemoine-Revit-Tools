@@ -45,6 +45,13 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
         public ElementId? TargetLegendId { get; set; }
 
         /// <summary>
+        /// Name for the Revit legend VIEW, when it should differ from the title drawn inside
+        /// the legend (the Smart Legend tool names views "A-101 - LEGEND" while drawing a
+        /// plain "LEGEND" heading). Null → the view is named from Layout.Title, as before.
+        /// </summary>
+        public string? ViewNameOverride { get; set; }
+
+        /// <summary>
         /// False (default) → duplicate a template legend and create a new view.
         /// True            → update the view specified by TargetLegendId.
         /// </summary>
@@ -100,6 +107,7 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
                 EntryId              = null;
                 SmartTargetViewNames = null;
                 OnSmartFiltered      = null;
+                ViewNameOverride     = null;
             }
             Progress(100, pass, fail, skip);
             Complete(pass, fail, skip);
@@ -108,7 +116,14 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
         // ─────────────────────────────────────────────────────────────────────
         // Core legend creation
         // ─────────────────────────────────────────────────────────────────────
-        private void CreateLegend(Document doc, ref int pass, ref int fail, ref int skip)
+        /// <summary>
+        /// Draws the configured legend into the document. Internal rather than private so the
+        /// Smart Legend tool can reuse this exact drawing engine — swatch types, layout maths,
+        /// text placement and the update-in-place path — instead of growing a second copy of
+        /// it that would drift. Callers set the same properties the ExternalEvent path sets,
+        /// then call this directly (they are already on the Revit thread).
+        /// </summary>
+        internal void CreateLegend(Document doc, ref int pass, ref int fail, ref int skip)
         {
             var layout = this.Layout ?? new LegendLayoutConfig();
             var rows   = this.Rows   ?? new List<LegendRowConfig>();
@@ -227,7 +242,11 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
             // ── Generate unique legend view name ───────────────────────────────
             // Computed in both modes: create uses it directly, and an update whose
             // target view is gone falls back to creating a fresh view with it.
-            string baseTitle  = string.IsNullOrWhiteSpace(layout.Title) ? "Legend" : layout.Title.Trim();
+            // The view's name: the caller's override when it names views separately from the
+            // heading it draws, else the legend title (the Legend Creator's own behaviour).
+            string baseTitle  = !string.IsNullOrWhiteSpace(ViewNameOverride) ? ViewNameOverride!.Trim()
+                              : string.IsNullOrWhiteSpace(layout.Title)      ? "Legend"
+                              : layout.Title.Trim();
             string legendName = baseTitle;
             {
                 var existingNames = new FilteredElementCollector(doc)

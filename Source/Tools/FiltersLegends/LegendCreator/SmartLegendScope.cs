@@ -95,6 +95,9 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
         /// <summary>Links skipped because they are not displayed "By Host View" in a target view.</summary>
         public List<string> NonCascadingLinks { get; } = new List<string>();
 
+        /// <summary>Live filters that override no colour — reported rather than given an invented swatch.</summary>
+        public List<string> ColorlessFilters { get; } = new List<string>();
+
         /// <summary>True when the pass stopped early on a cancel request — results are partial.</summary>
         public bool Cancelled { get; set; }
 
@@ -179,6 +182,260 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
                     scope.SheetLabels.Count > 0 ? scope.SheetLabels[0] : "", scope.ViewIds.Count);
             return AppStrings.T("testing.legendCreator.builder.window.smart.scopeSheets",
                 scope.SheetLabels.Count, scope.ViewIds.Count);
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // Sheet → views, and the live filters on them (Smart Legend tool)
+        // ─────────────────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// The model views placed on a sheet. Legends and schedules are excluded — they
+        /// carry no model filters, so counting them would only inflate the reported view count.
+        /// </summary>
+        public static List<ElementId> ViewsOnSheet(Document doc, ElementId sheetId)
+        {
+            var ids  = new List<ElementId>();
+            var seen = new HashSet<long>();
+            if (doc == null) return ids;
+
+            try
+            {
+                if (!(doc.GetElement(sheetId) is ViewSheet sheet)) return ids;
+                foreach (ElementId vpId in sheet.GetAllViewports())
+                {
+                    if (!(doc.GetElement(vpId) is Viewport vp)) continue;
+                    if (!seen.Add(vp.ViewId.Value)) continue;
+                    if (doc.GetElement(vp.ViewId) is View v &&
+                        v.ViewType != ViewType.Legend && v.ViewType != ViewType.Schedule)
+                        ids.Add(vp.ViewId);
+                }
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Swallowed($"SmartLegendScope: read viewports of sheet {sheetId}", ex);
+            }
+            return ids;
+        }
+
+        /// <summary>An Auto Filters rule, reached from the filter name it generates.</summary>
+        public sealed class RuleRef
+        {
+            public string TradeId    { get; set; } = "";
+            public string TradeLabel { get; set; } = "";
+            public string RuleId     { get; set; } = "";
+            public string RuleName   { get; set; } = "";
+            public string ColorHex   { get; set; } = "";
+        }
+
+        /// <summary>A filter proven to colour something in the scanned views.</summary>
+        public sealed class LiveFilter
+        {
+            public long   FilterId    { get; set; }
+            public string FilterName  { get; set; } = "";
+            /// <summary>Rule name when the filter is one of ours, else the filter's own name.</summary>
+            public string DisplayName { get; set; } = "";
+            public string ColorHex    { get; set; } = "#888888";
+            /// <summary>Group heading — the trade label, or "Other" for an unmatched filter.</summary>
+            public string GroupLabel  { get; set; } = "";
+            /// <summary>Set only when the filter maps to an Auto Filters rule.</summary>
+            public string? RuleId     { get; set; }
+            public string? TradeId    { get; set; }
+            public bool Matched => !string.IsNullOrEmpty(RuleId);
+        }
+
+        /// <summary>
+        /// Maps every filter name the Auto Filters library generates back to its rule.
+        /// This is the "is there already a matching filter?" lookup — a live filter is
+        /// attributed to an existing rule rather than treated as new.
+        /// </summary>
+        public static Dictionary<string, RuleRef> BuildFilterNameToRule()
+        {
+            var map = new Dictionary<string, RuleRef>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                foreach (var trade in AutoFiltersSettings.Instance.Trades)
+                {
+                    if (trade?.Rules == null) continue;
+                    foreach (var rule in trade.Rules)
+                    {
+                        if (rule == null || string.IsNullOrEmpty(rule.Id)) continue;
+                        string name = AutoFiltersSettings.MakeFilterName(trade.Id ?? "", rule.Name ?? "");
+                        if (name.Length == 0 || map.ContainsKey(name)) continue;
+                        map[name] = new RuleRef
+                        {
+                            TradeId    = trade.Id ?? "",
+                            TradeLabel = !string.IsNullOrWhiteSpace(trade.Label) ? trade.Label : (trade.Id ?? ""),
+                            RuleId     = rule.Id,
+                            RuleName   = !string.IsNullOrWhiteSpace(rule.Name) ? rule.Name : rule.Id,
+                            ColorHex   = rule.SurfColor ?? "#888888",
+                        };
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Swallowed("SmartLegendScope: build filter-name → rule map", ex);
+            }
+            return map;
+        }
+
+        /// <summary>
+        /// Every filter that actually colours something visible in the given views, with the
+        /// colour it paints and the Auto Filters rule behind it when there is one.
+        ///
+        /// This is the Smart Legend tool's scan: the legend is built from what it returns.
+        /// Read-only.
+        /// </summary>
+        /// <param name="otherGroupLabel">Group heading for filters with no matching rule.</param>
+        public static List<LiveFilter> CollectLiveFilters(
+            Document doc,
+            IReadOnlyList<ElementId> viewIds,
+            string otherGroupLabel,
+            bool includeUnmatched,
+            SmartLegendUsage? report = null,
+            Func<bool>? cancelRequested = null)
+        {
+            var found = new List<LiveFilter>();
+            if (doc == null || viewIds == null || viewIds.Count == 0) return found;
+
+            var ruleByName = BuildFilterNameToRule();
+            var usage      = report ?? new SmartLegendUsage();
+            var seen       = new HashSet<long>();
+            var linkWarned = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (ElementId viewId in viewIds)
+            {
+                if (cancelRequested != null && cancelRequested())
+                {
+                    usage.Cancelled = true;
+                    break;
+                }
+                if (!(doc.GetElement(viewId) is View view)) continue;
+
+                foreach (ElementId fid in EffectiveFilterIds(doc, view))
+                {
+                    if (seen.Contains(fid.Value)) continue;
+                    if (!(doc.GetElement(fid) is ParameterFilterElement pfe)) continue;
+
+                    string name = SafeViewName(pfe);
+                    if (name.Length == 0) continue;
+
+                    bool enabled = true, visible = true;
+                    try { enabled = view.GetIsFilterEnabled(fid); }
+                    catch (Exception ex) { DiagnosticsLog.Swallowed($"SmartLegendScope: read enabled state of '{name}'", ex); }
+                    try { visible = view.GetFilterVisibility(fid); }
+                    catch (Exception ex) { DiagnosticsLog.Swallowed($"SmartLegendScope: read visibility of '{name}'", ex); }
+                    // Switched off, or hiding rather than colouring — neither belongs in a colour key.
+                    if (!enabled || !visible) continue;
+
+                    // Decide inclusion by the caller's rule-matching preference BEFORE running
+                    // the (more expensive) element test, so an excluded filter is never
+                    // reported as "kept because it could not be tested".
+                    ruleByName.TryGetValue(name, out RuleRef? rule);
+                    if (rule == null && !includeUnmatched) continue;
+
+                    bool unprovable;
+                    if (!MatchesInView(doc, view, pfe, usage, linkWarned, out unprovable) && !unprovable)
+                        continue;
+                    if (unprovable) usage.Unprovable.Add(name);
+
+                    // A matched filter takes the rule's colour, so a generated legend and a
+                    // hand-built one agree. An unmatched one is read from the view's own
+                    // override — the only place its colour exists.
+                    string? hex = rule != null
+                        ? rule.ColorHex
+                        : ColorFromOverrides(view, fid, name);
+                    if (hex == null)
+                    {
+                        // No readable colour means no swatch to draw — say which filter, and
+                        // do not invent one.
+                        usage.ColorlessFilters.Add(name);
+                        continue;
+                    }
+
+                    seen.Add(fid.Value);
+                    found.Add(new LiveFilter
+                    {
+                        FilterId    = fid.Value,
+                        FilterName  = name,
+                        DisplayName = rule != null ? rule.RuleName : name,
+                        ColorHex    = hex,
+                        GroupLabel  = rule != null ? rule.TradeLabel : otherGroupLabel,
+                        RuleId      = rule?.RuleId,
+                        TradeId     = rule?.TradeId,
+                    });
+                }
+            }
+
+            found.Sort((a, b) =>
+            {
+                // Matched trades first, then "Other" — an unmatched filter is a footnote.
+                if (a.Matched != b.Matched) return a.Matched ? -1 : 1;
+                int g = NaturalOrderComparer.OrdinalIgnoreCase.Compare(a.GroupLabel, b.GroupLabel);
+                return g != 0 ? g
+                    : NaturalOrderComparer.OrdinalIgnoreCase.Compare(a.DisplayName, b.DisplayName);
+            });
+            return found;
+        }
+
+        /// <summary>
+        /// The colour a view filter actually paints, as "#RRGGBB", or null when it overrides
+        /// no colour at all.
+        ///
+        /// Background BEFORE foreground: the Ceiling Heatmap deliberately paints its band
+        /// colour on the surface BACKGROUND and forces the foreground to black (so the
+        /// element keeps its linework). Reading foreground first would report every heatmap
+        /// band as black — one legend, thirty identical swatches.
+        /// </summary>
+        private static string? ColorFromOverrides(View view, ElementId filterId, string filterName)
+        {
+            try
+            {
+                OverrideGraphicSettings? ogs = view.GetFilterOverrides(filterId);
+                if (ogs == null) return null;
+
+                if (ogs.IsSurfaceBackgroundPatternVisible)
+                {
+                    string? c = Hex(ogs.SurfaceBackgroundPatternColor);
+                    if (c != null) return c;
+                }
+                if (ogs.IsSurfaceForegroundPatternVisible)
+                {
+                    string? c = Hex(ogs.SurfaceForegroundPatternColor);
+                    if (c != null) return c;
+                }
+                if (ogs.IsCutBackgroundPatternVisible)
+                {
+                    string? c = Hex(ogs.CutBackgroundPatternColor);
+                    if (c != null) return c;
+                }
+                if (ogs.IsCutForegroundPatternVisible)
+                {
+                    string? c = Hex(ogs.CutForegroundPatternColor);
+                    if (c != null) return c;
+                }
+                // A line-colour-only filter still reads as "that colour" on the sheet.
+                return Hex(ogs.ProjectionLineColor) ?? Hex(ogs.CutLineColor);
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Swallowed($"SmartLegendScope: read overrides of '{filterName}'", ex);
+                return null;
+            }
+        }
+
+        private static string? Hex(Color? c)
+        {
+            try
+            {
+                if (c == null || !c.IsValid) return null;
+                return $"#{c.Red:X2}{c.Green:X2}{c.Blue:X2}";
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Swallowed("SmartLegendScope: read override colour", ex);
+                return null;
+            }
         }
 
         // ─────────────────────────────────────────────────────────────────────

@@ -48,6 +48,10 @@
       "label": "Legend\nCreation",
       "tip":   "Open the Legend Creation window to build, create, and update legend views."
     },
+    "smartLegend": {
+      "label": "Smart\nLegend",
+      "tip":   "Build a legend per sheet from the colours actually used on that sheet's views."
+    },
 
     "ceilingHeatmap": {
       "label": "Ceiling\nHeatmap",

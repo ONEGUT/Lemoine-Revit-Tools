@@ -191,6 +191,17 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
         [XmlAttribute] public bool SmartFilterEnabled { get; set; } = false;
 
         /// <summary>
+        /// Sheet NUMBER this entry was generated from by the Smart Legend tool, empty for a
+        /// hand-built legend. This is how a re-run finds the entry it made for a sheet last
+        /// time and updates it in place instead of adding a second one — the entry's own Id
+        /// keys the stamp on the Revit legend view, so it must survive the re-run.
+        ///
+        /// A sheet NUMBER, not an ElementId: this entry travels inside the .rvt and the
+        /// shared seed library, where an ElementId means nothing (see the note above).
+        /// </summary>
+        [XmlAttribute] public string SourceSheetNumber { get; set; } = "";
+
+        /// <summary>
         /// Explicit target views for smart filtering, by NAME. Empty means auto-detect from
         /// the sheet(s) the legend view is placed on.
         ///
@@ -225,6 +236,7 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
             LabelTypeName       = LabelTypeName,
             SmartFilterEnabled   = SmartFilterEnabled,
             SmartTargetViewNames = new List<string>(SmartTargetViewNames ?? new List<string>()),
+            SourceSheetNumber    = SourceSheetNumber,
             Layout            = LegendCreatorSettings.DeepCopy(Layout),
             Rows              = LegendCreatorSettings.DeepCopy(Rows),
             PreviewVisible    = PreviewVisible,
