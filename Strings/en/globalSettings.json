@@ -64,6 +64,7 @@
     "highColor": "High elevation color",
     "elevTol": "Elevation tolerance (in)",
     "elevTolDesc": "Ceilings whose elevations differ by less than this share one color band.",
+    // Unreferenced — the Ceiling Heatmap tag toggle was removed for cost. Kept for revival.
     "tagsLabel": "Place elevation tags",
     "tagsDesc": "Place a spot-elevation tag on each ceiling when coloring.",
     "mgSub": "Make Ceiling Grids — Defaults",

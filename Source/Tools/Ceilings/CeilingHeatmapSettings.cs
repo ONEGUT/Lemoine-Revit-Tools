@@ -37,8 +37,9 @@ namespace LemoineTools.Tools.Ceilings
         /// </summary>
         public double ElevTolerance { get; set; } = 1.0 / 96.0;
 
-        /// <summary>Whether to place a ceiling tag at the centroid of each ceiling.</summary>
-        public bool   PlaceTags     { get; set; } = false;
+        // PlaceTags was removed along with the ceiling-tag toggle. XmlSerializer ignores
+        // unknown elements on load, so an older settings file still carrying
+        // <PlaceTags>true</PlaceTags> degrades harmlessly instead of silently re-enabling it.
 
         /// <summary>Whether to delete the project's existing heatmap filters before applying
         /// the new set. Default: true.</summary>

@@ -70,7 +70,6 @@ namespace LemoineTools.Tools.Ceilings
 
         // ── Run options state ────────────────────────────────────────────────────
         private bool   _deleteExisting = CeilingHeatmapSettings.Instance.DeleteExisting;
-        private bool   _placeTags      = CeilingHeatmapSettings.Instance.PlaceTags;
         private double _elevTolerance  = CeilingHeatmapSettings.Instance.ElevTolerance;
 
         // ── View selection state ─────────────────────────────────────────────────
@@ -545,7 +544,7 @@ namespace LemoineTools.Tools.Ceilings
         {
             var outer = new StackPanel();
 
-            // ── Toggles: delete existing, include links, place tags ───────────────
+            // ── Toggles: delete existing ─────────────────────────────────────────
             var tog = new ToggleSwitches();
             tog.SetItems(new List<ToggleItem>
             {
@@ -556,18 +555,10 @@ namespace LemoineTools.Tools.Ceilings
                     Desc      = AppStrings.T("ceilings.heatmap.labels.toggleDeleteDesc"),
                     DefaultOn = _deleteExisting,
                 },
-                new ToggleItem
-                {
-                    Id        = "tags",
-                    Label     = AppStrings.T("ceilings.heatmap.labels.toggleTagsLabel"),
-                    Desc      = AppStrings.T("ceilings.heatmap.labels.toggleTagsDesc"),
-                    DefaultOn = _placeTags,
-                },
             });
             tog.StateChanged += state =>
             {
                 _deleteExisting = state.TryGetValue("delete", out bool dv) && dv;
-                _placeTags      = state.TryGetValue("tags",   out bool tv) && tv;
                 OnValidationChanged();
             };
             outer.Children.Add(tog);
@@ -631,7 +622,6 @@ namespace LemoineTools.Tools.Ceilings
             ("views",  AppStrings.T("ceilings.heatmap.review.itemViews")),
             ("ramp",   AppStrings.T("ceilings.heatmap.review.itemRamp")),
             ("delete", AppStrings.T("ceilings.heatmap.review.itemDelete")),
-            ("tags",   AppStrings.T("ceilings.heatmap.review.itemTags")),
             ("tol",    AppStrings.T("ceilings.heatmap.review.itemTol")),
         };
 
@@ -644,15 +634,12 @@ namespace LemoineTools.Tools.Ceilings
                     : AppStrings.T("ceilings.heatmap.review.viewsValue", _selectedViewIds.Count)),
             ["ramp"]   = AppStrings.T("ceilings.heatmap.labels.rampDisplay", _colorLow, _colorMid, _colorHigh),
             ["delete"] = _deleteExisting ? AppStrings.T("ceilings.heatmap.review.yes") : AppStrings.T("ceilings.heatmap.review.no"),
-            ["tags"]   = _placeTags ? AppStrings.T("ceilings.heatmap.review.yes") : AppStrings.T("ceilings.heatmap.review.no"),
             ["tol"]    = AppStrings.T("ceilings.heatmap.review.tolValue", Math.Round(_elevTolerance * 12.0, 4)),
         };
 
         public IList<string>? ReviewChips   => null;
         public string?        ReviewNote    => AppStrings.T("ceilings.heatmap.review.note");
-        // Placing tags deletes and replaces every existing ceiling tag in the views, so warn
-        // when the toggle is on.
-        public string?        ReviewWarning => _placeTags ? AppStrings.T("ceilings.heatmap.review.tagsWarning") : null;
+        public string?        ReviewWarning => null;
 
         // ═════════════════════════════════════════════════════════════════════════
         // IsValid / SummaryFor / Run
@@ -680,7 +667,6 @@ namespace LemoineTools.Tools.Ceilings
             {
                 var parts = new List<string>();
                 if (_deleteExisting) parts.Add(AppStrings.T("ceilings.heatmap.summaries.s2Delete"));
-                if (_placeTags)      parts.Add(AppStrings.T("ceilings.heatmap.summaries.s2Tags"));
                 parts.Add(AppStrings.T("ceilings.heatmap.summaries.s2Tol", Math.Round(_elevTolerance * 12.0, 4)));
                 return string.Join(" · ", parts);
             }
@@ -706,7 +692,6 @@ namespace LemoineTools.Tools.Ceilings
             if (_elevTolerance < 1e-9) _elevTolerance = 1.0 / 96.0;
 
             // Persist run options back to settings
-            CeilingHeatmapSettings.Instance.PlaceTags      = _placeTags;
             CeilingHeatmapSettings.Instance.ElevTolerance  = _elevTolerance;
             CeilingHeatmapSettings.Instance.DeleteExisting = _deleteExisting;
             SaveColorsToSettings();
@@ -724,7 +709,12 @@ namespace LemoineTools.Tools.Ceilings
                 _handler.GenerateForLevelIds = new List<ElementId>();
             }
             _handler.DeleteExisting  = _deleteExisting;
-            _handler.PlaceTags       = _placeTags;
+            // Ceiling tagging is disabled: IndependentTag.Create against linked ceilings cost
+            // ~2s per tag (20 min for 580) because each call regenerates the view. The handler
+            // still implements it, but nothing turns it on — assign false explicitly rather than
+            // relying on the default, because the handler is a session-long static and would
+            // otherwise keep a true set by an earlier build.
+            _handler.PlaceTags       = false;
             _handler.ElevTolerance   = _elevTolerance;
             _handler.ColorLow        = ParseRevitColor(_colorLow,  0,   0, 255);
             _handler.ColorMid        = ParseRevitColor(_colorMid,  0, 255,   0);

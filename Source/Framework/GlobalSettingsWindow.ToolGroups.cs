@@ -175,19 +175,6 @@ namespace LemoineTools.Framework
                     AppStrings.T("globalSettings.groups.elevTolDesc"),
                     hm.ElevTolerance * 12.0, 0, 12, 0.0625, 4,
                     v => { hm.ElevTolerance = v / 12.0; hm.Save(); });
-
-                var hmToggles = new ToggleSwitches();
-                hmToggles.SetItems(new List<ToggleItem>
-                {
-                    new ToggleItem { Id = "tags", Label = AppStrings.T("globalSettings.groups.tagsLabel"),
-                                     Desc = AppStrings.T("globalSettings.groups.tagsDesc"),
-                                     DefaultOn = hm.PlaceTags },
-                });
-                hmToggles.StateChanged += state =>
-                {
-                    if (state.TryGetValue("tags", out var t)) { hm.PlaceTags = t; hm.Save(); }
-                };
-                body.Children.Add(hmToggles);
             }));
 
             // ── Make Ceiling Grids ───────────────────────────────────────────
