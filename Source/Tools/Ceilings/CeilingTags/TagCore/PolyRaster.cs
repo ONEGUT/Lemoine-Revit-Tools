@@ -31,15 +31,36 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags.TagCore
             if (cellSize <= 0) throw new ArgumentOutOfRangeException(nameof(cellSize));
 
             CellSize = cellSize;
-            OriginX  = minX;
-            OriginY  = minY;
 
-            // +2 cells of slack so a boundary exactly on the max edge still has a cell, and so
-            // every filled cell has an unfilled neighbour (the clearance field and the thinner
-            // both rely on the region never touching the grid border).
-            Width  = Math.Max(1, (int)Math.Ceiling((maxX - minX) / cellSize) + 2);
-            Height = Math.Max(1, (int)Math.Ceiling((maxY - minY) / cellSize) + 2);
+            // The origin backs off a FULL CELL on each axis, and the extent gets 3 extra cells
+            // (one for the partial cell at the max edge, one for the empty ring on each side),
+            // so a filled cell can never sit on the grid border.
+            //
+            // This is load-bearing, not defensive padding. A region touching the border breaks
+            // both consumers of this grid: a border cell has no empty neighbour, so its
+            // clearance is measured to the FAR side of the region (doubling the apparent width
+            // and quartering the elongation), and Zhang-Suen thinning skips the border ring
+            // entirely, so the whole edge survives as skeleton — producing a line of tags
+            // strung along the ceiling's edge instead of one at its centre.
+            OriginX = minX - cellSize;
+            OriginY = minY - cellSize;
+
+            Width  = Math.Max(1, (int)Math.Ceiling((maxX - minX) / cellSize) + 3);
+            Height = Math.Max(1, (int)Math.Ceiling((maxY - minY) / cellSize) + 3);
             _cells = new bool[Width * Height];
+        }
+
+        /// <summary>Clones another raster's geometry with an empty cell array. Used by
+        /// <see cref="IslandSubset"/> — an island must land on exactly the parent's grid, so
+        /// the dimensions are copied rather than recomputed from world bounds.</summary>
+        private PolyRaster(PolyRaster src)
+        {
+            CellSize = src.CellSize;
+            OriginX  = src.OriginX;
+            OriginY  = src.OriginY;
+            Width    = src.Width;
+            Height   = src.Height;
+            _cells   = new bool[Width * Height];
         }
 
         public bool this[int x, int y]
@@ -182,12 +203,11 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags.TagCore
             stack.Push(idx);
         }
 
-        /// <summary>A new raster holding only the cells of one island label.</summary>
+        /// <summary>A new raster holding only the cells of one island label, on exactly this
+        /// raster's grid.</summary>
         public PolyRaster IslandSubset(int[] labels, int label)
         {
-            var sub = new PolyRaster(OriginX, OriginY,
-                                     OriginX + (Width - 2) * CellSize,
-                                     OriginY + (Height - 2) * CellSize, CellSize);
+            var sub = new PolyRaster(this);
             for (int i = 0; i < _cells.Length; i++)
                 if (labels[i] == label) sub._cells[i] = true;
             return sub;

@@ -235,7 +235,8 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags.TagCore
             double w = Math.Max(1e-6, bb.MaxX - bb.MinX);
             double h = Math.Max(1e-6, bb.MaxY - bb.MinY);
 
-            while ((w / cell + 2) * (h / cell + 2) > cfg.MaxCells) cell *= 1.5;
+            // +3 per axis matches PolyRaster's padding, so the cap reflects the real allocation.
+            while ((w / cell + 3) * (h / cell + 3) > cfg.MaxCells) cell *= 1.5;
             return cell;
         }
 
