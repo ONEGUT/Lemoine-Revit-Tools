@@ -73,8 +73,8 @@ namespace LemoineTools.Commands
             return Result.Succeeded;
         }
 
-        // Every loaded link that has grids and/or levels, each item flagged when its name
-        // already exists in the host — Revit enforces unique names for both element types.
+        // Every loaded link that has grids, levels, and/or scope boxes, each item flagged when its
+        // name already exists in the host — Revit enforces unique names for all three element types.
         private static List<CopyDatumLinkInfo> CollectDatumLinks(Document doc)
         {
             var result = new List<CopyDatumLinkInfo>();
@@ -95,6 +95,18 @@ namespace LemoineTools.Commands
                     hostLevelNames.Add(lvl.Name);
             }
             catch (Exception ex) { DiagnosticsLog.Swallowed("CopyDatumsCommand: read host level names", ex); }
+
+            // Scope boxes have no dedicated class (unlike Grid/Level) — read as plain Element,
+            // scoped by category, the same collector ScopeBoxCreatorScanHandler already uses.
+            var hostScopeBoxNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                foreach (var sb in new FilteredElementCollector(doc)
+                             .OfCategory(BuiltInCategory.OST_VolumeOfInterest)
+                             .WhereElementIsNotElementType())
+                    hostScopeBoxNames.Add(sb.Name);
+            }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("CopyDatumsCommand: read host scope box names", ex); }
 
             foreach (var li in new FilteredElementCollector(doc).OfClass(typeof(RevitLinkInstance)).Cast<RevitLinkInstance>())
             {
@@ -128,7 +140,20 @@ namespace LemoineTools.Commands
                 }
                 catch (Exception ex) { DiagnosticsLog.Swallowed($"CopyDatumsCommand: read levels in {info.Name}", ex); }
 
-                if (info.Grids.Count > 0 || info.Levels.Count > 0) result.Add(info);
+                try
+                {
+                    foreach (var sb in new FilteredElementCollector(ld)
+                                 .OfCategory(BuiltInCategory.OST_VolumeOfInterest)
+                                 .WhereElementIsNotElementType()
+                                 .OrderBy(e => e.Name, StringComparer.OrdinalIgnoreCase))
+                        info.ScopeBoxes.Add(new CopyDatumItem
+                        {
+                            Name = sb.Name, ElemId = sb.Id.Value, ExistsInHost = hostScopeBoxNames.Contains(sb.Name),
+                        });
+                }
+                catch (Exception ex) { DiagnosticsLog.Swallowed($"CopyDatumsCommand: read scope boxes in {info.Name}", ex); }
+
+                if (info.Grids.Count > 0 || info.Levels.Count > 0 || info.ScopeBoxes.Count > 0) result.Add(info);
             }
             return result;
         }
