@@ -37,6 +37,10 @@ namespace LemoineTools
         internal static CeilingHeatmapEventHandler? CeilingHeatmapHandler { get; private set; }
         internal static ExternalEvent?              CeilingHeatmapEvent   { get; private set; }
 
+        // ── Tag Ceilings ────────────────────────────────────────────────────────
+        internal static LemoineTools.Tools.Ceilings.CeilingTags.CeilingTagEventHandler? CeilingTagHandler { get; private set; }
+        internal static ExternalEvent?                                                  CeilingTagEvent   { get; private set; }
+
         // ── Make Ceiling Grids ──────────────────────────────────────────────────
         internal static MakeCeilingGridsPhase1Handler? MakeCeilingGridsPhase1Handler { get; private set; }
         internal static ExternalEvent?                 MakeCeilingGridsPhase1Event   { get; private set; }
@@ -232,6 +236,10 @@ namespace LemoineTools
             ReprojectEvent   = ExternalEvent.Create(ReprojectHandler);
             CeilingHeatmapHandler = new CeilingHeatmapEventHandler();
             CeilingHeatmapEvent   = ExternalEvent.Create(CeilingHeatmapHandler);
+
+            // ── Tag Ceilings ──────────────────────────────────────────────────
+            CeilingTagHandler = new LemoineTools.Tools.Ceilings.CeilingTags.CeilingTagEventHandler();
+            CeilingTagEvent   = ExternalEvent.Create(CeilingTagHandler);
 
             // ── Make Ceiling Grids ────────────────────────────────────────────
             MakeCeilingGridsPhase1Handler = new MakeCeilingGridsPhase1Handler();
@@ -493,6 +501,11 @@ namespace LemoineTools
                 "LT_CeilingHeatmap", L.T("ribbon.buttons.ceilingHeatmap.label"), "CeilingHeatmapCommand",
                 L.T("ribbon.buttons.ceilingHeatmap.tip"),
                 char.ConvertFromUtf32(0xE81D)));  // Map
+
+            ceilingsPanel.AddItem(Btn(
+                "LT_TagCeilings", L.T("ribbon.buttons.tagCeilings.label"), "TagCeilingsCommand",
+                L.T("ribbon.buttons.tagCeilings.tip"),
+                char.ConvertFromUtf32(0xE8EC)));  // Tag
 
             var ceilingGridsPulldown = new PulldownButtonData("LT_CeilingGrids", L.T("ribbon.buttons.ceilingGrids.label"))
             {

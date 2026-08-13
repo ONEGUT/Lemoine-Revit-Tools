@@ -23,9 +23,9 @@ namespace LemoineTools.Tools.Ceilings
         // IStepAware: framework callback that rebuilds a step's content widget in place.
         private Action<string>? _rebuildContent;
 
-        // Run strip: a neutral "items" during the run — the pass total counts both filter
-        // buckets and tags, so labelling it "tags" was wrong. The completion chips carry the
-        // real filter/tag/failure/skip breakdown.
+        // Run strip: a neutral "items" during the run. Ceiling tagging now lives in its own
+        // Tag Ceilings tool, so the pass total is filter buckets; the completion chips carry
+        // the filter/failure/skip breakdown.
         public string? ResultNoun => "items";
         private System.Collections.Generic.IReadOnlyList<LemoineTools.Framework.ResultChip>? _resultChips;
         public System.Collections.Generic.IReadOnlyList<LemoineTools.Framework.ResultChip>? ResultChips => _resultChips;
@@ -656,12 +656,6 @@ namespace LemoineTools.Tools.Ceilings
                 _handler.GenerateForLevelIds = new List<ElementId>();
             }
             _handler.DeleteExisting  = _deleteExisting;
-            // Ceiling tagging is disabled: IndependentTag.Create against linked ceilings cost
-            // ~2s per tag (20 min for 580) because each call regenerates the view. The handler
-            // still implements it, but nothing turns it on — assign false explicitly rather than
-            // relying on the default, because the handler is a session-long static and would
-            // otherwise keep a true set by an earlier build.
-            _handler.PlaceTags       = false;
             _handler.ColorLow        = ParseRevitColor(_colorLow,  0,   0, 255);
             _handler.ColorMid        = ParseRevitColor(_colorMid,  0, 255,   0);
             _handler.ColorHigh       = ParseRevitColor(_colorHigh, 255,  0,   0);

@@ -57,6 +57,10 @@
       "label": "Ceiling\nHeatmap",
       "tip":   "Color-code ceiling elevations by height using view filter overrides."
     },
+    "tagCeilings": {
+      "label": "Tag\nCeilings",
+      "tip":   "Place ceiling tags at the centre of each ceiling, with one tag per corridor stretch and extra tags at a set spacing."
+    },
     "ceilingGrids": {
       "label": "Ceiling\nGrids",
       "tip":   "Create, project, and reproject ceiling grid DWG exports."
