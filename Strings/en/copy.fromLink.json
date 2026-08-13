@@ -21,7 +21,9 @@
     "worksets":      "Worksets (unchecked = excluded)",
     "noWorksets":    "No user worksets in this link.",
     "families":      "Families to copy",
-    "familiesHelp":  "Tick the family types found in the link for the chosen categories. Everything is selected by default — untick anything you don't want copied.",
+    // Categories with no family types (scope boxes, reference planes) list each element by its own
+    // name here, so the same tick list picks individual elements for them.
+    "familiesHelp":  "Tick the family types found in the link for the chosen categories. Categories with no family types — scope boxes, reference planes — are listed by element name instead. Everything is selected by default — untick anything you don't want copied.",
     "scanning":      "Scanning link…",
     "scanError":     "Scan error: {0}",
     "pickCatFirst":  "Pick at least one category in the Categories step, then return here.",
@@ -58,6 +60,11 @@
     "copying":         "Copying {0}, {1} unchanged, {2}",
     "copyingOrphans":  "{0} orphaned output(s) to remove.",
     "copyingUntouched":"previous outputs left untouched.",
+    // Scope box names are unique per document, so a clash is skipped rather than copied — same
+    // rule Copy Datums applies to grids and levels.
+    "scopeBoxExists":       "Scope box '{0}' already exists in the host — skipped (Revit requires unique scope box names).",
+    "scopeBoxSkipped":      "{0} scope box(es) skipped on a name already used in the host. Rename them in the link, or delete the host copies, to bring them across.",
+    "scopeBoxCheckFailed":  "Could not read the host's scope box names ({0}) — copying without the name check; any clash is reported as a Revit failure below.",
     "batchRetry":      "Batch of {0} failed ({1}) — retrying individually to isolate.",
     "copyFail":        "✗ {0} ({1}): copy failed — {2}: {3}",
     "progress":        "{0}% — {1} of {2} processed ({3} copied).",

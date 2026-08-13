@@ -48,6 +48,11 @@ namespace LemoineTools.Tools.CopyFromLink
         /// Scope Boxes and Reference Planes are non-view-specific model-extent elements, so they
         /// copy through the same document→document <c>CopyElements</c> overload the tools already
         /// use. Note there is no <c>OST_ReferencePlanes</c> — reference planes are OST_CLines.
+        ///
+        /// Neither is view-filterable, so neither is in
+        /// <c>ParameterFilterUtilities.GetAllFilterableCategories()</c>;
+        /// <c>AutoFiltersSettings.CaptureCategoryMap</c> resolves them directly rather than
+        /// admitting them through the filterable pass (which cannot see them at all).
         /// </summary>
         private static readonly BuiltInCategory[] ExtraNonModelCategories =
         {
@@ -83,6 +88,22 @@ namespace LemoineTools.Tools.CopyFromLink
                     "No filterable categories captured — the picker falls back to the hardcoded list.");
                 return;
             }
+
+            // A full map that is quietly missing the extras is what hid the dead Scope Boxes option:
+            // the count looked healthy, so the zero-result warning above never fired. Name the
+            // survivors' absence explicitly.
+            var captured = new HashSet<string>(map.Values, StringComparer.Ordinal);
+            var missing  = ExtraNonModelCategories.Select(b => b.ToString())
+                                                  .Where(o => !captured.Contains(o)).ToList();
+            if (missing.Count > 0)
+                DiagnosticsLog.Warn("CopyCategoryGroups.Capture",
+                    "Captured " + map.Count + " categories but these did not resolve and will be missing "
+                    + "from the copy pickers: " + string.Join(", ", missing));
+            else
+                DiagnosticsLog.Info("CopyCategoryGroups.Capture",
+                    "Captured " + map.Count + " categories, including all "
+                    + ExtraNonModelCategories.Length + " non-filterable extras.");
+
             _snapshot = map;
         }
 

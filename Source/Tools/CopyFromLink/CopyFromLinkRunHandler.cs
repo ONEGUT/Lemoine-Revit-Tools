@@ -69,7 +69,15 @@ namespace LemoineTools.Tools.CopyFromLink
                         // The geometry hash (bounding-box read per element) only drives change
                         // detection + re-run reconciliation, so skip it entirely unless stamping.
                         string hash = DeletePrevious ? CopyFromLinkSource.GeoHash(src.Doc!, el, src.Transform, typeKey) : "";
-                        current[key] = new SourceElem { Id = el.Id, Key = key, Hash = hash, TypeKey = typeKey };
+                        bool isScopeBox = el.Category?.Id.Value == (long)(int)BuiltInCategory.OST_VolumeOfInterest;
+                        current[key] = new SourceElem
+                        {
+                            Id = el.Id, Key = key, Hash = hash, TypeKey = typeKey,
+                            IsScopeBox = isScopeBox,
+                            // A scope box has no ElementType, so TypeKey already falls through to
+                            // el.Name — read it explicitly rather than leaning on that coupling.
+                            Name = isScopeBox ? (el.Name ?? "") : "",
+                        };
                     }
                     catch (Exception ex)
                     {
@@ -132,6 +140,12 @@ namespace LemoineTools.Tools.CopyFromLink
                             if (stampsByKey.TryGetValue(s.Key, out var prior))
                                 SafeDelete(doc, prior.ids);
                     }
+
+                    // Scope box names are unique per document. Test AFTER the deletes above so a
+                    // re-run refreshing its own outputs isn't skipped against names it just removed,
+                    // and re-derive `total` so the progress percentages stay honest.
+                    skip  += SkipClashingScopeBoxes(doc, toBuild);
+                    total  = toBuild.Count;
 
                     // ── Batch copy (chunked) ───────────────────────────────────────────
                     // One CopyElements call per element is dominated by per-call overhead; copying
@@ -331,6 +345,61 @@ namespace LemoineTools.Tools.CopyFromLink
             public string    Key     = "";
             public string    Hash    = "";
             public string    TypeKey = "";
+            // Scope boxes carry a document-unique name, so they need the clash pre-check below.
+            // Read while gathering (in the source document) rather than during the copy loop.
+            public bool      IsScopeBox;
+            public string    Name    = "";
+        }
+
+        /// <summary>
+        /// Removes from <paramref name="toBuild"/> every scope box whose name already exists in the
+        /// host, logging each one. Revit enforces unique scope box names — the same constraint that
+        /// makes Copy Datums skip clashing grids and levels (CLAUDE.md uniqueness rule) — so such a
+        /// copy is not a tidy duplicate but a name Revit cannot accept.
+        ///
+        /// Called inside the run's transaction and <b>after</b> the delete-previous pass, so a
+        /// re-run refreshing its own stamped outputs is not skipped against names it just removed.
+        /// Returns the number skipped; a build set with no scope boxes costs one list scan.
+        /// </summary>
+        private int SkipClashingScopeBoxes(Document doc, List<SourceElem> toBuild)
+        {
+            if (!toBuild.Any(s => s.IsScopeBox)) return 0;
+
+            var hostNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                foreach (var e in new FilteredElementCollector(doc)
+                             .OfCategory(BuiltInCategory.OST_VolumeOfInterest)
+                             .WhereElementIsNotElementType())
+                {
+                    try
+                    {
+                        string n = e.Name;
+                        if (!string.IsNullOrWhiteSpace(n)) hostNames.Add(n);
+                    }
+                    catch (Exception ex) { DiagnosticsLog.Swallowed("CopyFromLink: read host scope box name", ex); }
+                }
+            }
+            catch (Exception ex)
+            {
+                // Without the host names the clash test is unsafe to trust either way — say so and
+                // let the copy proceed, where Revit's own failure is captured into the run log.
+                DiagnosticsLog.Swallowed("CopyFromLink: collect host scope boxes", ex);
+                Log(AppStrings.T("copy.fromLink.log.scopeBoxCheckFailed", ex.Message), "warn");
+                return 0;
+            }
+
+            var clashing = toBuild.Where(s => s.IsScopeBox && hostNames.Contains(s.Name)).ToList();
+            if (clashing.Count == 0) return 0;
+
+            // Name each one (capped like the Revit-failure list); the summary always carries the total.
+            foreach (var s in clashing.Take(15))
+                Log(AppStrings.T("copy.fromLink.log.scopeBoxExists", s.Name), "warn");
+            Log(AppStrings.T("copy.fromLink.log.scopeBoxSkipped", clashing.Count), "warn");
+
+            var drop = new HashSet<SourceElem>(clashing);
+            toBuild.RemoveAll(drop.Contains);
+            return clashing.Count;
         }
     }
 }
