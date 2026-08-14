@@ -183,13 +183,14 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags
         /// </summary>
         private void ReportPlan(ViewTagPlan vtp)
         {
-            int corridors = 0, clipped = 0, openings = 0, withOpenings = 0, ringCorridors = 0;
+            int corridors = 0, clipped = 0, openings = 0, withOpenings = 0, ringCorridors = 0, belowGrid = 0;
             foreach (RegionDiagnostic d in vtp.Plan.Diagnostics)
             {
                 if (d.WasCorridor) corridors++;
                 if (d.WasRingCorridor) ringCorridors++;
                 if (d.VisibleFraction < 0.999 && d.SkipReason == null) clipped++;
                 if (d.IgnoredOpenings > 0) { openings += d.IgnoredOpenings; withOpenings++; }
+                if (d.BelowGridResolution) belowGrid++;
             }
 
             _log(AppStrings.T("ceilings.tags.log.viewPlanned",
@@ -212,6 +213,12 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags
             // made this visible the first time round instead of presenting as odd placement.
             if (openings > 0)
                 _log(AppStrings.T("ceilings.tags.log.ignoredOpenings", openings, withOpenings), "info");
+
+            // Tagged, but placed from the raw footprint rather than a measured point — the only
+            // ceilings whose tag position was not shape-analysed. Size never skips a ceiling, so
+            // this is a note about HOW it was placed, not a warning that it was dropped.
+            if (belowGrid > 0)
+                _log(AppStrings.T("ceilings.tags.log.belowGrid", belowGrid), "info");
 
             // Any ceiling that produced no tag for a reason other than being fully hidden is a
             // surprise worth naming — it is the difference between "correctly excluded" and

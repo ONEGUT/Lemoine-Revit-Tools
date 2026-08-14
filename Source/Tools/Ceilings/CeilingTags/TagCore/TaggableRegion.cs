@@ -129,6 +129,12 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags.TagCore
         /// recessed lights, diffusers, sprinklers. Reported so a ceiling that behaves oddly can
         /// be traced back to its openings.</summary>
         public int    IgnoredOpenings { get; set; }
+
+        /// <summary>Set when the footprint was finer than the raster could hold even at its
+        /// smallest cell, so the tag went at the footprint's own centre with no shape analysis
+        /// and no occlusion test behind it. The ceiling IS tagged — size never skips one — but
+        /// it is reported, because that placement is measured differently from every other.</summary>
+        public bool   BelowGridResolution { get; set; }
         /// <summary>Fraction of the region's own footprint left visible after occlusion (1 = untouched).</summary>
         public double VisibleFraction { get; set; } = 1.0;
     }
