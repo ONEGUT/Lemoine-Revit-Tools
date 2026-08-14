@@ -6,7 +6,7 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags.TagCore
     /// <summary>Tunables for a planning run. Only <see cref="MaxTagSpacingFt"/> is user-facing.</summary>
     public sealed class TagPlanConfig
     {
-        /// <summary>A corridor stretch longer than this gets evenly spaced extra tags.</summary>
+        /// <summary>Target distance between tags along a corridor run, in feet.</summary>
         public double MaxTagSpacingFt { get; set; } = 30.0;
 
         /// <summary>Subtract lower regions on the same layer from each region's footprint.</summary>
@@ -22,17 +22,19 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags.TagCore
         /// <summary>A visible island smaller than this is not worth a tag.</summary>
         public double MinIslandAreaFt2 { get; set; } = 10.0;
 
-        /// <summary>area / width² above which a region is treated as a corridor rather than a
-        /// room. Measured on the ceiling's OWN footprint (see <see cref="TagPointPlanner"/>).
-        /// A square scores 1, a 60×20 room scores 3, a 90×6 corridor scores 15 and a ring
-        /// corridor ~22 — so 4 sits in a wide gap and errs toward "room", which is the safer
-        /// mistake: one tag too few is a nudge, one ring of tags too many is a mess.</summary>
-        public double CorridorElongation { get; set; } = 4.0;
+        /// <summary>
+        /// area / width² above which a region is treated as a corridor rather than a room.
+        /// Measured on the ceiling's OWN footprint (see <see cref="TagPointPlanner"/>).
+        /// A square scores 1, a 60×25 room 2.4, a 60×12 long room 5, a 90×6 corridor 15 and a
+        /// ring corridor ~22. 6 sits in the gap and errs toward "room", which is the safer
+        /// mistake: one tag too few is a nudge, a row of tags too many is a mess.
+        /// </summary>
+        public double CorridorElongation { get; set; } = 6.0;
 
         /// <summary>Two tags on the same ceiling closer than this collapse to one, in feet.
         /// Deliberately an absolute distance, NOT a fraction of <see cref="MaxTagSpacingFt"/>:
         /// this exists to stop tags overlapping on the sheet, and scaling it with the spacing
-        /// setting made a large spacing swallow a ring corridor's legitimate side tags.</summary>
+        /// setting made a large spacing swallow tags that were correctly placed.</summary>
         public double MinTagSeparationFt { get; set; } = 6.0;
     }
 
@@ -40,6 +42,20 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags.TagCore
     /// Turns <see cref="TaggableRegion"/>s into tag points. Pure geometry — no Revit types, so
     /// the whole placement policy is testable on plain fixtures and, at run time, executes
     /// without touching the model once the read phase has finished.
+    ///
+    /// Three rules, in order:
+    ///
+    /// 1. <b>Room</b> (own footprint not elongated) → exactly ONE tag, on its largest visible
+    ///    island, at the centroid.
+    /// 2. <b>Encloses a hole</b> (a thin band wrapping other ceilings, or any loop) → ONE tag
+    ///    at the TOP CENTRE of the band. A ring is not tagged once per side.
+    /// 3. <b>Corridor</b> → tags every <see cref="TagPlanConfig.MaxTagSpacingFt"/> measured
+    ///    CONTINUOUSLY along the run. A corner does not restart the count, so a corridor with
+    ///    many jogs gets no more tags than a straight one of the same length.
+    ///
+    /// The room/corridor split is decided on the ceiling's OWN footprint, before occluders are
+    /// subtracted, because a room with a soffit under it leaves a thin frame that is
+    /// geometrically indistinguishable from a ring corridor.
     /// </summary>
     public static class TagPointPlanner
     {
@@ -108,9 +124,7 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags.TagCore
                 // bulkhead below it leaves a thin visible frame, and a frame is geometrically
                 // indistinguishable from a ring corridor — measured after subtraction, a plain
                 // 30×25 room with a 20×15 soffit scores an elongation of 12.5 and gets ringed
-                // with four edge tags. Its own footprint scores 1.2: it is a room, and it gets
-                // one tag. A corridor sketched AS a ring still scores ~22 here, so the genuine
-                // case is untouched.
+                // with edge tags. Its own footprint scores 1.2: it is a room, and it gets one.
                 bool isCorridorShape = IsCorridorShaped(raster, cfg);
 
                 // ── Occlusion: erase every LOWER region on this layer that overlaps ──
@@ -142,24 +156,54 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags.TagCore
 
                 // ── Islands: a region split by an occluder is several places, not one ──
                 int[] labels = raster.LabelIslands(out int islandCount);
-                diag.IslandCount = islandCount;
 
-                // Plan into a per-region list so near-duplicates can be collapsed before the
-                // placements are published — two legs meeting at a corner can otherwise put
-                // two tags a couple of feet apart, which reads as a smudge on the sheet.
-                int before = plan.Placements.Count;
+                var islands = new List<PolyRaster>();
                 for (int label = 1; label <= islandCount; label++)
                 {
                     PolyRaster island = raster.IslandSubset(labels, label);
-                    if (island.AreaFt2 < cfg.MinIslandAreaFt2) continue;
-
-                    PlanIsland(island, region, cfg, plan, diag, isCorridorShape);
+                    if (island.AreaFt2 >= cfg.MinIslandAreaFt2) islands.Add(island);
                 }
-                int emitted = CollapseNearDuplicates(plan.Placements, before, cfg.MinTagSeparationFt);
+                diag.IslandCount = islands.Count;
 
-                diag.TagCount = emitted;
-                if (emitted == 0 && diag.SkipReason == null)
+                if (islands.Count == 0)
+                {
                     diag.SkipReason = "visible area too small to tag";
+                    continue;
+                }
+
+                int before = plan.Placements.Count;
+
+                if (!isCorridorShape)
+                {
+                    // ── Rule 1: a room gets exactly ONE tag ──────────────────
+                    // Not one per island: a room chopped in two by a bulkhead is still one
+                    // ceiling carrying one height, and two tags on it read as a mistake.
+                    PolyRaster biggest = islands[0];
+                    for (int k = 1; k < islands.Count; k++)
+                        if (islands[k].AreaFt2 > biggest.AreaFt2) biggest = islands[k];
+
+                    PlaceSingle(biggest, region, plan);
+                }
+                else
+                {
+                    foreach (PolyRaster island in islands)
+                    {
+                        if (island.HasEnclosedHole())
+                        {
+                            // ── Rule 2: a loop gets ONE tag at the top centre ──
+                            PlaceSingle(island, region, plan, forceTopCentre: true);
+                        }
+                        else
+                        {
+                            diag.WasCorridor = true;
+                            PlaceAlongRun(island, region, cfg, plan);
+                        }
+                    }
+                }
+
+                diag.TagCount = CollapseNearDuplicates(plan.Placements, before, cfg.MinTagSeparationFt);
+                if (diag.TagCount == 0 && diag.SkipReason == null)
+                    diag.SkipReason = "no usable tag point found";
             }
         }
 
@@ -176,105 +220,99 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags.TagCore
             return raster.AreaFt2 / (widthFt * widthFt) >= cfg.CorridorElongation;
         }
 
-        /// <summary>Plans one connected visible island. Returns how many tags it produced.
-        /// <paramref name="isCorridorShape"/> is the verdict from the region's OWN footprint —
-        /// this method must not re-derive it from the island, which may be a post-occlusion
-        /// sliver of a perfectly ordinary room.</summary>
-        private static int PlanIsland(PolyRaster island, TaggableRegion region,
-                                      TagPlanConfig cfg, TagPlan plan, RegionDiagnostic diag,
-                                      bool isCorridorShape)
+        /// <summary>
+        /// One tag for this island: at the centroid when the centroid actually lands on the
+        /// ceiling, otherwise at the top centre. A ring, frame or L has its centroid in open
+        /// air, and "nearest solid cell to the centroid" put the tag on whichever side happened
+        /// to be closest — top centre is predictable and reads as deliberate.
+        /// </summary>
+        private static void PlaceSingle(PolyRaster island, TaggableRegion region, TagPlan plan,
+                                        bool forceTopCentre = false)
         {
             double[] clearance = island.ClearanceField();
-
             double maxClear = 0;
             for (int k = 0; k < clearance.Length; k++) if (clearance[k] > maxClear) maxClear = clearance[k];
-
-            double widthFt = Math.Max(island.CellSize, 2.0 * maxClear * island.CellSize);
-
-            // Keep tags off the very edge where the shape allows it, but never demand more
-            // clearance than the shape actually has.
             double minClear = Math.Min(maxClear * 0.5, 1.0 / island.CellSize);
 
-            // ── Room: one tag at the centroid ────────────────────────────────
-            if (!isCorridorShape)
+            Pt2? target = null;
+            if (!forceTopCentre)
             {
                 Pt2? c = island.Centroid();
-                if (c == null) return 0;
-
-                // The centroid of an L or a ring can land in the hole — snapping to a real
-                // interior cell is what guarantees the tag sits ON the ceiling.
-                Pt2? snapped = island.NearestInterior(c.Value, clearance, minClear);
-                if (snapped == null) return 0;
-
-                plan.Placements.Add(new TagPlacement
-                {
-                    RegionId = region.Id, Point = snapped.Value, StretchIndex = 0,
-                });
-                return 1;
+                if (c != null && island.Contains(c.Value)) target = c;
             }
+            if (target == null) target = island.TopCentre();
+            if (target == null) return;
 
-            // ── Corridor: one tag per stretch, subdivided by the spacing setting ──
-            diag.WasCorridor = true;
+            // Snap to a real interior cell so the tag can never sit off the ceiling.
+            Pt2? snapped = island.NearestInterior(target.Value, clearance, minClear);
+            if (snapped == null) return;
+
+            plan.Placements.Add(new TagPlacement { RegionId = region.Id, Point = snapped.Value });
+        }
+
+        /// <summary>
+        /// Tags spaced continuously along a corridor's centreline. The distance carries over
+        /// from one leg to the next, so a corner is just a bend in the run and never resets the
+        /// count — a 90 ft corridor gets the same three tags whether it is straight or has six
+        /// jogs in it. The first tag lands half a spacing in, which centres the single tag a
+        /// short corridor receives.
+        /// </summary>
+        private static void PlaceAlongRun(PolyRaster island, TaggableRegion region,
+                                          TagPlanConfig cfg, TagPlan plan)
+        {
+            double[] clearance = island.ClearanceField();
+            double maxClear = 0;
+            for (int k = 0; k < clearance.Length; k++) if (clearance[k] > maxClear) maxClear = clearance[k];
+            double widthFt  = Math.Max(island.CellSize, 2.0 * maxClear * island.CellSize);
+            double minClear = Math.Min(maxClear * 0.5, 1.0 / island.CellSize);
 
             bool[] skel = RegionSkeleton.Thin(island);
-            var branches = RegionSkeleton.TraceBranches(island, skel);
-            var legs = RegionSkeleton.ExtractLegs(branches, widthFt);
-
-            if (legs.Count == 0)
-            {
-                // Thinning produced nothing usable — fall back to a centroid tag rather than
-                // leaving a real ceiling untagged.
-                Pt2? c = island.Centroid();
-                if (c == null) return 0;
-                Pt2? snapped = island.NearestInterior(c.Value, clearance, minClear);
-                if (snapped == null) return 0;
-
-                plan.Placements.Add(new TagPlacement { RegionId = region.Id, Point = snapped.Value });
-                return 1;
-            }
+            var legs = RegionSkeleton.ExtractLegs(RegionSkeleton.TraceBranches(island, skel), widthFt);
 
             double spacing = cfg.MaxTagSpacingFt > 1.0 ? cfg.MaxTagSpacingFt : 1.0;
-            int count = 0;
+            int placed = 0;
 
-            for (int li = 0; li < legs.Count; li++)
+            double carried = 0;      // run length accumulated since the last tag
+            bool   isFirst = true;   // first tag sits half a spacing in, not a full one
+
+            foreach (List<Pt2> leg in legs)
             {
-                List<Pt2> leg = legs[li];
                 double len = RegionSkeleton.PolylineLength(leg);
                 if (len < 1e-6) continue;
 
-                // n evenly spaced tags, each at the centre of its own share of the run. One tag
-                // for a short leg; a 90 ft leg at 30 ft spacing gets 3, at 1/6, 1/2, 5/6.
-                int n = (int)Math.Ceiling(len / spacing);
-                if (n < 1) n = 1;
-
-                for (int k = 0; k < n; k++)
+                double pos = 0;
+                while (true)
                 {
-                    double at = len * (k + 0.5) / n;
-                    Pt2 raw = RegionSkeleton.PointAtLength(leg, at);
+                    double need = (isFirst ? spacing * 0.5 : spacing) - carried;
+                    if (pos + need > len) { carried += len - pos; break; }
 
+                    pos += need;
+                    Pt2 raw = RegionSkeleton.PointAtLength(leg, pos);
                     Pt2? snapped = island.NearestInterior(raw, clearance, minClear);
-                    if (snapped == null) continue;
-
-                    plan.Placements.Add(new TagPlacement
+                    if (snapped != null)
                     {
-                        RegionId = region.Id, Point = snapped.Value, StretchIndex = li,
-                    });
-                    count++;
+                        plan.Placements.Add(new TagPlacement { RegionId = region.Id, Point = snapped.Value });
+                        placed++;
+                    }
+                    carried = 0;
+                    isFirst = false;
                 }
             }
 
-            return count;
+            // A corridor shorter than half a spacing yields no sample — it still needs a tag.
+            if (placed == 0) PlaceSingle(island, region, plan);
         }
 
         /// <summary>
         /// Greedily drops tags added since <paramref name="from"/> that sit within
-        /// <paramref name="minSepFt"/> of one already kept. Applied per region, so two
-        /// different ceilings may still carry tags close together — they show different
-        /// values and both belong on the drawing.
+        /// <paramref name="minSepFt"/> of one already kept, and returns how many survive.
+        /// Applied per region, so two different ceilings may still carry tags close together —
+        /// they show different values and both belong on the drawing.
         /// </summary>
         private static int CollapseNearDuplicates(List<TagPlacement> placements, int from, double minSepFt)
         {
-            if (minSepFt <= 0 || placements.Count - from <= 1) return placements.Count - from;
+            int added = placements.Count - from;
+            if (minSepFt <= 0 || added <= 1) return added;
 
             double min2 = minSepFt * minSepFt;
             var kept = new List<TagPlacement>();

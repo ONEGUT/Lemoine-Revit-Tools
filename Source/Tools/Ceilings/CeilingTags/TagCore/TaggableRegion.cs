@@ -86,10 +86,6 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags.TagCore
         /// <summary>Tag point in world feet (X/Y). The Z used at commit time comes from the
         /// region's own source geometry, not from the core.</summary>
         public Pt2 Point { get; set; }
-
-        /// <summary>Index of the corridor stretch this tag serves, or 0 for a compact region's
-        /// single centroid tag. Purely diagnostic.</summary>
-        public int StretchIndex { get; set; }
     }
 
     /// <summary>Why a region produced the tag count it did — surfaced in the run log so a

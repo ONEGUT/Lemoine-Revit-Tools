@@ -34,7 +34,7 @@
     "noTagTypes":     "No ceiling tag types are loaded in this project. Load a ceiling tag family in Revit, then reopen this tool.",
 
     "spacingCaption": "Maximum tag spacing (ft)",
-    "spacingHint":    "A corridor stretch longer than this gets evenly spaced extra tags. Corners always start a new stretch, however short.",
+    "spacingHint":    "Along a corridor, tags are placed about this far apart, measured continuously around corners. Rooms always get a single tag.",
 
     "behaviourCaption":    "Behaviour",
     "toggleReplaceLabel":  "Replace existing ceiling tags",
