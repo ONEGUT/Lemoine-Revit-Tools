@@ -6,7 +6,9 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags.TagCore
     /// <summary>Tunables for a planning run. Only <see cref="MaxTagSpacingFt"/> is user-facing.</summary>
     public sealed class TagPlanConfig
     {
-        /// <summary>Target distance between tags along a corridor run, in feet.</summary>
+        /// <summary>A corridor stretch longer than this gets evenly spaced extra tags, in feet.
+        /// Spacing is measured WITHIN one corner-to-corner stretch — see
+        /// <see cref="TagPointPlanner"/> rule 3.</summary>
         public double MaxTagSpacingFt { get; set; } = 30.0;
 
         /// <summary>Subtract lower regions on the same layer from each region's footprint.</summary>
@@ -63,9 +65,10 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags.TagCore
     ///    island, at the centroid.
     /// 2. <b>Encloses a hole</b> (a thin band wrapping other ceilings, or any loop) → ONE tag
     ///    at the TOP CENTRE of the band. A ring is not tagged once per side.
-    /// 3. <b>Corridor</b> → tags every <see cref="TagPlanConfig.MaxTagSpacingFt"/> measured
-    ///    CONTINUOUSLY along the run. A corner does not restart the count, so a corridor with
-    ///    many jogs gets no more tags than a straight one of the same length.
+    /// 3. <b>Corridor</b> → ONE tag per corner-to-corner STRETCH, subdivided by
+    ///    <see cref="TagPlanConfig.MaxTagSpacingFt"/>. A corner starts a new count, so each
+    ///    arm of an L or U carries its own tag instead of being swallowed by a long
+    ///    neighbouring arm.
     ///
     /// The room/corridor split is decided on the ceiling's OWN footprint, before occluders are
     /// subtracted, because a room with a soffit under it leaves a thin frame that is
@@ -280,11 +283,23 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags.TagCore
         }
 
         /// <summary>
-        /// Tags spaced continuously along a corridor's centreline. The distance carries over
-        /// from one leg to the next, so a corner is just a bend in the run and never resets the
-        /// count — a 90 ft corridor gets the same three tags whether it is straight or has six
-        /// jogs in it. The first tag lands half a spacing in, which centres the single tag a
-        /// short corridor receives.
+        /// One tag per corner-to-corner STRETCH, subdivided by the spacing setting: a leg of
+        /// length L gets ceil(L / spacing) tags, each centred on its own share of the leg. A
+        /// short leg therefore gets a single tag at its midpoint, and a 90 ft leg at 30 ft
+        /// spacing gets three, at 1/6, 1/2 and 5/6 along it.
+        ///
+        /// A corner STARTS A NEW COUNT — that is the point of splitting the centreline at
+        /// corners in the first place. Without it, one long arm of an L absorbs the whole
+        /// spacing budget and the short arm can come out with no tag at all.
+        ///
+        /// This rule was briefly replaced by a continuous run that carried the accumulated
+        /// distance across corners, because fixture openings were collapsing the measured
+        /// width and manufacturing legs where there was no real corner (a 40×30 office scored
+        /// an elongation of 19.3). <see cref="TagPlanConfig.MinHoleAreaFt2"/> fixed that cause,
+        /// so the corner split now runs on honest geometry and is back.
+        ///
+        /// <see cref="CollapseNearDuplicates"/> is what stops the two legs that meet at a
+        /// corner from putting two tags a few feet apart.
         /// </summary>
         private static void PlaceAlongRun(PolyRaster island, TaggableRegion region,
                                           TagPlanConfig cfg, TagPlan plan)
@@ -301,34 +316,27 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags.TagCore
             double spacing = cfg.MaxTagSpacingFt > 1.0 ? cfg.MaxTagSpacingFt : 1.0;
             int placed = 0;
 
-            double carried = 0;      // run length accumulated since the last tag
-            bool   isFirst = true;   // first tag sits half a spacing in, not a full one
-
             foreach (List<Pt2> leg in legs)
             {
                 double len = RegionSkeleton.PolylineLength(leg);
                 if (len < 1e-6) continue;
 
-                double pos = 0;
-                while (true)
-                {
-                    double need = (isFirst ? spacing * 0.5 : spacing) - carried;
-                    if (pos + need > len) { carried += len - pos; break; }
+                int n = (int)Math.Ceiling(len / spacing);
+                if (n < 1) n = 1;
 
-                    pos += need;
-                    Pt2 raw = RegionSkeleton.PointAtLength(leg, pos);
+                for (int k = 0; k < n; k++)
+                {
+                    Pt2 raw = RegionSkeleton.PointAtLength(leg, len * (k + 0.5) / n);
                     Pt2? snapped = island.NearestInterior(raw, clearance, minClear);
-                    if (snapped != null)
-                    {
-                        plan.Placements.Add(new TagPlacement { RegionId = region.Id, Point = snapped.Value });
-                        placed++;
-                    }
-                    carried = 0;
-                    isFirst = false;
+                    if (snapped == null) continue;
+
+                    plan.Placements.Add(new TagPlacement { RegionId = region.Id, Point = snapped.Value });
+                    placed++;
                 }
             }
 
-            // A corridor shorter than half a spacing yields no sample — it still needs a tag.
+            // Thinning yielded no usable leg, or every sample failed to snap onto a real cell.
+            // A corridor that reaches here is still a real ceiling and still needs a tag.
             if (placed == 0) PlaceSingle(island, region, plan);
         }
 

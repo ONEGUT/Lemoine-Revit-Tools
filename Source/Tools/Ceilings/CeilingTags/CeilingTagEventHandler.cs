@@ -33,12 +33,23 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags
 
         public void Execute(UIApplication app)
         {
-            Document doc = app.ActiveUIDocument.Document;
             int pass = 0, fail = 0, skip = 0;
 
             try
             {
-                Run(doc, ref pass, ref fail, ref skip);
+                // The commit phase needs the UIDocument, not just the Document: it opens each
+                // target view before writing, because a tag created in a CLOSED view makes
+                // Revit recompute that view for every single tag.
+                UIDocument uidoc = app.ActiveUIDocument;
+                if (uidoc?.Document is null)
+                {
+                    Log(AppStrings.T("ceilings.tags.log.noActiveDocument"), "fail");
+                    fail++;
+                }
+                else
+                {
+                    Run(uidoc, ref pass, ref fail, ref skip);
+                }
             }
             catch (Exception ex)
             {
@@ -63,8 +74,10 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags
             Complete(pass, fail, skip);
         }
 
-        private void Run(Document doc, ref int pass, ref int fail, ref int skip)
+        private void Run(UIDocument uidoc, ref int pass, ref int fail, ref int skip)
         {
+            Document doc = uidoc.Document;
+
             if (SelectedViewIds == null || SelectedViewIds.Count == 0)
             {
                 Log(AppStrings.T("ceilings.tags.log.noViews"), "fail");
@@ -124,7 +137,7 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags
 
             // ── Phase 2: commit (60–100%) ────────────────────────────────────
             CommitResult commit = CeilingTagCommit.Place(
-                doc, plans, TagTypeId, ReplaceExisting, Log);
+                uidoc, plans, TagTypeId, ReplaceExisting, Log);
 
             pass += commit.Placed;
             fail += commit.Failed;

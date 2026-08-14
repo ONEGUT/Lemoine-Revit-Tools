@@ -101,7 +101,10 @@ namespace LemoineTools.Tools.Ceilings
                 .ToList();
 
             // ── Phase 1: find/create the RCP views + ceiling-only visibility (0–40%) ──
-            var createdViews = new List<(ViewPlan view, string name)>();
+            // The level id travels with each view: Phase 1c isolates every plan to its own
+            // level's ceilings, and the view's own GenLevel is the wrong thing to re-derive it
+            // from later (a reused view found by name could sit on a different level).
+            var createdViews = new List<(ViewPlan view, string name, ElementId levelId)>();
             int total = Math.Max(1, levels.Count);
             int done  = 0;
             bool cancelledInPhase1 = false;
@@ -140,7 +143,7 @@ namespace LemoineTools.Tools.Ceilings
                     }
 
                     if (view == null) { Log(AppStrings.T("ceilings.makeGrids.log.rcpFailed", level.Name), "fail"); fail++; }
-                    else              { createdViews.Add((view, view.Name)); }
+                    else              { createdViews.Add((view, view.Name, level.Id)); }
                 }
                 catch (Exception ex)
                 {
@@ -169,6 +172,18 @@ namespace LemoineTools.Tools.Ceilings
 
             // ── Phase 1b: scope the RCPs to the selected documents (per-document hide) ──
             ApplyDocumentScope(doc, createdViews);
+
+            // ── Phase 1c: isolate each RCP to its OWN level's ceilings ───────────────
+            // One view filter per level, the view's own level shown and every other hidden.
+            // This is what keeps a ceiling belonging to another level off this plan; the RCP's
+            // view range is a vertical band and cannot express "belongs to this level".
+            var levelFilters = CeilingLevelFilters.EnsureAll(doc, Log);
+            if (levelFilters.Count > 0)
+            {
+                CeilingLevelFilters.ApplyIsolation(
+                    doc, createdViews.Select(cv => (cv.view.Id, cv.levelId)), levelFilters, Log);
+                CeilingLevelFilters.RegisterTrade(levelFilters.Values, Log);
+            }
 
             // ── Phase 2: hide excluded types via filters + trade rules (40–70%) ──────
             if (excluded.Count > 0)
@@ -227,7 +242,7 @@ namespace LemoineTools.Tools.Ceilings
                     break;
                 }
 
-                var (view, name) = createdViews[i];
+                var (view, name, _) = createdViews[i];
                 try
                 {
                     if (exportEnabled)
@@ -263,7 +278,7 @@ namespace LemoineTools.Tools.Ceilings
         //     hide can't be used, because links displayed "By Host View" cascade the host's
         //     OST_Ceilings visibility and would lose the selected links' ceilings too.
         // With everything selected (the default) nothing is hidden — behaviour is unchanged.
-        private void ApplyDocumentScope(Document doc, List<(ViewPlan view, string name)> views)
+        private void ApplyDocumentScope(Document doc, List<(ViewPlan view, string name, ElementId levelId)> views)
         {
             var selectedLinkIds = new HashSet<long>(LinkInstIds.Select(id => id.Value));
             var hiddenLinkViews = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -274,7 +289,7 @@ namespace LemoineTools.Tools.Ceilings
                 ConfigureFailures(tx);
                 tx.Start();
 
-                foreach (var (view, name) in views)
+                foreach (var (view, name, _) in views)
                 {
                     try
                     {
