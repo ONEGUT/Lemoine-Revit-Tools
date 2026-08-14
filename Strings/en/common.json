@@ -39,6 +39,13 @@
   // log — standard Output-log lines shared across tools
   "log": {
     "progress":      "{0}% — {1:N0} of {2:N0} {3} processed",  // {0}=percent {1}=done {2}=total {3}=item noun
-    "stoppedByUser": "Stopped by user — {0} of {1} processed; work so far preserved."  // cooperative cancel
+    "stoppedByUser": "Stopped by user — {0} of {1} processed; work so far preserved.",  // cooperative cancel
+
+    // PickerViewGuard — opening/closing target views around a run. A closed view is
+    // recomputed for every element written into it, so a bulk write opens its views first.
+    "openedViews":     "Opened {0} view(s) for the run — Revit recomputes a closed view for every element written into it.",  // {0} = views opened
+    "openViewFailed":  "Could not open {0} view(s) — they are still written to, but more slowly.",  // {0} = views that failed to open
+    "closedViews":     "Closed {0} view(s) the run opened.",  // {0} = views closed again
+    "viewSnapshotFailed": "Could not record which views were already open, so any view this run opened has been left open rather than risk closing one of yours."
   }
 }

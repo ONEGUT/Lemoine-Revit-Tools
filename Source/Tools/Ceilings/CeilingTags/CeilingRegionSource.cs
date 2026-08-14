@@ -17,6 +17,19 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags
         public ElementId  ElementId { get; set; } = ElementId.InvalidElementId;
         public bool       Linked   { get; set; }
         public string     Name     { get; set; } = "";
+
+        // ── Level, for the view-level cross-check ────────────────────────────────
+        // Carried as NAME + WORLD elevation rather than an ElementId on purpose: a linked
+        // ceiling's level is an element in the LINK, so its id is meaningless in the host and
+        // only these two values can be compared against the host view's level.
+
+        /// <summary>False when the ceiling exposes no Level at all.</summary>
+        public bool       HasLevel   { get; set; }
+        /// <summary>The ceiling's level name, as read from its OWN document.</summary>
+        public string     LevelName  { get; set; } = "";
+        /// <summary>The level's elevation in WORLD feet (link transform already applied), or
+        /// NaN when it could not be resolved.</summary>
+        public double     LevelWorldZ { get; set; } = double.NaN;
     }
 
     /// <summary>
@@ -144,14 +157,52 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags
             region.Holes.AddRange(geom.Holes);
             regions.Add(region);
 
+            var (hasLevel, levelName, levelWorldZ) = ReadLevel(el, xform);
+
             refs[regionId] = new CeilingSourceRef
             {
-                TagRef    = tagRef,
-                ZWorld    = geom.ZWorld,
-                ElementId = el.Id,
-                Linked    = link != null,
-                Name      = region.DisplayName,
+                TagRef      = tagRef,
+                ZWorld      = geom.ZWorld,
+                ElementId   = el.Id,
+                Linked      = link != null,
+                Name        = region.DisplayName,
+                HasLevel    = hasLevel,
+                LevelName   = levelName,
+                LevelWorldZ = levelWorldZ,
             };
+        }
+
+        /// <summary>
+        /// The ceiling's level, resolved against the ceiling's OWN document and converted to
+        /// world feet.
+        ///
+        /// <c>el.Document</c> is the load-bearing detail: for a linked ceiling that is the LINK's
+        /// document, and looking its level id up in the host would resolve to an unrelated
+        /// element or to nothing at all. <c>Level.Elevation</c> is likewise in the owning
+        /// document's coordinates, so it goes through the link transform before it can be
+        /// compared with a host level.
+        /// </summary>
+        private static (bool HasLevel, string Name, double WorldZ) ReadLevel(Element el, Transform xform)
+        {
+            try
+            {
+                ElementId levelId = el.get_Parameter(BuiltInParameter.LEVEL_PARAM)?.AsElementId()
+                                    ?? ElementId.InvalidElementId;
+                if (levelId == ElementId.InvalidElementId) levelId = el.LevelId;
+                if (levelId == ElementId.InvalidElementId) return (false, "", double.NaN);
+
+                if (!(el.Document.GetElement(levelId) is Level lvl))
+                    return (false, "", double.NaN);
+
+                return (true, lvl.Name ?? "", xform.OfPoint(new XYZ(0, 0, lvl.Elevation)).Z);
+            }
+            catch (Exception ex)
+            {
+                // An unreadable level costs this ceiling the cross-check only — it is still
+                // collected and still tagged, and the engine counts it as "no level".
+                DiagnosticsLog.Swallowed($"CeilingTags: read level of ceiling {el.Id}", ex);
+                return (false, "", double.NaN);
+            }
         }
 
         private static string SafeName(Element el)

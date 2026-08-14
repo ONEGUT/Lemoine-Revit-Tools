@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Autodesk.Revit.DB;
 using LemoineTools.Framework;
 using LemoineTools.Tools.Ceilings.CeilingTags.TagCore;
@@ -27,6 +28,11 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags
     /// </summary>
     public sealed class CeilingTagEngine
     {
+        /// <summary>How close a ceiling's level elevation must be to the view's to count as the
+        /// same level when the names differ, in feet (1/8 in). Names are the primary match; this
+        /// only covers a link whose level naming differs from the host's.</summary>
+        private const double LevelMatchTolFt = 0.01;
+
         private readonly Action<string, string> _log;
 
         public CeilingTagEngine(Action<string, string> log)
@@ -91,6 +97,8 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags
                 }
                 _log(AppStrings.T("ceilings.tags.log.viewScanned", vp.Name, hostCount, linkedCount), "info");
 
+                AuditLevels(vp, vtp.Refs);
+
                 vtp.Plan = TagPointPlanner.Plan(regions, cfg);
                 result.Add(vtp);
 
@@ -101,16 +109,85 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags
         }
 
         /// <summary>
+        /// Checks that every ceiling collected for a view actually belongs to that view's level,
+        /// and warns about the ones that do not.
+        ///
+        /// Identity is the level NAME first, because that is the only comparison that survives a
+        /// document boundary: a linked ceiling's level is an element in the LINK, so its
+        /// ElementId means nothing in the host. World elevation is the fallback, for a link whose
+        /// level names differ from the host's.
+        ///
+        /// Strays are still tagged. This is a REPORT, not a filter — isolating a plan to its own
+        /// level is the level filters' job (<c>CeilingLevelFilters</c>, applied by Ceiling
+        /// Heatmap and Make Ceiling Grids), and this check is how a user finds out those filters
+        /// did not fully take. Silently dropping the tags instead would hide exactly that.
+        /// </summary>
+        private void AuditLevels(ViewPlan vp, Dictionary<string, CeilingSourceRef> refs)
+        {
+            Level? viewLevel = vp.GenLevel;
+            if (viewLevel == null)
+            {
+                // A view with no associated level has nothing to check against — say so, rather
+                // than reporting a clean pass that never happened.
+                _log(AppStrings.T("ceilings.tags.log.levelCheckSkipped", vp.Name), "info");
+                return;
+            }
+
+            string wantName = (viewLevel.Name ?? "").Trim();
+            double wantZ    = viewLevel.Elevation;
+
+            int matched = 0, noLevel = 0;
+            var strays = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (CeilingSourceRef src in refs.Values)
+            {
+                if (!src.HasLevel) { noLevel++; continue; }
+
+                bool onLevel =
+                    string.Equals((src.LevelName ?? "").Trim(), wantName, StringComparison.OrdinalIgnoreCase)
+                    || (!double.IsNaN(src.LevelWorldZ) && Math.Abs(src.LevelWorldZ - wantZ) <= LevelMatchTolFt);
+
+                if (onLevel) { matched++; continue; }
+
+                string key = string.IsNullOrWhiteSpace(src.LevelName)
+                    ? AppStrings.T("ceilings.tags.log.levelUnnamed")
+                    : src.LevelName.Trim();
+                strays[key] = strays.TryGetValue(key, out int c) ? c + 1 : 1;
+            }
+
+            int strayCount = strays.Values.Sum();
+
+            if (strayCount == 0 && noLevel == 0)
+            {
+                _log(AppStrings.T("ceilings.tags.log.levelCheckOk", vp.Name, wantName, matched), "info");
+                return;
+            }
+
+            if (strayCount > 0)
+            {
+                _log(AppStrings.T("ceilings.tags.log.levelMismatch", strayCount, vp.Name, wantName), "warn");
+                // One line per offending level rather than per ceiling — bounded by the level
+                // count, so a badly-scoped view cannot bury the rest of the log.
+                foreach (var kv in strays.OrderByDescending(k => k.Value))
+                    _log(AppStrings.T("ceilings.tags.log.levelMismatchDetail", kv.Value, kv.Key), "warn");
+            }
+
+            if (noLevel > 0)
+                _log(AppStrings.T("ceilings.tags.log.levelMissing", noLevel, vp.Name), "warn");
+        }
+
+        /// <summary>
         /// Rolls the plan up to one line per view, with detail only for the things a user would
         /// otherwise have to discover by hand: ceilings that produced no tag, and ceilings that
         /// were clipped by a lower ceiling.
         /// </summary>
         private void ReportPlan(ViewTagPlan vtp)
         {
-            int corridors = 0, clipped = 0, openings = 0, withOpenings = 0;
+            int corridors = 0, clipped = 0, openings = 0, withOpenings = 0, ringCorridors = 0;
             foreach (RegionDiagnostic d in vtp.Plan.Diagnostics)
             {
                 if (d.WasCorridor) corridors++;
+                if (d.WasRingCorridor) ringCorridors++;
                 if (d.VisibleFraction < 0.999 && d.SkipReason == null) clipped++;
                 if (d.IgnoredOpenings > 0) { openings += d.IgnoredOpenings; withOpenings++; }
             }
@@ -118,6 +195,11 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags
             _log(AppStrings.T("ceilings.tags.log.viewPlanned",
                     vtp.ViewName, vtp.Plan.Placements.Count, vtp.Plan.Diagnostics.Count, corridors),
                 "info");
+
+            // A ring that carries ten tags instead of one is a big visible change, so say why:
+            // its enclosed hole was full of other ceilings, meaning it loops rooms.
+            if (ringCorridors > 0)
+                _log(AppStrings.T("ceilings.tags.log.ringCorridors", ringCorridors), "info");
 
             if (vtp.Plan.FullyHiddenCount > 0)
                 _log(AppStrings.T("ceilings.tags.log.fullyHidden", vtp.Plan.FullyHiddenCount), "warn");

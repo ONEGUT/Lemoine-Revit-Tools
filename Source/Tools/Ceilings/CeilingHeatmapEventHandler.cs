@@ -102,7 +102,20 @@ namespace LemoineTools.Tools.Ceilings
                 {
                     Log(AppStrings.T("ceilings.heatmap.log.noViewsGenerated"), "fail"); fail++; return;
                 }
-                SelectedViewIds = generated;
+
+                // ── Isolate each generated RCP to its OWN level's ceilings ───────────
+                // One view filter per level, this view's level shown and every other hidden, so
+                // a heatmap generated "per level" really does show only that level's ceilings.
+                // Deliberately scoped to the generate-per-level mode: when the user hand-picks
+                // existing views, silently rewriting their filter sets is not what was asked for.
+                var levelFilters = CeilingLevelFilters.EnsureAll(doc, Log);
+                if (levelFilters.Count > 0)
+                {
+                    CeilingLevelFilters.ApplyIsolation(doc, generated, levelFilters, Log);
+                    CeilingLevelFilters.RegisterTrade(levelFilters.Values, Log);
+                }
+
+                SelectedViewIds = generated.Select(g => g.ViewId).ToList();
             }
 
             if (SelectedViewIds == null || SelectedViewIds.Count == 0)
@@ -740,10 +753,12 @@ namespace LemoineTools.Tools.Ceilings
         // template (if any), and returns the resulting view ids. Mirrors
         // MakeCeilingGridsRunHandler's find-or-create pattern, but does NOT restrict
         // category visibility — the heatmap needs ceilings visible alongside everything else.
-        private List<ElementId> GenerateRcpViews(
+        private List<(ElementId ViewId, ElementId LevelId)> GenerateRcpViews(
             Document doc, List<ElementId> levelIds, string suffix, ElementId templateId, ref int fail)
         {
-            var result = new List<ElementId>();
+            // Each view is returned WITH the level it was generated for, so the level isolation
+            // pass never has to re-derive it (a view reused by name could sit on another level).
+            var result = new List<(ElementId ViewId, ElementId LevelId)>();
 
             var vft = new FilteredElementCollector(doc)
                 .OfClass(typeof(ViewFamilyType)).Cast<ViewFamilyType>()
@@ -793,7 +808,7 @@ namespace LemoineTools.Tools.Ceilings
                             }
                         }
 
-                        result.Add(view.Id);
+                        result.Add((view.Id, level.Id));
                     }
                     catch (Exception ex)
                     {

@@ -1,0 +1,35 @@
+// ceilings.levelFilters.json — CeilingLevelFilters, the shared "Ceiling Levels" (CL) filter
+// set. One ParameterFilterElement per level, matching ceilings on that level; each per-level
+// ceiling plan shows its own level's filter and hides every other one, so the plan is isolated
+// to its own ceilings without relying on a view range. Used by Ceiling Heatmap's per-level
+// generation and by Make Ceiling Grids. Log-only — this component has no UI of its own.
+{
+  "log": {
+    // ── Build ──
+    "noLevels":       "No levels found in this document — ceilings cannot be isolated by level.",
+    "built":          "Ceiling level filters: {0} level(s) — {1} created, {2} reused.",  // {0}=levels {1}=created {2}=reused
+    "filterFailed":   "Could not build a level filter for '{0}' — ceilings on that level will not be isolated.",  // {0}=level name
+
+    // ── Linked models ──
+    // "Level" is an ElementId parameter, so a host filter holding the host's level id is not
+    // expected to match a ceiling inside a link. Each rule therefore also carries the id of the
+    // equivalent level in every loaded link. These lines say whether that actually happened.
+    "linkedMatched":  "Matched an equivalent level in the loaded link(s) for {0} level(s) across {1} link(s).",  // {0}=levels {1}=links
+    "linkedNoMatch":  "No level in {0} loaded link(s) matched a host level by name or elevation — linked ceilings will not be isolated by level. Check that the link's level names match the host's.",  // {0}=links
+    "linkNoLevels":   "Link \"{0}\" reports no levels — its ceilings cannot be isolated by level.",  // {0}=link name
+    "linkUnreadable": "Link \"{0}\" could not be read ({1}) — its ceilings will not be isolated by level.",  // {0}=link name {1}=error
+    "hostOnly":       "{0} level filter(s) fell back to matching the host model only — Revit rejected the linked levels in the rule, so linked ceilings on other levels stay visible.",  // {0}=filters
+
+    // ── Apply ──
+    "isolated":         "Isolated {0} view(s) to their own level ({1} level filter(s) applied to each).",  // {0}=views {1}=filters
+    "isolatedRefused":  "{0} view(s) would not accept the level filters — their ceilings are not isolated.",  // {0}=views
+    "isolatedNone":     "No views were isolated by level.",
+    "viewNoLevel":      "View \"{0}\" has no associated level — skipped, because hiding every level would leave it blank.",  // {0}=view name
+    "viewTemplateBlocked": "View \"{0}\" takes its filters from view template \"{1}\", which refuses per-view changes — its ceilings are not isolated by level. Remove the template's Filters control, or apply the level filters to the template itself.",  // {0}=view {1}=template
+    "viewRefused":      "View \"{0}\" refused the level filters: {1}.",  // {0}=view name {1}=error
+
+    // ── Trade ──
+    "tradeRegistered":   "Registered '{0}' trade with {1} rule(s).",           // {0}=trade label {1}=rules
+    "rulesUpdateFailed": "Level filters applied, but could not update the rules list: {0}."  // {0}=error
+  }
+}

@@ -109,7 +109,6 @@
     "placeFailed":      "Source {0} → {1} ({2} refs, {3:0} mm, axis {4}): {5}",
     // ── Target caches + pick-pass view guard ──
     "gridCache":        "Target cache: {0} grid(s) available across {1} document(s).",
-    "slabCache":        "Target cache: {0} slab side-face(s) scanned across {1} document(s) — host {2}, linked {3}.",
-    "closedViews":      "Closed {0} view(s) the pick pass opened."
+    "slabCache":        "Target cache: {0} slab side-face(s) scanned across {1} document(s) — host {2}, linked {3}."
   }
 }

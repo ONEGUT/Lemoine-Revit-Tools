@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
+using Autodesk.Revit.UI;
 using LemoineTools.Framework;
 using LemoineTools.Tools.Ceilings.CeilingTags.TagCore;
 
@@ -18,10 +19,18 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags
     /// <summary>
     /// The mutation side: creates every planned tag with no geometry reads interleaved.
     ///
-    /// The ordering discipline here is the performance fix. Each <c>IndependentTag.Create</c>
-    /// is a write; a geometry read between two writes forces Revit to regenerate the model to
-    /// answer it. Because the engine already resolved every reference and point, this loop is
-    /// writes only, and the single regeneration happens once at commit.
+    /// The ordering discipline here is the performance fix, and there are two separate
+    /// regeneration traps it exists to avoid:
+    ///
+    /// 1. <b>Reads between writes.</b> Each <c>IndependentTag.Create</c> is a write; a geometry
+    ///    read between two writes forces Revit to regenerate the model to answer it. The engine
+    ///    already resolved every reference and point, and the stale-tag collection below is
+    ///    hoisted ahead of the first write, so this loop is writes only.
+    /// 2. <b>Writing into a CLOSED view.</b> Revit maintains a computed view for each OPEN view;
+    ///    a tag created in a closed one makes Revit compute that view, and the create re-dirties
+    ///    it so the next tag recomputes it again. Every target view is therefore opened before
+    ///    the transaction starts (Revit refuses to change the active view inside one) and closed
+    ///    again afterwards.
     ///
     /// This is also the seam where a future room source would diverge: a room tag is created
     /// through <c>Creation.Document.NewRoomTag(LinkElementId, UV, viewId)</c> and returns a
@@ -30,7 +39,7 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags
     public static class CeilingTagCommit
     {
         public static CommitResult Place(
-            Document doc,
+            UIDocument uidoc,
             IReadOnlyList<ViewTagPlan> plans,
             ElementId tagTypeId,
             bool replaceExisting,
@@ -39,11 +48,64 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags
             var result = new CommitResult();
             if (plans.Count == 0) return result;
 
+            Document doc = uidoc.Document;
             int totalTags = plans.Sum(p => p.Plan.Placements.Count);
             var progress = new RunProgressReporter(log, totalTags, AppStrings.T("ceilings.tags.noun"));
 
             var ceilingTagCatId = new ElementId(BuiltInCategory.OST_CeilingTags);
 
+            // ── Read phase: every view's stale tags, collected before ANY write ──────
+            // A view-scoped collector run AFTER a write forces a full regeneration to answer
+            // it, so collecting per view inside the write loop cost one extra regeneration
+            // per view beyond the first. All the reads happen here, together.
+            var staleByView = new Dictionary<ElementId, List<ElementId>>();
+            if (replaceExisting)
+            {
+                foreach (ViewTagPlan vtp in plans)
+                {
+                    if (staleByView.ContainsKey(vtp.ViewId)) continue;
+                    staleByView[vtp.ViewId] = new FilteredElementCollector(doc, vtp.ViewId)
+                        .OfClass(typeof(IndependentTag))
+                        .Cast<IndependentTag>()
+                        .Where(t => t.Category?.Id == ceilingTagCatId)
+                        .Select(t => t.Id)
+                        .ToList();
+                }
+            }
+
+            // ── Open the target views BEFORE the transaction ─────────────────────────
+            // Only views that actually receive tags: opening a view is not free either, and
+            // every open view pins native graphics RAM until it is closed again.
+            var beforeViews = PickerViewGuard.Snapshot(uidoc);
+            try
+            {
+                PickerViewGuard.OpenViews(
+                    uidoc,
+                    plans.Where(p => p.Plan.Placements.Count > 0).Select(p => p.ViewId),
+                    beforeViews, log);
+
+                PlaceAll(doc, plans, staleByView, tagTypeId, totalTags, progress, log, ref result);
+            }
+            finally
+            {
+                // Restores the user's original active view and closes only what this run
+                // opened. Outside the transaction — Revit refuses both inside one.
+                PickerViewGuard.CloseOpenedViews(uidoc, beforeViews, log);
+            }
+
+            return result;
+        }
+
+        private static void PlaceAll(
+            Document doc,
+            IReadOnlyList<ViewTagPlan> plans,
+            Dictionary<ElementId, List<ElementId>> staleByView,
+            ElementId tagTypeId,
+            int totalTags,
+            RunProgressReporter progress,
+            Action<string, string> log,
+            ref CommitResult result)
+        {
             using (var tx = new Transaction(doc, "Tag Ceilings"))
             {
                 ConfigureFailures(tx);
@@ -54,14 +116,9 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags
                     if (RunState.CancelRequested) break;
 
                     // ── Replace: clear this view's existing ceiling tags first ────
-                    if (replaceExisting)
+                    if (staleByView.TryGetValue(vtp.ViewId, out List<ElementId>? stale) && stale != null)
                     {
-                        foreach (ElementId staleId in new FilteredElementCollector(doc, vtp.ViewId)
-                                     .OfClass(typeof(IndependentTag))
-                                     .Cast<IndependentTag>()
-                                     .Where(t => t.Category?.Id == ceilingTagCatId)
-                                     .Select(t => t.Id)
-                                     .ToList())
+                        foreach (ElementId staleId in stale)
                         {
                             try { doc.Delete(staleId); result.Deleted++; }
                             catch (Exception ex)
@@ -120,8 +177,6 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags
                 // cooperative-cancellation contract.
                 tx.Commit();
             }
-
-            return result;
         }
 
         private static void ConfigureFailures(Transaction tx)

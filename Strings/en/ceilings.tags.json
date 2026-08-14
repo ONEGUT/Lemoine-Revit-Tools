@@ -1,7 +1,9 @@
 // ceilings.tags.json — Tag Ceilings tool window + handler logs.
 // Command: TagCeilingsCommand. Reads every ceiling in the selected RCPs once, plans tag
-// points off-model (centroid for compact ceilings, one per stretch for corridors, extra
-// tags every MaxTagSpacing), then writes them all in a single transaction.
+// points off-model (centroid for compact ceilings, one per corner-to-corner stretch for
+// corridors, extra tags every MaxTagSpacing within a stretch), then writes them all in a
+// single transaction. Target views are opened first — a tag written into a CLOSED view
+// makes Revit recompute that view for every single tag.
 {
   "title":    "Tag Ceilings",
   "runLabel": "Place Tags →",
@@ -34,7 +36,7 @@
     "noTagTypes":     "No ceiling tag types are loaded in this project. Load a ceiling tag family in Revit, then reopen this tool.",
 
     "spacingCaption": "Maximum tag spacing (ft)",
-    "spacingHint":    "Along a corridor, tags are placed about this far apart, measured continuously around corners. Rooms always get a single tag.",
+    "spacingHint":    "Along a corridor, each straight stretch between corners gets its own tag, plus extra tags when the stretch is longer than this. Rooms always get a single tag.",
 
     "behaviourCaption":    "Behaviour",
     "toggleReplaceLabel":  "Replace existing ceiling tags",
@@ -65,6 +67,7 @@
     "viewScanned":          "{0}: {1} host + {2} linked ceiling(s).",     // {0}=view {1}=host {2}=linked
     "viewPlanned":          "{0}: planned {1} tag(s) across {2} ceiling(s) ({3} corridor).", // {0}=view {1}=tags {2}=ceilings {3}=corridors
     "planned":              "Planned {0} tag(s) across {1} view(s).",     // {0}=tags {1}=views
+    "ringCorridors":        "{0} ring-shaped ceiling(s) loop other ceilings — tagged all the way around as corridors. A ring around a void (an atrium or shaft) still takes a single tag.",  // {0} = ring corridors
     "fullyHidden":          "{0} ceiling(s) fully hidden by lower ceilings — skipped.",
     "partlyHidden":         "{0} ceiling(s) partly covered — tagged on the visible part only.",
     "regionSkipped":        "Skipped '{0}': {1}.",                        // {0}=ceiling {1}=reason
@@ -73,6 +76,18 @@
     "noCeilingsInView":     "No ceilings found in view '{0}'.",
     "viewSkipped":          "View {0} is not a plan view — skipped.",
     "noViews":              "No views selected.",
+    "noActiveDocument":     "No active Revit document — cannot run.",
+
+    // ── View-level cross-check ──
+    // Every ceiling is compared against the view's own level, by level NAME first (the only
+    // identity that survives a link boundary) and world elevation second. Strays are still
+    // tagged — this reports that the level isolation filters did not fully take.
+    "levelCheckOk":         "{0}: all {2} ceiling(s) are on level '{1}'.",              // {0}=view {1}=level {2}=ceilings
+    "levelCheckSkipped":    "View '{0}' has no associated level — level check skipped.", // {0}=view
+    "levelMismatch":        "{0} ceiling(s) in '{1}' do not belong to level '{2}' — they are still tagged. Run Make Ceiling Grids or the per-level Ceiling Heatmap to isolate the view by level.", // {0}=count {1}=view {2}=level
+    "levelMismatchDetail":  "    {0} on level '{1}'.",                                  // {0}=count {1}=the other level
+    "levelMissing":         "{0} ceiling(s) in '{1}' have no Level at all — they cannot be checked or isolated by level.", // {0}=count {1}=view
+    "levelUnnamed":         "(unnamed)",  // stand-in when a stray ceiling's level has no readable name
     "noTagType":            "No ceiling tag type selected, or it does not exist in this document.",
     "nothingToPlace":       "No tags to place — every ceiling was hidden or too small to tag.",
     "cancelledBeforeWrite": "Stopped by user before any tag was written — the model is unchanged.",

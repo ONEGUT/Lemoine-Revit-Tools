@@ -119,6 +119,12 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags.TagCore
         public int    IslandCount   { get; set; }
         public bool   WasCorridor   { get; set; }
 
+        /// <summary>Set when a RING was tagged all the way around rather than given a single
+        /// tag — i.e. its enclosed hole turned out to be full of other ceilings, so it loops
+        /// rooms. Reported because a ring that suddenly carries ten tags instead of one should
+        /// be explainable from the run log.</summary>
+        public bool   WasRingCorridor { get; set; }
+
         /// <summary>Openings treated as solid because they are too small to be architectural —
         /// recessed lights, diffusers, sprinklers. Reported so a ceiling that behaves oddly can
         /// be traced back to its openings.</summary>
