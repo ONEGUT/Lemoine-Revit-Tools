@@ -18,6 +18,32 @@
     "swatchError":     "Swatch '{0}': {1}",
     "swatchNoType":    "Swatch '{0}': no swatch type for {1}/{2} — drawn without a swatch.",
     "createdSummary":  "Created legend view '{0}' — {1} block(s) drawn, {2} hidden, {3} failed.",
-    "updatedSummary":  "Updated legend view '{0}' — {1} block(s) drawn, {2} hidden, {3} failed."
+    "updatedSummary":  "Updated legend view '{0}' — {1} block(s) drawn, {2} hidden, {3} failed.",
+
+    // ── Smart filtering: draw only the colours actually used in the target view(s) ──
+    // Scope resolution is the "hybrid": the entry's own view picks, else the sheet(s)
+    // the legend view is placed on, else no scope at all (full legend + a warning).
+    "smartNoCandidates":     "Smart filtering: no legend row is backed by a filter rule — nothing to test, drawing every row.",
+    "smartUnresolvedView":   "Smart filtering: no view named \"{0}\" in this project.",
+    "smartFellBack":         "Smart filtering: none of the saved target views exist in this project — falling back to the sheet the legend is placed on.",
+    "smartNoScope":          "Smart filtering: the legend is not placed on a sheet and no target views are set — drawing every row.",
+    "smartScopeManual":      "Smart filtering: scope is {0} manually chosen view(s).",
+    "smartScopeSheet":       "Smart filtering: scope is sheet {0} — {1} view(s).",
+    "smartScopeSheets":      "Smart filtering: this legend sits on {0} sheets, so its content is the union of all {1} view(s). Split it into one legend per area for per-area content.",
+    "smartSummary":          "Smart filtering: {0} of {1} filter(s) live in the target view(s); {2} row(s) hidden.",
+    "smartHidden":           "  hidden — \"{0}\": {1}",
+    "smartUnprovable":       "  shown — \"{0}\": could not be tested in this view, kept so nothing is lost.",
+    "smartNonCascadingLink": "Link \"{0}\" is not displayed By Host View — host filters do not colour its elements, so it was not counted.",
+    "smartNothingLive":      "Smart filtering: nothing in this legend is live in the target view(s) — the existing legend was left unchanged.",
+    "smartStopped":          "Stopped by user while testing filters — nothing was changed.",
+
+    // Why a row was dropped. Substituted into "smartHidden" above.
+    "smartReason": {
+      "noFilterElement": "no filter of that name exists in this project",
+      "notApplied":      "not applied to any target view",
+      "disabled":        "applied to the view but switched off",
+      "hiddenByFilter":  "applied with visibility off — it hides elements rather than colouring them",
+      "noMatch":         "applied to the view, but nothing it matches is visible there"
+    }
   }
 }

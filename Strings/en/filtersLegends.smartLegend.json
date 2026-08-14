@@ -1,0 +1,104 @@
+// filtersLegends.smartLegend.json — Smart Legend tool (window UI + run log).
+// Files: Source/Tools/FiltersLegends/SmartLegend/SmartLegendViewModel.cs (steps, pickers,
+//        options), Source/Tools/FiltersLegends/SmartLegend/SmartLegendRunHandler.cs (scan,
+//        legend build, placement), Source/Commands/FiltersLegends/SmartLegendCommand.cs.
+// The tool reads the views on each selected sheet, finds every filter that actually colours
+// something visible there, and builds one legend per sheet from the existing Auto Filters
+// rules. It never creates a filter or a rule.
+// Kept in code (not externalized): the imperial view-scale ladder (data mirroring Revit's own
+// dropdown), the "solid"/"square" shape tokens persisted on LegendBlockConfig, and the
+// default naming patterns "{SheetNumber} - LEGEND" / "LEGEND" (token strings resolved by
+// TokenResolver, not prose).
+{
+  "title":      "Smart Legend",
+  "runLabel":   "Build Legends →",
+  // Noun for the run strip's primary count.
+  "resultNoun": "legends",
+
+  "steps": {
+    "sheets":  "Sheets",
+    "content": "Legend Content",
+    "run":     "Review & Build"
+  },
+
+  "labels": {
+    "sheetPicker":  "Sheets to build legends for",
+    "sheetHint":    "One legend is built per sheet, from the colours actually used on that sheet's views.",
+    "noSheets":     "This project has no sheets — nothing to build a legend from.",
+
+    "namingHeader":  "NAMING",
+    "viewName":      "Legend view name",
+    "legendTitle":   "Title drawn in the legend",
+
+    "contentHeader":       "CONTENT",
+    "groupByTrade":        "Group rows by trade",
+    "groupByTradeDesc":    "One column per Auto Filters trade, unmatched filters under \"Other\"",
+    "includeUnmatched":    "Include filters with no matching rule",
+    "includeUnmatchedDesc":"Hand-made and Ceiling Heatmap filters, coloured from the view's own override",
+    "placeOnSheet":        "Place the legend on its sheet",
+    "placeOnSheetDesc":    "Tucked into the chosen corner of the title block; an existing placement is left alone",
+
+    "layoutHeader": "LAYOUT",
+    "groupsPerRow": "Columns before wrapping",
+    "viewScale":    "Legend view scale",
+    "corner":       "Corner",
+
+    "cornerTopRight":    "Top right",
+    "cornerTopLeft":     "Top left",
+    "cornerBottomRight": "Bottom right",
+    "cornerBottomLeft":  "Bottom left",
+
+    "textHeader":      "TEXT STYLES",
+    "textTitle":       "Title style",
+    "textHeaderStyle": "Group heading style",
+    "textLabel":       "Row label style",
+    "projectDefault":  "Project default",
+
+    // Group heading for filters that match no Auto Filters rule.
+    "otherGroup":   "Other",
+    // Group heading when grouping is off — everything in one column.
+    "singleGroup":  "Legend",
+    "entryName":    "Sheet {0}",
+    "defaultTitle": "LEGEND",
+    "defaultName":  "{0} - LEGEND"
+  },
+
+  "summary": {
+    "noSheets":  "No sheets selected",
+    "sheets":    "{0} sheet(s) selected",
+    "content":   "{0}, {1}",
+    "grouped":   "grouped by trade",
+    "flat":      "single column",
+    "placed":    "placed on sheet",
+    "notPlaced": "not placed"
+  },
+
+  "log": {
+    "noActiveDoc":    "No active document.",
+    "notInitialized": "Smart Legend is not initialised — restart Revit and try again.",
+    "error":          "Error: {0}",
+    "noSheets":       "No sheets selected — nothing to build.",
+    "sheetMissing":   "Sheet {0} no longer exists in this project — skipped.",
+
+    "noViewsOnSheet": "{0}: no model views on this sheet — nothing to build a legend from.",
+    "noLiveFilters":  "{0}: none of the filters on its {1} view(s) colour anything visible — no legend built.",
+    "scanned":        "{0}: {1} view(s) scanned — {2} colour(s) live ({3} from rules, {4} without a matching rule).",
+
+    "linkNotCascading":  "Link \"{0}\" is not displayed By Host View — host filters do not colour its elements, so it was not counted.",
+    "filterNoColour":    "Filter \"{0}\" is live but overrides no colour — no swatch to draw, so it was left out.",
+    "filterUnprovable":  "Filter \"{0}\" could not be tested in this view — included so nothing is lost.",
+    "nameDegenerate":    "Legend name pattern resolved to nothing usable: {0}",
+
+    "created":       "{0}: legend created with {1} row(s).",
+    "updated":       "{0}: legend updated to {1} row(s).",
+    "drawFailed":    "{0}: could not draw the legend — {1}",
+    "noLegendView":  "{0}: no legend view was produced — nothing to place.",
+
+    "alreadyPlaced":  "{0}: legend is already on this sheet — left where it is.",
+    "cannotPlace":    "{0}: Revit will not place this legend on the sheet — skipped.",
+    "placeFailed":    "{0}: could not place the legend — {1}",
+    "positionFailed": "Legend viewport {0} was placed but could not be moved to the chosen corner.",
+    "noTitleBlock":   "{0}: no title block on this sheet, so the legend was left at the sheet origin — drag it where you want it.",
+    "placedSummary":  "Placed {0} legend(s) on their sheets."
+  }
+}

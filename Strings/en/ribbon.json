@@ -48,6 +48,10 @@
       "label": "Legend\nCreation",
       "tip":   "Open the Legend Creation window to build, create, and update legend views."
     },
+    "smartLegend": {
+      "label": "Smart\nLegend",
+      "tip":   "Build a legend per sheet from the colours actually used on that sheet's views."
+    },
 
     "ceilingHeatmap": {
       "label": "Ceiling\nHeatmap",
@@ -189,7 +193,7 @@
     },
     "copyDatums": {
       "label": "Copy\nDatums",
-      "tip":   "Copy grids and levels from a linked model into the host. Datums whose name already exists in the host are skipped — Revit requires unique grid and level names."
+      "tip":   "Copy grids, levels, and scope boxes from a linked model into the host. Datums whose name already exists in the host are skipped — Revit requires unique names for each."
     },
     "copyFromLink": {
       "label": "Copy\nElements",
