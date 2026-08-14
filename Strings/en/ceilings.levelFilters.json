@@ -8,7 +8,22 @@
     // ── Build ──
     "noLevels":       "No levels found in this document — ceilings cannot be isolated by level.",
     "built":          "Ceiling level filters: {0} level(s) — {1} created, {2} reused.",  // {0}=levels {1}=created {2}=reused
-    "filterFailed":   "Could not build a level filter for '{0}' — ceilings on that level will not be isolated.",  // {0}=level name
+    // Carries Revit's own refusal message: without it the user sees an unexplained failure and
+    // the cause is buried in diagnostics.log.
+    "filterFailed":   "Could not build a level filter for '{0}' — ceilings on that level will not be isolated. Revit said: {1}",  // {0}=level name {1}=error
+    // Every level failed — stated once as a headline so it isn't inferred from N per-level lines.
+    "allFailed":      "No ceiling level filters could be built ({0} level(s) attempted) — ceiling plans will NOT be isolated to their own level. The per-level messages above carry Revit's reason.",  // {0}=levels
+
+    // ── Level parameter resolution ──
+    // Which parameter a view filter may bind is a different question from which one reads a
+    // ceiling's level: LEVEL_PARAM reads correctly but can still be refused by
+    // ParameterFilterElement.Create. The parameter is resolved against the document's own
+    // filterable-parameter list, and these lines report a resolution that found nothing.
+    "noLevelParameter": "This document reports no usable \"Level\" parameter for ceiling filters, so ceilings cannot be isolated by level. Level-related parameters it does offer for ceilings: {0}.",  // {0}=parameter labels
+    "noneOffered":      "none",
+    // The first candidate was refused on a real write and another one worked — say which, so a
+    // model that needs a different parameter is visible rather than silently accommodated.
+    "parameterSwitched": "Ceiling level filters are binding the \"{0}\" parameter — the preferred one was refused by this document.",  // {0}=parameter label
 
     // ── Linked models ──
     // "Level" is an ElementId parameter, so a host filter holding the host's level id is not

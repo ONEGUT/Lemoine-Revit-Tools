@@ -51,6 +51,26 @@ namespace LemoineTools.Tools.Ceilings
         /// vertical offset that a name comparison is immune to.</summary>
         private const double ElevationMatchTolFt = 0.01;
 
+        /// <summary>
+        /// Candidate "which level does this ceiling belong to" parameters, in preference order.
+        ///
+        /// Which of these a document will actually accept in a view filter is NOT the same
+        /// question as which one reads a ceiling's level. <c>LEVEL_PARAM</c> reads correctly
+        /// (that is what <c>CeilingRegionSource</c> uses), but a parameter that reads fine can
+        /// still be rejected by <c>ParameterFilterElement.Create</c> as not applicable to the
+        /// filter's categories — the same trap already documented for
+        /// <c>ELEM_CATEGORY_PARAM</c>. So the parameter is resolved against
+        /// <c>ParameterFilterUtilities.GetFilterableParametersInCommon</c> at run time instead
+        /// of being hardcoded, and the first candidate the document reports as filterable wins.
+        /// </summary>
+        private static readonly BuiltInParameter[] LevelParamCandidates =
+        {
+            BuiltInParameter.LEVEL_PARAM,
+            BuiltInParameter.SCHEDULE_LEVEL_PARAM,
+            BuiltInParameter.INSTANCE_SCHEDULE_ONLY_LEVEL_PARAM,
+            BuiltInParameter.FAMILY_LEVEL_PARAM,
+        };
+
         /// <summary>One level's filter, plus what went into it.</summary>
         internal sealed class LevelFilter
         {
@@ -95,8 +115,21 @@ namespace LemoineTools.Tools.Ceilings
 
             List<LinkLevels> links = CollectLinkLevels(doc, log);
 
-            var ceilingCatId  = new ElementId(BuiltInCategory.OST_Ceilings);
-            var levelParamId  = new ElementId(BuiltInParameter.LEVEL_PARAM);
+            var ceilingCatId = new ElementId(BuiltInCategory.OST_Ceilings);
+
+            // Ask the document which level parameters it will accept in a ceiling filter, rather
+            // than assuming LEVEL_PARAM. A wrong choice here fails EVERY level identically —
+            // which is exactly how this presented: four "could not build" lines and zero filters.
+            List<ElementId> paramCandidates = ResolveLevelParameters(doc, ceilingCatId, log);
+            if (paramCandidates.Count == 0)
+                return result;   // ResolveLevelParameters already said why, in detail
+
+            // The candidate currently in use. If the first one is refused on a real write, the
+            // remaining candidates are tried and whichever works is adopted for the rest of the
+            // run — the filterable-parameter list says what MAY be bound, not what Create will
+            // accept for these categories, so the write is the only authoritative test.
+            ElementId levelParamId  = paramCandidates[0];
+            bool      paramConfirmed = false;
 
             var existing = new FilteredElementCollector(doc)
                 .OfClass(typeof(ParameterFilterElement))
@@ -109,6 +142,11 @@ namespace LemoineTools.Tools.Ceilings
             var usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             int created = 0, reused = 0, hostOnly = 0;
+            // Counted over every level ATTEMPTED, not just the ones whose filter was written.
+            // Deriving this from the success list made a total write failure report itself as
+            // "no link level matched", pointing the user at their link's level names when the
+            // names had in fact matched and the rule write was the thing that failed.
+            int levelsWithLinkMatch = 0;
 
             using (var tx = new Transaction(doc, "Ceiling Level Filters"))
             {
@@ -146,22 +184,54 @@ namespace LemoineTools.Tools.Ceilings
                         entry.LinkedLevelsMatched++;
                     }
 
+                    if (entry.LinkedLevelsMatched > 0) levelsWithLinkMatch++;
+
                     ParameterFilterElement? pfe = existing.TryGetValue(filterName, out var found) ? found : null;
 
-                    if (!TryWriteFilter(doc, ref pfe, filterName, ceilingCatId, levelParamId, ids, log))
+                    if (!TryWriteFilter(doc, ref pfe, filterName, ceilingCatId, levelParamId,
+                                        ids, out string orError))
                     {
-                        // The OR-of-link-ids rule was rejected — retry with the host level alone
-                        // so the view still isolates host ceilings instead of getting no filter.
-                        entry.HostOnly = true;
-                        entry.LinkedLevelsMatched = 0;
-                        if (!TryWriteFilter(doc, ref pfe, filterName, ceilingCatId, levelParamId,
-                                            new List<ElementId> { level.Id }, log))
+                        // Before blaming the linked ids, check whether the PARAMETER is the
+                        // problem: a parameter the document lists as filterable can still be
+                        // refused for these categories, and that refusal looks identical to a
+                        // rejected link id. Only worth doing until one candidate is proven.
+                        if (!paramConfirmed
+                            && TrySwitchParameter(doc, ref pfe, filterName, ceilingCatId,
+                                                  paramCandidates, ids, ref levelParamId, out orError))
                         {
-                            log(AppStrings.T("ceilings.levelFilters.log.filterFailed", level.Name), "fail");
-                            continue;
+                            paramConfirmed = true;
+                            log(AppStrings.T("ceilings.levelFilters.log.parameterSwitched",
+                                             SafeLabel(levelParamId)), "info");
                         }
-                        hostOnly++;
+                        else
+                        {
+                            // The OR-of-link-ids rule was rejected — retry with the host level
+                            // alone so the view still isolates host ceilings rather than getting
+                            // no filter at all.
+                            // levelsWithLinkMatch is deliberately NOT decremented here: it
+                            // reports whether the link's level names matched the host's, which
+                            // they did. That the rule was then refused is a separate fact, and
+                            // the hostOnly warning below is what carries it.
+                            entry.HostOnly = true;
+                            entry.LinkedLevelsMatched = 0;
+
+                            if (!TryWriteFilter(doc, ref pfe, filterName, ceilingCatId, levelParamId,
+                                                new List<ElementId> { level.Id }, out string hostError))
+                            {
+                                // Report the reason, not just the fact. Without the message the
+                                // user sees an unexplained refusal and the cause lives only in
+                                // diagnostics.log — the run log has to carry it.
+                                log(AppStrings.T("ceilings.levelFilters.log.filterFailed",
+                                                 level.Name, hostError), "fail");
+                                continue;
+                            }
+                            DiagnosticsLog.Info("CeilingLevelFilters",
+                                $"level '{level.Name}': OR-of-link-ids rule rejected ({orError}); "
+                                + "fell back to the host level id alone.");
+                            hostOnly++;
+                        }
                     }
+                    else paramConfirmed = true;
 
                     if (pfe == null) continue;
 
@@ -177,29 +247,39 @@ namespace LemoineTools.Tools.Ceilings
 
             log(AppStrings.T("ceilings.levelFilters.log.built", result.Count, created, reused), "info");
 
-            int withLinks = result.Values.Count(e => e.LinkedLevelsMatched > 0);
             if (links.Count > 0)
             {
-                // Saying this out loud is the difference between "linked ceilings are isolated"
-                // and "the filter quietly matched nothing in the links".
-                if (withLinks > 0)
-                    log(AppStrings.T("ceilings.levelFilters.log.linkedMatched", withLinks, links.Count), "info");
+                // Reported from the MATCHING pass, not the write results. A level whose name
+                // matched a link's level did match, whether or not its filter could then be
+                // written — conflating the two blamed the link's level names for a rule the
+                // document had rejected for an unrelated reason.
+                if (levelsWithLinkMatch > 0)
+                    log(AppStrings.T("ceilings.levelFilters.log.linkedMatched",
+                                     levelsWithLinkMatch, links.Count), "info");
                 else
                     log(AppStrings.T("ceilings.levelFilters.log.linkedNoMatch", links.Count), "warn");
             }
             if (hostOnly > 0)
                 log(AppStrings.T("ceilings.levelFilters.log.hostOnly", hostOnly), "warn");
 
+            // Every level failed to produce a filter. Say so as one headline rather than
+            // leaving the user to infer it from N per-level lines plus a "0 level(s)" count.
+            if (result.Count == 0 && levels.Count > 0)
+                log(AppStrings.T("ceilings.levelFilters.log.allFailed", levels.Count), "fail");
+
             return result;
         }
 
         /// <summary>Creates or rewrites one filter. Returns false when Revit rejects the rule,
-        /// leaving <paramref name="pfe"/> untouched so the caller can retry with a simpler one.</summary>
+        /// leaving <paramref name="pfe"/> untouched so the caller can retry with a simpler one.
+        /// <paramref name="error"/> carries Revit's own message so the caller can put the reason
+        /// in the run log instead of only in diagnostics.log.</summary>
         private static bool TryWriteFilter(
             Document doc, ref ParameterFilterElement? pfe, string filterName,
             ElementId ceilingCatId, ElementId levelParamId, List<ElementId> levelIds,
-            Action<string, string> log)
+            out string error)
         {
+            error = "";
             try
             {
                 var parts = levelIds
@@ -217,9 +297,123 @@ namespace LemoineTools.Tools.Ceilings
             }
             catch (Exception ex)
             {
+                error = ex.Message;
                 DiagnosticsLog.Swallowed(
                     $"CeilingLevelFilters: write rule for '{filterName}' with {levelIds.Count} level id(s)", ex);
                 return false;
+            }
+        }
+
+        /// <summary>
+        /// The level parameters this document will accept in a ceiling view filter, most
+        /// preferred first. Empty when it accepts none of them.
+        ///
+        /// Filterability is a property of the category schema, not of the elements present, so
+        /// this is answerable without a single ceiling in the model. It is necessary but not
+        /// sufficient — a listed parameter can still be refused by
+        /// <c>ParameterFilterElement.Create</c> for these categories — which is why the caller
+        /// keeps the whole ordered list and lets a real write settle it.
+        ///
+        /// When nothing matches, the log names every level-ish parameter the document DOES
+        /// offer for ceilings, turning an unexplained refusal into a concrete next step.
+        /// </summary>
+        private static List<ElementId> ResolveLevelParameters(
+            Document doc, ElementId ceilingCatId, Action<string, string> log)
+        {
+            ICollection<ElementId> filterable;
+            try
+            {
+                filterable = ParameterFilterUtilities.GetFilterableParametersInCommon(
+                    doc, new List<ElementId> { ceilingCatId });
+            }
+            catch (Exception ex)
+            {
+                // Be permissive on a query failure — same posture as AutoFilters'
+                // NarrowToFilterable. Hand back every candidate and let the write attempts be
+                // the judge, rather than building nothing because a diagnostic call failed.
+                DiagnosticsLog.Swallowed("CeilingLevelFilters: query filterable ceiling parameters", ex);
+                return LevelParamCandidates.Select(b => new ElementId(b)).ToList();
+            }
+
+            var available = new HashSet<long>(filterable.Select(id => id.Value));
+            var usable = LevelParamCandidates
+                .Where(b => available.Contains(new ElementId(b).Value))
+                .Select(b => new ElementId(b))
+                .ToList();
+
+            if (usable.Count > 0)
+            {
+                DiagnosticsLog.Info("CeilingLevelFilters",
+                    $"filterable level parameter(s) for OST_Ceilings, in preference order: "
+                    + string.Join(", ", usable.Select(id => SafeLabel(id)))
+                    + $" (of {available.Count} filterable ceiling parameter(s)).");
+                return usable;
+            }
+
+            // Nothing matched — name what IS on offer so the next run is conclusive.
+            var levelish = new List<string>();
+            foreach (ElementId id in filterable)
+            {
+                if (id.Value >= 0) continue;   // only built-ins carry a stable label
+                string label = SafeLabel(id);
+                if (label.IndexOf("level", StringComparison.OrdinalIgnoreCase) >= 0)
+                    levelish.Add(label);
+            }
+
+            string offered = levelish.Count > 0
+                ? string.Join(", ", levelish.Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(s => s))
+                : AppStrings.T("ceilings.levelFilters.log.noneOffered");
+
+            log(AppStrings.T("ceilings.levelFilters.log.noLevelParameter", offered), "fail");
+            DiagnosticsLog.Warn("CeilingLevelFilters",
+                $"none of [{string.Join(", ", LevelParamCandidates)}] is filterable for OST_Ceilings; "
+                + $"level-ish filterable parameters offered: {offered}");
+            return new List<ElementId>();
+        }
+
+        /// <summary>
+        /// Retries the write with each remaining candidate parameter. On success
+        /// <paramref name="levelParamId"/> is updated to the parameter that worked, so the rest
+        /// of the run uses it directly instead of re-failing on every level.
+        /// </summary>
+        private static bool TrySwitchParameter(
+            Document doc, ref ParameterFilterElement? pfe, string filterName,
+            ElementId ceilingCatId, List<ElementId> candidates, List<ElementId> levelIds,
+            ref ElementId levelParamId, out string error)
+        {
+            error = "";
+            foreach (ElementId candidate in candidates)
+            {
+                if (candidate.Value == levelParamId.Value) continue;   // already failed
+
+                if (TryWriteFilter(doc, ref pfe, filterName, ceilingCatId, candidate,
+                                   levelIds, out string candidateError))
+                {
+                    DiagnosticsLog.Info("CeilingLevelFilters",
+                        $"switched level parameter to '{SafeLabel(candidate)}' after the previous "
+                        + $"candidate was refused; using it for the rest of the run.");
+                    levelParamId = candidate;
+                    return true;
+                }
+                error = candidateError;
+            }
+            return false;
+        }
+
+        private static string SafeLabel(ElementId paramId)
+        {
+            if (paramId.Value >= 0) return paramId.Value.ToString();
+            return SafeLabel((BuiltInParameter)paramId.Value);
+        }
+
+        private static string SafeLabel(BuiltInParameter bip)
+        {
+            try { return LabelUtils.GetLabelFor(bip) ?? bip.ToString(); }
+            catch (Exception ex)
+            {
+                // A parameter with no localized label is not an error worth failing over.
+                DiagnosticsLog.Swallowed($"CeilingLevelFilters: label for {bip}", ex);
+                return bip.ToString();
             }
         }
 
