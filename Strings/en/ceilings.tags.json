@@ -72,6 +72,9 @@
     "partlyHidden":         "{0} ceiling(s) partly covered — tagged on the visible part only.",
     "regionSkipped":        "Skipped '{0}': {1}.",                        // {0}=ceiling {1}=reason
     "ignoredOpenings":      "Ignored {0} small opening(s) in {1} ceiling(s) — light fixtures and diffusers are treated as solid ceiling.", // {0}=openings {1}=ceilings
+    // No ceiling is ever skipped for being small. One finer than the measuring grid is tagged
+    // at the centre of its footprint instead of at a measured point, and that is said out loud.
+    "belowGrid":            "{0} ceiling(s) are smaller than the measuring grid — tagged at the centre of their footprint.", // {0}=ceilings
     "noGeometry":           "{0} ceiling(s) in '{1}' have no usable bottom face — skipped.", // {0}=count {1}=view
     "noCeilingsInView":     "No ceilings found in view '{0}'.",
     "viewSkipped":          "View {0} is not a plan view — skipped.",
@@ -89,7 +92,7 @@
     "levelMissing":         "{0} ceiling(s) in '{1}' have no Level at all — they cannot be checked or isolated by level.", // {0}=count {1}=view
     "levelUnnamed":         "(unnamed)",  // stand-in when a stray ceiling's level has no readable name
     "noTagType":            "No ceiling tag type selected, or it does not exist in this document.",
-    "nothingToPlace":       "No tags to place — every ceiling was hidden or too small to tag.",
+    "nothingToPlace":       "No tags to place — every ceiling was hidden by a lower ceiling.",
     "cancelledBeforeWrite": "Stopped by user before any tag was written — the model is unchanged.",
     "placed":               "Placed {0} ceiling tag(s).",                 // {0} = placed
     "placedReplaced":       "Placed {0} ceiling tag(s), replacing {1}.",  // {0}=placed {1}=deleted

@@ -21,8 +21,20 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags.TagCore
         /// rather than allocating an unbounded grid inside a Revit run.</summary>
         public int MaxCells { get; set; } = 400_000;
 
-        /// <summary>A visible island smaller than this is not worth a tag.</summary>
-        public double MinIslandAreaFt2 { get; set; } = 10.0;
+        /// <summary>
+        /// Cells the grid must span across a footprint's NARROW axis, which shrinks
+        /// <see cref="CellSizeFt"/> for a small ceiling rather than letting it fall through the
+        /// grid. The rasterizer samples cell CENTRES, so a footprint narrower than one cell can
+        /// miss every sample and rasterize to nothing at all — which is how a small ceiling
+        /// came out with no tag. Every ceiling is tagged regardless of size, so the grid follows
+        /// the ceiling down instead of the ceiling being dropped.
+        /// </summary>
+        public int MinCellsAcross { get; set; } = 4;
+
+        /// <summary>Floor on the shrunk cell size, in feet (1/8 in). A stop against a degenerate
+        /// footprint demanding an absurd grid — not a size policy; anything that still fails to
+        /// resolve is tagged at its footprint centre rather than skipped.</summary>
+        public double MinCellSizeFt { get; set; } = 1.0 / 96.0;
 
         /// <summary>
         /// An opening in a ceiling smaller than this (square feet) is treated as solid.
@@ -96,6 +108,14 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags.TagCore
     /// The room/corridor split is decided on the ceiling's OWN footprint, before occluders are
     /// subtracted, because a room with a soffit under it leaves a thin frame that is
     /// geometrically indistinguishable from a ring corridor.
+    ///
+    /// <b>Size never decides whether a ceiling is tagged.</b> There is no minimum area and no
+    /// minimum island: every visible piece of every ceiling gets at least one tag, and a
+    /// footprint finer than the grid is tagged at its own centre rather than skipped. Only two
+    /// things stop a tag — no boundary geometry at all, and being wholly covered by a lower
+    /// ceiling (which is what <see cref="TagPlanConfig.AccountForCovered"/> switches off).
+    /// Crowding is handled where it belongs, by <see cref="TagPlanConfig.MinTagSeparationFt"/>
+    /// collapsing tags that land on top of each other — never by dropping the ceiling.
     /// </summary>
     public static class TagPointPlanner
     {
@@ -166,7 +186,17 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags.TagCore
                 int ownCells = raster.Count;
                 if (ownCells == 0)
                 {
-                    diag.SkipReason = "footprint too small to resolve";
+                    // Finer than the grid this run could afford — there is nothing to measure,
+                    // but it is still a real ceiling and still gets its tag. Placed at the
+                    // footprint's own centre, which at a size below one cell is within a
+                    // fraction of an inch of any point the raster could have chosen.
+                    diag.BelowGridResolution = true;
+                    plan.Placements.Add(new TagPlacement
+                    {
+                        RegionId = region.Id,
+                        Point    = FootprintCentre(region, bb),
+                    });
+                    diag.TagCount = 1;
                     continue;
                 }
 
@@ -210,21 +240,18 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags.TagCore
                 }
 
                 // ── Islands: a region split by an occluder is several places, not one ──
+                //
+                // Every island counts, however small. There is no minimum area: a ceiling that
+                // survives occlusion as a narrow strip is still a ceiling carrying a height, and
+                // dropping it left the user with silently untagged ceilings. Tags that end up
+                // close together are collapsed by MinTagSeparationFt below, which is the right
+                // control for crowding — an area threshold removed the whole ceiling instead.
                 int[] labels = raster.LabelIslands(out int islandCount);
 
                 var islands = new List<PolyRaster>();
                 for (int label = 1; label <= islandCount; label++)
-                {
-                    PolyRaster island = raster.IslandSubset(labels, label);
-                    if (island.AreaFt2 >= cfg.MinIslandAreaFt2) islands.Add(island);
-                }
+                    islands.Add(raster.IslandSubset(labels, label));
                 diag.IslandCount = islands.Count;
-
-                if (islands.Count == 0)
-                {
-                    diag.SkipReason = "visible area too small to tag";
-                    continue;
-                }
 
                 int before = plan.Placements.Count;
 
@@ -449,13 +476,64 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags.TagCore
             return kept.Count;
         }
 
-        /// <summary>Grows the cell size when a footprint would otherwise blow past
-        /// <see cref="TagPlanConfig.MaxCells"/>.</summary>
+        /// <summary>
+        /// Centre of a region's footprint, straight from its boundary loops — the tag point for
+        /// a ceiling too fine for the raster to hold. The area-weighted (shoelace) centroid of
+        /// the largest outer loop, falling back to the bounding-box centre for a loop with no
+        /// area at all. No raster is involved, so this works at any size.
+        /// </summary>
+        private static Pt2 FootprintCentre(TaggableRegion region, Bounds bb)
+        {
+            Loop2? biggest = null;
+            double bestArea = -1.0;
+            foreach (Loop2 loop in region.Outers)
+            {
+                double a = loop.AbsArea;
+                if (a > bestArea) { bestArea = a; biggest = loop; }
+            }
+
+            if (biggest != null && biggest.Points.Count >= 3)
+            {
+                double cross2 = 0, cx = 0, cy = 0;
+                var pts = biggest.Points;
+                for (int i = 0; i < pts.Count; i++)
+                {
+                    Pt2 p = pts[i], q = pts[(i + 1) % pts.Count];
+                    double cross = p.X * q.Y - q.X * p.Y;
+                    cross2 += cross;
+                    cx     += (p.X + q.X) * cross;
+                    cy     += (p.Y + q.Y) * cross;
+                }
+                // A sliver whose signed area rounds to zero has no meaningful centroid — the
+                // bounding-box centre below is the honest answer for it.
+                if (Math.Abs(cross2) > 1e-12)
+                    return new Pt2(cx / (3.0 * cross2), cy / (3.0 * cross2));
+            }
+
+            return new Pt2((bb.MinX + bb.MaxX) * 0.5, (bb.MinY + bb.MaxY) * 0.5);
+        }
+
+        /// <summary>
+        /// Picks the grid resolution for one footprint: shrinks the cell so a small ceiling
+        /// still lands on the grid (<see cref="TagPlanConfig.MinCellsAcross"/>), then grows it
+        /// back when the footprint would otherwise blow past
+        /// <see cref="TagPlanConfig.MaxCells"/>.
+        /// </summary>
         private static double ChooseCellSize(Bounds bb, TagPlanConfig cfg)
         {
             double cell = cfg.CellSizeFt > 0 ? cfg.CellSizeFt : 0.5;
             double w = Math.Max(1e-6, bb.MaxX - bb.MinX);
             double h = Math.Max(1e-6, bb.MaxY - bb.MinY);
+
+            // A small ceiling gets a small cell rather than being lost between samples. The
+            // grid is tiny either way, so this costs nothing: a 2 ft × 8 in ceiling comes out
+            // 12 × 39 cells at a 2 in cell.
+            int across = cfg.MinCellsAcross > 0 ? cfg.MinCellsAcross : 1;
+            double narrow = Math.Min(w, h);
+            if (narrow / cell < across) cell = narrow / across;
+
+            double floor = cfg.MinCellSizeFt > 0 ? cfg.MinCellSizeFt : 1.0 / 96.0;
+            if (cell < floor) cell = floor;
 
             // +3 per axis matches PolyRaster's padding, so the cap reflects the real allocation.
             while ((w / cell + 3) * (h / cell + 3) > cfg.MaxCells) cell *= 1.5;
