@@ -69,6 +69,7 @@ ZoneLibrary                       root DTO, XmlSerializer, PUBLIC type (CLAUDE.m
 ├─ Areas       : List<ZoneArea>
 ├─ Cells       : List<ZoneCell>            sparse overrides only
 ├─ Recipes     : List<ZoneViewRecipe>
+├─ Layouts     : List<ZoneSheetLayout>      one per title block type
 └─ Placements  : List<ZoneSheetPlacement>
 ```
 
@@ -133,13 +134,19 @@ thrown.
 **name**) — never an ElementId.
 
 ### 3.6 `ZoneSheetPlacement` — the exact-location record
-**One record per (Area, TitleBlockType).** This is the answer to *"any sheet that has that
-area is always placed on that sheet size in the exact correct location."*
+**One record per (Area, TitleBlockType, Group).** This is the answer to *"any sheet that has
+that area is always placed on that sheet size in the exact correct location."*
+
+`GroupId` is empty for the ordinary "this area is alone on its sheet" case. When an area shares
+a sheet with others (§5.5), its position is only meaningful in that group's context — an area
+placed left-of-centre so its neighbour fits beside it would sit absurdly off-centre if reused
+solo. Keying on the group keeps both meanings without either corrupting the other.
 
 | Field | Notes |
 |---|---|
 | `AreaId` | |
-| `TitleBlockTypeName` | the key — a different sheet size is a different placement |
+| `TitleBlockTypeName` | part of the key — a different sheet size is a different placement |
+| `GroupId` | part of the key — empty = solo on its own sheet (§5.5) |
 | `SheetWidthFt`, `SheetHeightFt` | recorded from `BuiltInParameter.SHEET_WIDTH` / `SHEET_HEIGHT` (both confirmed present), used to detect a title block that changed under us |
 | `AnchorWorldX/Y` | the area's world anchor (§3.3) |
 | `AnchorSheetX/Y` | **the sheet coordinate that world point must occupy** |
@@ -147,7 +154,32 @@ area is always placed on that sheet size in the exact correct location."*
 | `Source` | `Solved` \| `Captured` |
 | `CapturedFromSheetNumber`, `CapturedUtc` | provenance when captured off a real sheet |
 
-Placing *any* view of that area on *any* sheet carrying that title block then reduces to one
+### 3.7 `ZoneSheetLayout` / `ZoneSheetGroup` — how a level's areas map onto sheets
+The record that says *"these areas share one sheet."* Keyed by title block type, because the
+answer legitimately differs by sheet size: two areas may fit together on an A1 and need two
+separate A3s.
+
+```
+ZoneSheetLayout                one per (title block type, building) — "the A1 layout"
+├─ Id, Name
+├─ TitleBlockTypeName          the key
+├─ BuildingId
+├─ Composition                 Continuous | Packed   (§5.5)
+├─ GapPaperFt                  Packed only
+└─ Groups : List<ZoneSheetGroup>
+
+ZoneSheetGroup                 exactly one sheet's worth of areas
+├─ Id, Suffix                  "" | "A" | "B" → feeds {SheetSuffix} in the number pattern
+├─ AreaIds[]                   1 area = ordinary sheet; N areas = composite sheet
+└─ ScaleOverride               optional; otherwise solved for the group as a whole
+```
+
+A layout with one single-area group per area is the ordinary case and is what discovery
+proposes by default. Grouping two areas together is one edit, and it is what produces
+*"make the sheet for L03 and it takes care of both views."*
+
+### 3.8 The formula
+Placing *any* view of that area on *any* sheet carrying that title block reduces to one
 formula — the one this repo already has, debugged, in `AlignSheetViewsEventHandler`:
 
 ```
@@ -244,7 +276,91 @@ Capture obeys the constraints already recorded in CLAUDE.md:
 - Those outlines **track the view title**, so a placement is never inferred from a centre
   comparison alone; capture reads the box centre it is given, it does not diff two centres.
 
-### 5.5 Revit's own `ViewportPositioning` — considered
+### 5.5 Composite sheets — several views of one level on one sheet
+The requirement: address the sheet **by level**, and get one sheet carrying every view that
+level needs, each in its right place.
+
+The grouping comes from `ZoneSheetGroup` (§3.7). The placement comes from a solve that is
+**group-aware**, and this is the part that has to be right:
+
+> **A group is solved as one unit, at one shared scale, preserving the areas' true
+> world-relative positions.**
+
+Concretely, for a group of N areas:
+1. Union the areas' world extents → one bounding box.
+2. Fit **that union** to the drawing area → **one scale for the whole group** (§5.1).
+3. Anchor the union in the drawing area (centred, or captured).
+4. Each area's sheet anchor = `unionSheetAnchor + (areaWorldAnchor − unionWorldAnchor) / scale`.
+
+Three things fall out of this for free, and they are the reasons to do it this way rather than
+packing rectangles:
+
+- **Matchlines actually line up.** The east edge of Area A and the west edge of Area B are the
+  same world line, so at a shared scale with true relative offsets they meet exactly on paper.
+  A packing algorithm cannot promise this — it positions by rectangle, not by geometry.
+- **Views cannot overlap by construction**, because the areas do not overlap in the world.
+- **A shared scale is guaranteed**, which is a hard requirement for a split floor plan to read
+  as one drawing.
+
+`Packed` composition is offered as the alternative (order by world position, insert a paper
+gap) for the case where scope boxes deliberately overlap for matchline context and true
+continuity would double-draw the overlap band. It breaks matchline continuity, so `Continuous`
+is the default and `Packed` says so in the log when chosen.
+
+**Overlap validation runs regardless of mode**, before any sheet is created: every group's
+viewport footprints are tested against each other and reported. A composite sheet whose views
+collide is a planning error, and it must surface at review time rather than as two drawings on
+top of each other.
+
+### 5.6 One view can live on only one sheet — the constraint multiple sheet sizes hits
+This is the thing that would otherwise break the "several sheet sizes at once" requirement, so
+it is designed for explicitly rather than discovered later.
+
+In Revit **a view can be placed on exactly one sheet.** So documenting the same area at two
+sheet sizes requires **two views**, not one view on two sheets. Confirmed API surface:
+`View.GetPlacementOnSheetStatus` (→ `NotApplicable` / `NotPlaced` / `PartiallyPlaced` /
+`CompletelyPlaced`), `Viewport.CanAddViewToSheet`, and `View.Duplicate(ViewDuplicateOption)`
+with `Duplicate` / `AsDependent` / `WithDetailing`.
+
+Consequences the design absorbs:
+
+- **The view set is keyed per layout**, not per area. The identity of a generated view is
+  `(Building, Level, Area, Recipe, Layout)` — the layout (i.e. the sheet size) is part of it.
+- **`{SheetSize}` and `{SheetSuffix}` join the naming tokens.** Without them, generating the
+  same area for an A1 and an A3 produces two views wanting one name — and `View.Name` is
+  unique and its setter **throws** on a duplicate (already recorded in CLAUDE.md). So the
+  patterns must carry a distinguishing token, and the generator **validates that the resolved
+  pattern is distinct across the selected layouts before it writes anything**, rather than
+  discovering it on the throw.
+- **Dependent vs. duplicate is a choice, not an assumption.** `AsDependent` keeps graphics in
+  sync with the primary and is the natural fit for the same area at two sizes;
+  `WithDetailing` gives an independent copy. The recipe carries the choice
+  (`DuplicateMode`), defaulting to `AsDependent`, and the repo's existing
+  `ReplicateDependentViews` / `ViewsBulkDuplicate` handlers are the mechanism rather than new
+  code.
+- **A pre-check, not a rescue.** Before creating anything, the run checks each intended view's
+  `GetPlacementOnSheetStatus` and each intended placement's `CanAddViewToSheet`, and reports
+  the conflicts as a reviewable list. Attempting the write and catching the failure would
+  half-build a sheet set.
+
+### 5.7 Several sheet sizes in one run
+Layouts are independent by construction — each owns its title block type, its groups, and its
+placements — so a run over multiple layouts is a loop over independent plans, not a special
+case.
+
+The run is: *pick levels → pick layouts (A1, A3, …) → pick recipes → review → build.* For each
+(level × layout × group) the tool creates one sheet, and for each area in the group creates or
+reuses the view for that layout and places it at its stored anchor.
+
+Set-up stays separate per the requirement — each layout is authored on its own in the Zone
+Manager, with its own groups and its own solved placements. Only the *run* spans them. This
+also means adding a fourth sheet size later touches nothing that already exists.
+
+Reporting follows the house rule: **one log line per sheet**, detail only for problems, with a
+progress line every ~5% and `RunState.CancelRequested` tested at that same point so a large
+multi-size run is cancellable and preserves committed work.
+
+### 5.8 Revit's own `ViewportPositioning` — considered
 `Viewport.ViewportPositioning` (`ViewportCenter` | `ViewOrigin`) is confirmed present, and
 `ViewOrigin` is Revit's native "same view lands in the same spot" mechanism. It is **not**
 sufficient here: it pins to the sheet origin, so it cannot express "this area sits here on an
@@ -338,13 +454,14 @@ control instead of hand-rolling a level list plus a scope-box list.
 | A2 | ES section + load/save | `ProjectLibraryStore.cs` (+`SectionZones`), `ZoneSettings.cs`, `App.cs` registration |
 | A3 | Extent solving from grids / scope box / rooms | `ZoneExtentSolver.cs` (reuses `RoomClusterSearch`) |
 | A4 | Scale fit — Revit-free | `ZoneScaleFit.cs` |
+| A4b | **Group solve** — union fit, shared scale, world-relative offsets, overlap validation; Revit-free | `ZoneGroupSolver.cs` (§5.5) |
 | A5 | Sheet-anchor math extraction | `SheetAnchorMath.cs`; `AlignSheetViewsEventHandler` re-pointed, behaviour unchanged |
 | A6 | View-range apply/read | `ZoneViewRangeApplier.cs` (`GetViewRange`/`SetViewRange`/`CheckPlanViewRangeValidity`) |
 | A7 | Scope-box sync + ownership stamp | `ZoneScopeBoxSync.cs`, `ZoneOwnerSchema.cs` |
 | A8 | `ZonePicker` control | `Source/Framework/Controls/Input/ZonePicker.xaml(.cs)` |
-| A9 | Zone Manager window | `Source/Tools/Zones/Windows/ZoneManagerWindow.*` |
+| A9 | Zone Manager window — incl. the layout/group editor and per-layout placements | `Source/Tools/Zones/Windows/ZoneManagerWindow.*` |
 | A10 | Zone Discover step-flow tool | `Source/Tools/Zones/ZoneDiscover*.cs` |
-| A11 | Zone naming tokens | `{Building}` `{Level}` `{Area}` `{ZoneCode}` as `TokenOrigin.Computed`, passed as `extraComputed` — **not** global registry entries |
+| A11 | Zone naming tokens | `{Building}` `{Level}` `{Area}` `{ZoneCode}` `{SheetSize}` `{SheetSuffix}` as `TokenOrigin.Computed`, passed as `extraComputed` — **not** global registry entries. Includes the cross-layout uniqueness check of §5.6 |
 | A12 | Strings | `Strings/en/zones.json` — every user-facing string and run-log line via `AppStrings.T` |
 | A13 | Ribbon | a **Zones** pulldown (Manager / Discover) on the Views panel, placed *before* Scope Boxes |
 
@@ -353,9 +470,13 @@ is already correct. It is a pure extraction with no behaviour change, and it is 
 exact-placement feature for free rather than re-deriving math that took real debugging to get
 right.
 
+**A4b is small but load-bearing.** It is pure math with no Revit dependency, so it can be run
+against real area coordinates and checked directly — and per the ceiling-tag precedent, asserting
+on resulting **positions** rather than counts is the only version of that test worth writing.
+
 **Not in Part A:** sheet creation, bulk view generation, and every consumer integration. Part A
-ends with a library you can author, that owns real scope boxes, and one picker — plus §9's first
-row so it is provably useful rather than only structurally complete.
+ends with a library you can author — buildings, levels, areas owning real scope boxes, recipes,
+per-sheet-size layouts with composite groups, and solved placements — plus one picker.
 
 ---
 
@@ -391,10 +512,20 @@ Ordered by value:
 | **Split by Grid / Split by Cell** | share the grid-defined extents | |
 
 ### 9.3 The tool that does not exist yet
-**Build Sheets from Zones** — the natural end of the chain: pick cells + recipes → create views
-→ create sheets with the right title block → place each view at its stored placement → name and
-number from tokens. Everything it needs is Part A plus §9.2's first two rows. Worth planning
-separately once Part A is real; listing it here so the architecture leaves room for it.
+**Build Sheets from Zones** — the end of the chain, and the thing the composite-sheet
+requirement is really asking for:
+
+> *pick levels → pick layouts (A1, A3, …) → pick recipes → review → build.*
+
+Per (level × layout × group) it creates one sheet, and per area in that group creates or reuses
+the view for that layout and places it at its stored anchor. A single-area group gives an
+ordinary sheet; a multi-area group gives the composite sheet with both views on it, at one
+shared scale, matchline-exact (§5.5).
+
+Everything it needs is Part A plus §9.2's first two rows. It deserves its own plan once Part A
+is real — but the composite grouping (§3.7), the group-aware solve (§5.5) and the
+one-view-one-sheet handling (§5.6) are specified **now**, because retrofitting any of the three
+would mean changing the stored placement key and re-authoring every placement already made.
 
 ---
 
@@ -409,7 +540,7 @@ separately once Part A is real; listing it here so the architecture leaves room 
    provisional until a Windows/Revit run confirms it — that will be stated in the code comments
    the way the existing provisional notes are.
 4. **`ZoneOwnerSchema` inherits the unconfirmed `SetVendorId` risk** (§6).
-5. **`ViewportPositioning` interaction with `SetBoxCenter` is unverified** (§5.5).
+5. **`ViewportPositioning` interaction with `SetBoxCenter` is unverified** (§5.8).
 6. **Scope of Part A is a library and a picker, not a generator.** If that reads as too little
    to be useful, the fix is to pull "By Zone" from §9.2 into Part A — say so and I will.
 
