@@ -1,11 +1,12 @@
 # Plan — Corridor corner tagging + per-level ceiling isolation
 
-Two independent changes to the ceiling tools:
+Three independent changes to the ceiling tools:
 
 1. **Restore the corridor corner logic** in the Revit-free tag planner.
 2. **Level-scoped ceiling isolation**: a per-level view filter set (a new `Ceiling Levels`
    Auto Filters trade), applied by Ceiling Heatmap (per-level generation) and Make Ceiling
    Grids, plus a level cross-check in Tag Ceilings that warns about strays.
+3. **Open the target views before the commit** so a closed view is not recomputed per tag.
 
 Base branch: the designated branch `claude/ceiling-tagging-logic-a9h7wh` is currently
 identical to `origin/main` (`5fb6941`), so no rebase or re-basing decision is needed.
@@ -167,11 +168,83 @@ hide.
 
 ---
 
+---
+
+## 3. Tag commit speed — open the target views first
+
+### Observed
+
+With the target view **open** in Revit a full run places every tag in ~10 s. With it
+**closed**, Revit appears to regenerate the view for each tag placed.
+
+### Cause
+
+Revit maintains a computed element/geometry set for each **open** view.
+`IndependentTag.Create` needs its owner view computed in order to resolve the tagged
+`Reference` and anchor the tag:
+
+- open view → that state already exists, so each create is an incremental delta;
+- closed view → no maintained state, so Revit computes the view, and each create
+  re-dirties it, so the next create recomputes from scratch.
+
+This is the same ~2 s/tag regeneration CLAUDE.md already records for interleaved
+geometry *reads*, reached by a different trigger. The read-interleaving cause was already
+fixed (read → plan → write); this one is not, because `CeilingTagCommit.Place` takes only a
+`Document` and never touches the views' UI state.
+
+Inferred from the API surface plus the measured behaviour — it cannot be executed or proven
+on Linux, so it needs a Windows/Revit confirmation before being written up as settled.
+
+### Constraints (confirmed from `libs/RevitAPIUI.dll` metadata)
+
+- `UIDocument.ActiveView` (setter) is the **only** way to open a view.
+  `UIDocument.RequestViewChange` exists but is deferred until after the API context
+  returns, so it cannot open a view inside an ExternalEvent handler. There is no
+  background/hidden open — Revit visibly flips through the views.
+- `UIDocument.GetOpenUIViews()` → `IList<UIView>`, and `UIView.Close()` — the snapshot and
+  cleanup surface.
+- The active view **cannot be changed while a transaction is open**, so every target view
+  must be opened *before* `tx.Start()`, not per view inside the loop.
+- Every open view pins native graphics RAM for the rest of the session (CLAUDE.md), so the
+  run must close what it opened.
+
+### Change
+
+`Source/Tools/Ceilings/CeilingTags/CeilingTagCommit.cs` +
+`Source/Tools/Ceilings/CeilingTags/CeilingTagEventHandler.cs`
+
+- `Place` takes the `UIDocument` (the handler already receives `UIApplication`).
+- Sequence: `PickerViewGuard.Snapshot(uidoc)` → activate every view that has planned
+  placements (each stays open as a tab) → **one** transaction places all tags → commit →
+  `PickerViewGuard.CloseOpenedViews(uidoc, before, log)` in a `finally`, which restores the
+  user's original active view and closes only the views this run opened. Views the user
+  already had open are never closed.
+- `PickerViewGuard` moves from `Source/Tools/Dimensioning/AutoDimension/` to
+  `Source/Framework/` (it is `internal` and Revit-generic, and would otherwise be a
+  ceiling tool reaching into the dimensioning tool's folder). Its one existing caller,
+  `ManualDatumPicker`, is updated; behaviour is unchanged.
+- Log one line naming how many views were opened and how many were already open, so the
+  fast path versus the slow path is visible in the run log rather than being a mystery.
+
+### Second regen source, fixed at the same time
+
+The `replaceExisting` pass runs a view-scoped `FilteredElementCollector` per view,
+interleaved with the *previous* view's writes — so an N-view run pays N-1 extra full
+regenerations on top of the per-tag cost. Hoisting every view's stale-tag collection into a
+single read phase, before any delete or create, removes it. Same read-everything →
+write-everything discipline the engine already follows.
+
+---
+
 ## Files touched
 
 | File | Change |
 |---|---|
 | `Source/Tools/Ceilings/CeilingTags/TagCore/TagPointPlanner.cs` | per-stretch corridor tags |
+| `Source/Tools/Ceilings/CeilingTags/CeilingTagCommit.cs` | open target views; single read phase |
+| `Source/Tools/Ceilings/CeilingTags/CeilingTagEventHandler.cs` | pass the `UIDocument` through |
+| `Source/Framework/PickerViewGuard.cs` | **moved** from the AutoDimension folder |
+| `Source/Tools/Dimensioning/AutoDimension/ManualDatumPicker.cs` | follow the move |
 | `Source/Tools/Ceilings/CeilingLevelFilters.cs` | **new** — `CL` trade, level filters, isolation |
 | `Source/Tools/Ceilings/CeilingHeatmapEventHandler.cs` | isolate generated per-level RCPs |
 | `Source/Tools/Ceilings/MakeCeilingGridsRunHandler.cs` | isolate created per-level RCPs |
@@ -181,7 +254,8 @@ hide.
 | `Strings/en/ceilings.heatmap.json` | isolation log keys |
 | `Strings/en/ceilings.makeGrids.json` | isolation log keys |
 | `Strings/en/ceilings.levelFilters.json` | **new** — shared helper's log strings |
-| `CLAUDE.md` | corridor rule reversal; level-isolation + linked-level caveat |
+| `Strings/en/clash.autoDim.json` | `closedViews` key moves to a shared key |
+| `CLAUDE.md` | corridor rule reversal; level isolation; closed-view regen cost |
 
 No UI/XAML changes — no new options, toggles or steps. (The isolation is the requested
 behaviour, not an option, so no `/revit-navisworks-ui` mockup pass is needed.)
