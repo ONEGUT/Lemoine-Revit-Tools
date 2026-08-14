@@ -38,6 +38,23 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags.TagCore
 
         public Loop2() { }
         public Loop2(IEnumerable<Pt2> pts) { Points.AddRange(pts); }
+
+        /// <summary>Enclosed area in square feet, sign-free (shoelace). Used to pick the outer
+        /// loop and to tell a light-fixture opening from a real architectural one.</summary>
+        public double AbsArea
+        {
+            get
+            {
+                if (Points.Count < 3) return 0;
+                double a = 0;
+                for (int i = 0; i < Points.Count; i++)
+                {
+                    Pt2 p = Points[i], q = Points[(i + 1) % Points.Count];
+                    a += p.X * q.Y - q.X * p.Y;
+                }
+                return Math.Abs(a) * 0.5;
+            }
+        }
     }
 
     /// <summary>
@@ -101,6 +118,11 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags.TagCore
         public int    TagCount      { get; set; }
         public int    IslandCount   { get; set; }
         public bool   WasCorridor   { get; set; }
+
+        /// <summary>Openings treated as solid because they are too small to be architectural —
+        /// recessed lights, diffusers, sprinklers. Reported so a ceiling that behaves oddly can
+        /// be traced back to its openings.</summary>
+        public int    IgnoredOpenings { get; set; }
         /// <summary>Fraction of the region's own footprint left visible after occlusion (1 = untouched).</summary>
         public double VisibleFraction { get; set; } = 1.0;
     }

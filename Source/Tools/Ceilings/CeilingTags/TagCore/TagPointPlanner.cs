@@ -23,13 +23,27 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags.TagCore
         public double MinIslandAreaFt2 { get; set; } = 10.0;
 
         /// <summary>
-        /// area / width² above which a region is treated as a corridor rather than a room.
-        /// Measured on the ceiling's OWN footprint (see <see cref="TagPointPlanner"/>).
-        /// A square scores 1, a 60×25 room 2.4, a 60×12 long room 5, a 90×6 corridor 15 and a
-        /// ring corridor ~22. 6 sits in the gap and errs toward "room", which is the safer
-        /// mistake: one tag too few is a nudge, a row of tags too many is a mess.
+        /// An opening in a ceiling smaller than this (square feet) is treated as solid.
+        ///
+        /// Recessed light fixtures, diffusers and sprinklers cut real holes in a ceiling's
+        /// bottom face, and they are devastating to shape analysis if taken literally: a 40×30
+        /// office with a 5×4 grid of 2×4 lights reports a 7.3 ft width instead of 30 ft (the
+        /// biggest inscribed circle now fits only BETWEEN fixtures), which turns its elongation
+        /// from 1.3 into 19.3 — every fixture-laden room reads as a corridor, and every corridor
+        /// reads as a loop and collapses to one tag. 25 ft² clears any fixture (a 2×4 is 8 ft²)
+        /// while keeping genuine architectural openings such as an atrium or shaft.
         /// </summary>
-        public double CorridorElongation { get; set; } = 6.0;
+        public double MinHoleAreaFt2 { get; set; } = 25.0;
+
+        /// <summary>
+        /// area / width² above which a region is treated as a corridor rather than a room.
+        /// Measured on the ceiling's OWN footprint (see <see cref="TagPointPlanner"/>), with
+        /// fixture openings ignored — without that filter a light grid collapses the measured
+        /// width and every office reads as a corridor.
+        /// With honest widths: 14×12 office 1.2, 40×30 office 1.3, 60×25 room 2.4,
+        /// 60×12 wide corridor 5.0, 90×6 corridor 15, L corridor 11.5. 4 separates cleanly.
+        /// </summary>
+        public double CorridorElongation { get; set; } = 4.0;
 
         /// <summary>Two tags on the same ceiling closer than this collapse to one, in feet.
         /// Deliberately an absolute distance, NOT a fraction of <see cref="MaxTagSpacingFt"/>:
@@ -106,9 +120,21 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags.TagCore
 
                 double cell = ChooseCellSize(bb, cfg);
                 var raster = new PolyRaster(bb.MinX, bb.MinY, bb.MaxX, bb.MaxY, cell);
+
+                // Fixture openings are filled in: a recessed light is not a change in the
+                // ceiling's shape, but taken literally it shrinks the measured width to the gap
+                // between fixtures and makes every office look like a corridor. Only openings
+                // big enough to be architectural survive to shape the region.
                 var allLoops = new List<Loop2>();
                 allLoops.AddRange(region.Outers);
-                allLoops.AddRange(region.Holes);
+                int ignoredOpenings = 0;
+                foreach (Loop2 hole in region.Holes)
+                {
+                    if (hole.AbsArea >= cfg.MinHoleAreaFt2) allLoops.Add(hole);
+                    else ignoredOpenings++;
+                }
+                diag.IgnoredOpenings = ignoredOpenings;
+
                 raster.FillLoops(allLoops, true);
 
                 int ownCells = raster.Count;
@@ -137,9 +163,12 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags.TagCore
                         if (other.SortDepth >= region.SortDepth) continue;   // not below this one
                         if (!bb.Intersects(bounds[j])) continue;
 
+                        // The occluder's own fixture openings are filled too — a light in the
+                        // ceiling below does not let the ceiling above show through.
                         var occl = new List<Loop2>();
                         occl.AddRange(other.Outers);
-                        occl.AddRange(other.Holes);
+                        foreach (Loop2 h in other.Holes)
+                            if (h.AbsArea >= cfg.MinHoleAreaFt2) occl.Add(h);
                         raster.FillLoops(occl, false);
                     }
                 }

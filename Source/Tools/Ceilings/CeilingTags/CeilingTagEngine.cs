@@ -107,11 +107,12 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags
         /// </summary>
         private void ReportPlan(ViewTagPlan vtp)
         {
-            int corridors = 0, clipped = 0;
+            int corridors = 0, clipped = 0, openings = 0, withOpenings = 0;
             foreach (RegionDiagnostic d in vtp.Plan.Diagnostics)
             {
                 if (d.WasCorridor) corridors++;
                 if (d.VisibleFraction < 0.999 && d.SkipReason == null) clipped++;
+                if (d.IgnoredOpenings > 0) { openings += d.IgnoredOpenings; withOpenings++; }
             }
 
             _log(AppStrings.T("ceilings.tags.log.viewPlanned",
@@ -123,6 +124,12 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags
 
             if (clipped > 0)
                 _log(AppStrings.T("ceilings.tags.log.partlyHidden", clipped), "info");
+
+            // Light fixtures and diffusers cut real holes in a ceiling face. They are filled
+            // back in before the shape is measured, and saying so out loud is what would have
+            // made this visible the first time round instead of presenting as odd placement.
+            if (openings > 0)
+                _log(AppStrings.T("ceilings.tags.log.ignoredOpenings", openings, withOpenings), "info");
 
             // Any ceiling that produced no tag for a reason other than being fully hidden is a
             // surprise worth naming — it is the difference between "correctly excluded" and

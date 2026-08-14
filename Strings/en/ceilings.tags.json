@@ -68,6 +68,7 @@
     "fullyHidden":          "{0} ceiling(s) fully hidden by lower ceilings — skipped.",
     "partlyHidden":         "{0} ceiling(s) partly covered — tagged on the visible part only.",
     "regionSkipped":        "Skipped '{0}': {1}.",                        // {0}=ceiling {1}=reason
+    "ignoredOpenings":      "Ignored {0} small opening(s) in {1} ceiling(s) — light fixtures and diffusers are treated as solid ceiling.", // {0}=openings {1}=ceilings
     "noGeometry":           "{0} ceiling(s) in '{1}' have no usable bottom face — skipped.", // {0}=count {1}=view
     "noCeilingsInView":     "No ceilings found in view '{0}'.",
     "viewSkipped":          "View {0} is not a plan view — skipped.",
