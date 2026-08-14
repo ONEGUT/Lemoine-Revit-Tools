@@ -276,15 +276,26 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags.TagCore
 
         /// <summary>
         /// True when the region encloses empty space — a donut, a frame left behind by a
-        /// ceiling sitting inside this one, or a corridor looping a room. Flood-fills the
-        /// background from cell (0,0), which the constructor's padding guarantees is empty;
-        /// any empty cell the flood cannot reach is enclosed.
+        /// ceiling sitting inside this one, or a corridor looping a room.
         /// </summary>
-        public bool HasEnclosedHole()
+        public bool HasEnclosedHole() => EnclosedCells().Count > 0;
+
+        /// <summary>
+        /// The cells this region encloses: empty, but walled in on every side. Flood-fills the
+        /// background from cell (0,0), which the constructor's padding guarantees is empty; any
+        /// empty cell the flood cannot reach is enclosed.
+        ///
+        /// Returned as indices rather than a bool so callers can ask what is INSIDE the ring —
+        /// which is how a corridor looping rooms is told from a ceiling with an atrium punched
+        /// through it. See <c>TagPointPlanner.EnclosesOtherRegions</c>.
+        /// </summary>
+        public List<int> EnclosedCells()
         {
+            var enclosed = new List<int>();
+            if (_cells[0]) return enclosed;   // padding invariant broken; report none rather than lie
+
             var seen = new bool[_cells.Length];
             var stack = new Stack<int>();
-            if (_cells[0]) return false;   // padding invariant broken; report no hole rather than lie
             seen[0] = true; stack.Push(0);
 
             while (stack.Count > 0)
@@ -299,9 +310,17 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags.TagCore
             }
 
             for (int i = 0; i < _cells.Length; i++)
-                if (!_cells[i] && !seen[i]) return true;
-            return false;
+                if (!_cells[i] && !seen[i]) enclosed.Add(i);
+            return enclosed;
         }
+
+        /// <summary>An empty raster on exactly this one's grid, so cell indices are comparable
+        /// between the two.</summary>
+        public PolyRaster CloneEmpty() => new PolyRaster(this);
+
+        /// <summary>Occupancy by raw cell index — pairs with <see cref="EnclosedCells"/>.</summary>
+        public bool IsFilled(int index)
+            => index >= 0 && index < _cells.Length && _cells[index];
 
         private void Flood(bool[] seen, Stack<int> stack, int idx)
         {

@@ -47,6 +47,26 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags.TagCore
         /// </summary>
         public double CorridorElongation { get; set; } = 4.0;
 
+        /// <summary>
+        /// How much of a ring's enclosed hole must be covered by OTHER ceilings before the ring
+        /// counts as looping rooms rather than a void.
+        ///
+        /// This is what separates a corridor that loops a block of rooms — which is tagged all
+        /// the way around — from a ceiling with an atrium or shaft punched through it, which
+        /// takes a single tag. A corridor rings ROOMS, and rooms have ceilings; an atrium rings
+        /// a VOID, which has none at that level. Measured: corridor rings score 100% (and 71%
+        /// when the inner rooms are only partly ceilinged), an atrium 0%, an atrium with a small
+        /// canopy in it 5% — so anything from ~0.1 to ~0.6 separates them and 0.5 sits in the
+        /// middle of that gap.
+        ///
+        /// Deliberately NOT a corridor-width cap: elongation alone cannot do this job (an atrium
+        /// ring scores 6.0 and a shaft ring 5.4, both above the corridor threshold), and a fixed
+        /// maximum width would misjudge a genuinely wide circulation spine. Deliberately NOT
+        /// wall- or Room-based either: a corridor looping ONE large room has no walls inside its
+        /// hole at all, while an atrium usually has walls right at its edge.
+        /// </summary>
+        public double RingFillFraction { get; set; } = 0.5;
+
         /// <summary>Two tags on the same ceiling closer than this collapse to one, in feet.
         /// Deliberately an absolute distance, NOT a fraction of <see cref="MaxTagSpacingFt"/>:
         /// this exists to stop tags overlapping on the sheet, and scaling it with the spacing
@@ -63,8 +83,11 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags.TagCore
     ///
     /// 1. <b>Room</b> (own footprint not elongated) → exactly ONE tag, on its largest visible
     ///    island, at the centroid.
-    /// 2. <b>Encloses a hole</b> (a thin band wrapping other ceilings, or any loop) → ONE tag
-    ///    at the TOP CENTRE of the band. A ring is not tagged once per side.
+    /// 2. <b>Rings a VOID</b> (an atrium or shaft punched through the ceiling — an enclosed hole
+    ///    with no other ceiling inside it) → ONE tag at the TOP CENTRE of the band.
+    ///    A ring that loops ROOMS is not this case: it is a corridor, and falls through to
+    ///    rule 3 to be tagged all the way around. See
+    ///    <see cref="TagPlanConfig.RingFillFraction"/>.
     /// 3. <b>Corridor</b> → ONE tag per corner-to-corner STRETCH, subdivided by
     ///    <see cref="TagPlanConfig.MaxTagSpacingFt"/>. A corner starts a new count, so each
     ///    arm of an L or U carries its own tag instead of being swallowed by a long
@@ -220,14 +243,25 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags.TagCore
                 {
                     foreach (PolyRaster island in islands)
                     {
-                        if (island.HasEnclosedHole())
+                        // ── Rule 2 vs 3: does this ring loop ROOMS, or a VOID? ──
+                        //
+                        // Elongation cannot answer this — a hole thins any shape, so an atrium
+                        // ring scores 6.0 and a shaft ring 5.4, both "corridor". What separates
+                        // them is what is INSIDE the ring: a corridor loops rooms, and rooms
+                        // have ceilings; an atrium or shaft loops nothing. Every ceiling in the
+                        // view is already in `layer`, so this costs no extra model reads.
+                        if (island.HasEnclosedHole()
+                            && !EnclosesOtherRegions(island, layer, i, bounds, cfg))
                         {
-                            // ── Rule 2: a loop gets ONE tag at the top centre ──
+                            // Rings a void → ONE tag at the top centre.
                             PlaceSingle(island, region, plan, forceTopCentre: true);
                         }
                         else
                         {
+                            // Rings rooms (or is an open run) → corridor, tagged per stretch all
+                            // the way around.
                             diag.WasCorridor = true;
+                            if (island.HasEnclosedHole()) diag.WasRingCorridor = true;
                             PlaceAlongRun(island, region, cfg, plan);
                         }
                     }
@@ -237,6 +271,50 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags.TagCore
                 if (diag.TagCount == 0 && diag.SkipReason == null)
                     diag.SkipReason = "no usable tag point found";
             }
+        }
+
+        /// <summary>
+        /// True when this island's enclosed hole is substantially covered by OTHER regions on
+        /// the layer — i.e. the ring loops something that has a ceiling, which makes it a
+        /// corridor rather than a ceiling with a void punched through it.
+        ///
+        /// Depth is deliberately ignored (unlike occlusion, which only subtracts LOWER regions):
+        /// the question is merely "is there a room in there", and a room's ceiling counts
+        /// whether it sits above or below the ring.
+        /// </summary>
+        private static bool EnclosesOtherRegions(
+            PolyRaster island, List<TaggableRegion> layer, int selfIndex,
+            Bounds[] bounds, TagPlanConfig cfg)
+        {
+            List<int> hole = island.EnclosedCells();
+            if (hole.Count == 0) return false;
+
+            // Painted onto a clone of the island's own grid, so cell indices line up exactly.
+            PolyRaster others = island.CloneEmpty();
+            bool any = false;
+
+            for (int j = 0; j < layer.Count; j++)
+            {
+                if (j == selfIndex) continue;
+                if (!bounds[selfIndex].Intersects(bounds[j])) continue;   // cheap box reject
+
+                var loops = new List<Loop2>();
+                loops.AddRange(layer[j].Outers);
+                // The other ceiling's fixture openings are filled in for the same reason they are
+                // everywhere else: a recessed light does not mean there is no room there.
+                foreach (Loop2 h in layer[j].Holes)
+                    if (h.AbsArea >= cfg.MinHoleAreaFt2) loops.Add(h);
+
+                others.FillLoops(loops, true);
+                any = true;
+            }
+
+            if (!any) return false;
+
+            int covered = 0;
+            foreach (int idx in hole) if (others.IsFilled(idx)) covered++;
+
+            return covered >= hole.Count * cfg.RingFillFraction;
         }
 
         /// <summary>True when a region's own shape is long-and-thin enough to be a corridor.

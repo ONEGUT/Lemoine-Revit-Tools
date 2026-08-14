@@ -183,10 +183,11 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags
         /// </summary>
         private void ReportPlan(ViewTagPlan vtp)
         {
-            int corridors = 0, clipped = 0, openings = 0, withOpenings = 0;
+            int corridors = 0, clipped = 0, openings = 0, withOpenings = 0, ringCorridors = 0;
             foreach (RegionDiagnostic d in vtp.Plan.Diagnostics)
             {
                 if (d.WasCorridor) corridors++;
+                if (d.WasRingCorridor) ringCorridors++;
                 if (d.VisibleFraction < 0.999 && d.SkipReason == null) clipped++;
                 if (d.IgnoredOpenings > 0) { openings += d.IgnoredOpenings; withOpenings++; }
             }
@@ -194,6 +195,11 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags
             _log(AppStrings.T("ceilings.tags.log.viewPlanned",
                     vtp.ViewName, vtp.Plan.Placements.Count, vtp.Plan.Diagnostics.Count, corridors),
                 "info");
+
+            // A ring that carries ten tags instead of one is a big visible change, so say why:
+            // its enclosed hole was full of other ceilings, meaning it loops rooms.
+            if (ringCorridors > 0)
+                _log(AppStrings.T("ceilings.tags.log.ringCorridors", ringCorridors), "info");
 
             if (vtp.Plan.FullyHiddenCount > 0)
                 _log(AppStrings.T("ceilings.tags.log.fullyHidden", vtp.Plan.FullyHiddenCount), "warn");

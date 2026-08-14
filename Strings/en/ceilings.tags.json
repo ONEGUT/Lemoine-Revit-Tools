@@ -67,6 +67,7 @@
     "viewScanned":          "{0}: {1} host + {2} linked ceiling(s).",     // {0}=view {1}=host {2}=linked
     "viewPlanned":          "{0}: planned {1} tag(s) across {2} ceiling(s) ({3} corridor).", // {0}=view {1}=tags {2}=ceilings {3}=corridors
     "planned":              "Planned {0} tag(s) across {1} view(s).",     // {0}=tags {1}=views
+    "ringCorridors":        "{0} ring-shaped ceiling(s) loop other ceilings — tagged all the way around as corridors. A ring around a void (an atrium or shaft) still takes a single tag.",  // {0} = ring corridors
     "fullyHidden":          "{0} ceiling(s) fully hidden by lower ceilings — skipped.",
     "partlyHidden":         "{0} ceiling(s) partly covered — tagged on the visible part only.",
     "regionSkipped":        "Skipped '{0}': {1}.",                        // {0}=ceiling {1}=reason
