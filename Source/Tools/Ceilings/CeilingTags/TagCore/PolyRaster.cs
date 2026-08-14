@@ -267,6 +267,85 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags.TagCore
             return outD;
         }
 
+        /// <summary>True when the world point falls on a filled cell.</summary>
+        public bool Contains(Pt2 p)
+        {
+            CellAt(p, out int x, out int y);
+            return this[x, y];
+        }
+
+        /// <summary>
+        /// True when the region encloses empty space — a donut, a frame left behind by a
+        /// ceiling sitting inside this one, or a corridor looping a room. Flood-fills the
+        /// background from cell (0,0), which the constructor's padding guarantees is empty;
+        /// any empty cell the flood cannot reach is enclosed.
+        /// </summary>
+        public bool HasEnclosedHole()
+        {
+            var seen = new bool[_cells.Length];
+            var stack = new Stack<int>();
+            if (_cells[0]) return false;   // padding invariant broken; report no hole rather than lie
+            seen[0] = true; stack.Push(0);
+
+            while (stack.Count > 0)
+            {
+                int idx = stack.Pop();
+                int x = idx % Width, y = idx / Width;
+
+                if (x > 0)          Flood(seen, stack, idx - 1);
+                if (x < Width - 1)  Flood(seen, stack, idx + 1);
+                if (y > 0)          Flood(seen, stack, idx - Width);
+                if (y < Height - 1) Flood(seen, stack, idx + Width);
+            }
+
+            for (int i = 0; i < _cells.Length; i++)
+                if (!_cells[i] && !seen[i]) return true;
+            return false;
+        }
+
+        private void Flood(bool[] seen, Stack<int> stack, int idx)
+        {
+            if (_cells[idx] || seen[idx]) return;
+            seen[idx] = true;
+            stack.Push(idx);
+        }
+
+        /// <summary>
+        /// Centre of the region's topmost band: the horizontal middle of the highest filled
+        /// row, pushed down half that band's thickness so the point sits inside the band rather
+        /// than on its edge. This is where a ring- or frame-shaped ceiling gets its single tag.
+        /// </summary>
+        public Pt2? TopCentre()
+        {
+            for (int y = Height - 1; y >= 0; y--)
+            {
+                int minX = -1, maxX = -1, count = 0;
+                for (int x = 0; x < Width; x++)
+                {
+                    if (!_cells[y * Width + x]) continue;
+                    if (minX < 0) minX = x;
+                    maxX = x; count++;
+                }
+                if (count == 0) continue;
+
+                int xc = (minX + maxX) / 2;
+                if (!_cells[y * Width + xc])
+                {
+                    // The top row is split (two arms of a U) — take the median filled cell so
+                    // the point lands on solid ceiling rather than in the gap between them.
+                    int seen = 0, target = count / 2;
+                    for (int x = minX; x <= maxX; x++)
+                        if (_cells[y * Width + x] && seen++ == target) { xc = x; break; }
+                }
+
+                int thickness = 0;
+                for (int yy = y; yy >= 0 && _cells[yy * Width + xc]; yy--) thickness++;
+
+                return CellCentre(xc, y - thickness / 2);
+            }
+            return null;
+        }
+
         /// <summary>Centroid of the filled cells in world feet, or null when nothing is filled.</summary>
         public Pt2? Centroid()
         {

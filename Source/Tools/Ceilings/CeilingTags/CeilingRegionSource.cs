@@ -226,7 +226,10 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags
                         }
                     }
                     if (pts.Count >= 3)
-                        built.Add((new Loop2(pts), Math.Abs(SignedArea(pts))));
+                    {
+                        var loop = new Loop2(pts);
+                        built.Add((loop, loop.AbsArea));
+                    }
                 }
 
                 if (built.Count == 0) return result;
@@ -244,17 +247,6 @@ namespace LemoineTools.Tools.Ceilings.CeilingTags
             }
 
             return result;
-        }
-
-        private static double SignedArea(List<Pt2> pts)
-        {
-            double a = 0;
-            for (int i = 0; i < pts.Count; i++)
-            {
-                Pt2 p = pts[i], q = pts[(i + 1) % pts.Count];
-                a += p.X * q.Y - q.X * p.Y;
-            }
-            return a * 0.5;
         }
 
         /// <summary>

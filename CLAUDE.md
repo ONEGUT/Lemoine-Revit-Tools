@@ -277,6 +277,31 @@ A `FilledRegion` or `DetailCurve` placed in a plan view can be built from world 
 
 ---
 
+## Ceiling Face Geometry & Bulk Tagging
+
+Discovered building **Tag Ceilings** (`Source/Tools/Ceilings/CeilingTags/`).
+
+- **A ceiling's bottom face carries one inner `CurveLoop` per recessed light, diffuser or sprinkler that cuts it**, and `Face.GetEdgesAsCurveLoops()` returns every one of them. Any shape analysis that takes them literally is wildly wrong: the largest inscribed circle then fits only *between* fixtures, so a 40 ft × 30 ft office measures **7.3 ft wide instead of 30 ft** and its elongation (area / width²) goes from 1.3 to 19.3 — every fixture-laden room reads as a corridor and every corridor reads as a ring. Filter inner loops by area *before* measuring (`TagPlanConfig.MinHoleAreaFt2`, 25 ft²; a 2×4 fixture is 8 ft²), and treat only what survives as the ceiling's shape. Genuine architectural openings (an atrium, a shaft) clear the filter and still count. Apply the same filter to an occluding ceiling's loops — a light in the ceiling below does not let the one above show through.
+- **`IndependentTag.Create` has a tag-TYPE-id overload** — `Create(doc, symId, ownerDBViewId, referenceToTag, addLeader, tagOrientation, pnt)` — so the chosen tag type is applied at creation with no `ChangeTypeId` second pass (which would be another write per tag). The other two 2024 overloads are `Create(doc, typeId, ownerDBViewId, reference, pnt, angle)` and the `TagMode`/default-tag one.
+- **Interleaving `IndependentTag.Create` with geometry reads forces a full model regeneration before every read** — ~2 s per tag, 20 minutes for 580 — and there is no batch tag API (`Creation.Document` has no generic `NewTag`; `PostableCommand.TagAllNotTagged` is modal, async and active-view-only). Structure bulk tagging as read-everything → plan off-model → write-everything so the run costs **one** regeneration.
+- **Room tags are a different API from element tags.** `Autodesk.Revit.Creation.Document.NewRoomTag(LinkElementId, UV, viewId)` returns a `RoomTag` and takes a **UV** and a `LinkElementId`, not an `XYZ` and a `Reference`. A tool that tags both must split at the create call, never inside its placement logic.
+
+### Ceiling tag placement rules (settled with the user)
+
+- One tag per **room** ceiling — *not* one per visible island. A ceiling split in two by a bulkhead is still one ceiling carrying one height, and two tags on it read as a mistake.
+- A ceiling that **encloses a hole** — a thin band left around other ceilings, or a corridor looping a room — gets **one tag at the top centre** of the band, explicitly *not* one per side. (An earlier "one tag centred on each of the 4 sides" instruction was superseded.)
+- **Corridor** tags are spaced continuously along the run, carrying the accumulated distance across corners, so a corridor with six jogs gets no more tags than a straight one of the same length. One tag per corner-to-corner stretch is what floods a plan.
+- Classify corridor-vs-room on the ceiling's **own** footprint, *before* occluders are subtracted: a room with a soffit under it leaves a thin visible frame that is geometrically identical to a ring corridor (own elongation 1.2, visible elongation 12.5).
+- A single tag goes at the centroid only when the centroid actually lands on the ceiling; otherwise use the top centre. "Nearest solid cell to the centroid" puts the tag on whichever side happens to be closest, which reads as arbitrary.
+
+### Raster-based shape analysis
+
+- **The grid needs a guaranteed empty border ring.** A filled cell on the grid edge has no empty neighbour, so a distance transform measures its clearance to the *far* side of the region (doubling the apparent width, quartering the elongation), and Zhang-Suen thinning skips the border ring entirely, leaving the whole edge as skeleton — which strings tags along the ceiling's edge. Back the origin off one full cell and add 3 cells of extent per axis; clone the grid geometry for any subset rather than recomputing it from world bounds.
+- **Assert on tag POSITIONS, not just counts.** The corridor tests passed on "3 tags" while all three sat at y=0.25 on a 6 ft corridor — its edge, not its centreline at y=3. The count was right and the placement was wrong, and only a count was checked.
+- The placement core is Revit-free by design and this project cannot build on Linux, so **port it to Python and run real shapes through it** to validate policy before shipping. That is how the fixture-opening distortion was proven rather than guessed at.
+
+---
+
 ## MultiSelectTabs Contract
 
 `SetGroups` fires `SelectionChanged` once at the end of setup. Any ViewModel that mirrors tab selection into a private field must subscribe to `SelectionChanged` **before** calling `SetGroups` — that callback is the only mechanism that populates the mirror field on initialisation.
@@ -512,6 +537,7 @@ These were discovered fixing the "category pill dropdown scrolls down but not up
 | `ElevationMarker.GetViewId(idx)` assuming it returns `InvalidElementId` for an empty slot | An **unused** marker index can **throw** rather than return invalid — loop `for (idx = 0; idx < m.MaximumViewCount; idx++)` and wrap each `GetViewId(idx)` in try/catch, `continue`-on-throw (then still skip `null` / `InvalidElementId`) |
 | Resolving which views a section/callout marker points to by reading a target-id property | Section/callout markers are `OST_Viewers`; resolve each to its target view by **unique name** (`marker.Name` → view-by-name map). Scope the collector to the source view id (`new FilteredElementCollector(doc, source.Id)`) so only **visible** markers are returned — hidden ones are excluded |
 | Coloring a surface fill via `OverrideGraphicSettings` without distinguishing foreground/background | Foreground and background are **independent** layers. A "solid color fill with black lines" needs the **background** pattern set (`SetSurfaceBackgroundPatternId(solidFill)` + `…Color(c)` + `…Visible(true)`, and the cut equivalents) and only the **foreground pattern *color*** set to black (`SetSurfaceForegroundPatternColor` / `SetCutForegroundPatternColor`) with **no** foreground pattern id — setting a pattern *color* without a pattern *id* yields the color with no fill pattern (the Fill Pattern Graphics dialog's `<No Override>` foreground). Putting the solid fill on the foreground instead hides the element's own linework |
+| Treat every inner `CurveLoop` of a ceiling's bottom face as part of its shape | Recessed lights, diffusers and sprinklers each cut a loop into the face — filter inner loops by area before measuring anything (see *Ceiling Face Geometry & Bulk Tagging*), or a 40×30 ft room measures 7.3 ft wide and classifies as a corridor |
 | `PDFExportOptions.HiddenLineViews` to choose vector vs raster PDF processing | No such property on `PDFExportOptions` — `HiddenLineViews` (`HiddenLineViewsType.VectorProcessing` / `RasterProcessing`) lives on **`PrintParameters`**, the legacy `PrintManager` path that the export tools don't use. For `doc.Export(…)` PDF the handle is **`PDFExportOptions.AlwaysUseRaster`** (`bool` — `false` keeps linework vector and rasterizes only the views that require it, e.g. shaded/realistic/transparency; `true` forces every view to an image), and the resolution of whatever *does* rasterize is **`PDFExportOptions.ExportQuality`** (`PDFExportQualityType.DPI72` … `DPI4000`). `ExportQuality` applies under vector processing too, so it is never safe to hide it behind the raster mode |
 
 ---
