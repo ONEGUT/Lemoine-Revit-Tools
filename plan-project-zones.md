@@ -565,36 +565,74 @@ carrying the outline plus that area's highlight, placed on every sheet documenti
 N areas → N legends, not N × sheets.
 
 ### The composition that avoids the hard problem
-The instinct is to build one closed loop of the exterior walls and fill it. That is the
-genuinely hard version — walls break at doors and curtain walls, courtyards produce inner
-loops, links need their transform, and a wall run very often does not close. Producing a
-*reliable* closed silhouette from walls is a curve-joining problem with a long tail of failures.
-
-It is also unnecessary, because the two halves of a key plan have different requirements:
+The two halves of a key plan have different requirements, and separating them removes the only
+difficult part:
 
 | Element | What it needs to be | Built from |
 |---|---|---|
-| **Building outline** | context — readable, not watertight | exterior wall location curves as **detail lines**, drawn as segments. No loop-joining. |
-| **Area highlight** | exact — it is the actual information | a **`FilledRegion`** from the area's own extents rectangle, which is already closed and already known exactly |
+| **Building outline** | context — readable, not watertight | **slab edges**, tessellated to polylines and drawn as detail lines |
+| **Area highlight** | exact — it is the actual information | a **`FilledRegion`** from the area's own extents rectangle, already closed and already known exactly |
 
-Unjoined line segments read perfectly well as an outline at key-plan scale, and the one thing
-that must be precise — which chunk is highlighted — comes from data the zone library already
-holds. The hard problem simply does not arise.
+The one thing that must be precise — which chunk is highlighted — comes from data the zone
+library already holds, so the outline only has to *read* correctly.
+
+### Outline from slab edges — the mechanism
+Chosen over exterior walls deliberately. **A slab face is already a closed loop**; a wall run is
+not. Walls break at doors and curtain walls, courtyards add inner loops, and joining them into a
+reliable outline is a curve-joining problem with a long tail of failures. Nothing about a slab
+needs joining.
+
+Confirmed against `libs/RevitAPI.dll` (2024):
+
+```
+IList<Reference>  HostObjectUtils.GetTopFaces(HostObject)      ← the handle; no solid iteration
+Face              element.GetGeometryObjectFromReference(r) as Face
+IList<CurveLoop>  Face.GetEdgesAsCurveLoops()
+IList<XYZ>        Curve.Tessellate()
+XYZ               PlanarFace.FaceNormal                         ← horizontality check
+```
+
+The whole read, per level:
+
+1. Collect `Floor` in the **linked** document (`RevitLinkInstance.GetLinkDocument()`), filtered
+   to the level. Fall back to `Roof` on the topmost level, where there is often no floor.
+2. `HostObjectUtils.GetTopFaces` → resolve each reference to a `Face`. This is why no geometry
+   options, solid walking or face-normal searching is needed.
+3. `Face.GetEdgesAsCurveLoops()` → the outer loop is the largest by area; the rest are openings.
+4. **Filter openings by area** before drawing — same rule and same reason as the ceiling work,
+   where a slab is punched by shafts and stairs exactly as a ceiling is by light fixtures.
+   Small penetrations vanish, an atrium or a lightwell survives and is drawn.
+5. `Curve.Tessellate()` each surviving loop to points, apply the link's
+   `GetTotalTransform()`, drop Z.
+6. Draw the polylines as detail lines in the legend.
+
+**Tessellating is what keeps this simple.** Arcs, ellipses and splines all become points, so the
+legend only ever draws straight segments — no per-curve-type handling, and the precision loss is
+invisible at key-plan scale.
+
+**Efficiency:** this is one read per LEVEL, not per area or per sheet, and it is read-only with
+no regeneration. A slab is a handful of faces. On a typical model this is negligible next to
+anything else the plugin does.
+
+**Robustness across linked architectural models** — the cases that actually occur, and what
+each does:
+
+| Case | Behaviour |
+|---|---|
+| Slab split into several floors on one level | Draw each one's outer loop. Shared edges coincide; visually correct. |
+| No floor on the level (topmost, or a plenum level) | Fall back to `Roof`, then to zone extents. Reported. |
+| Slab edges stepped or with a slab-shape edit | Top face still returns loops; the outline is the plan projection either way. |
+| Floors modelled in a structural rather than architectural link | The link is chosen by the user, not assumed — any loaded link can be the source. |
+| Multiple buildings in one link | Loops are drawn per floor, so separate buildings simply appear as separate outlines. |
+| Nothing found | Falls back to `ZoneExtents` and **says so** — a silent downgrade would leave the user looking at a block diagram believing it was the building. |
 
 ### Outline source — ordered fallback, always reported
-`OutlineSource`: `ExteriorWalls` *(default, as asked)* → `FloorSlabs` → `ZoneExtents`.
-Each run says which one it actually used; a silent downgrade would leave the user looking at a
-block diagram believing it was the building.
+`OutlineSource`: `SlabEdges` *(default)* → `Roofs` → `ZoneExtents`. Every run names which one it
+actually used.
 
-- **ExteriorWalls** — `Wall` whose `WallType.Function == WallFunction.Exterior` (both confirmed
-  present in the 2024 metadata), location curves projected to XY. Read from the architectural
-  link with `RevitLinkInstance.GetTotalTransform()` applied, since that is where they live.
-- **FloorSlabs** — a floor's face already *is* a closed loop, so this is the robust route to a
-  filled silhouette if one is ever wanted. It reuses the small-hole filter from the ceiling
-  work: a slab is punched by shafts and stairs exactly as a ceiling is punched by fixtures, and
-  taking those loops literally is what made a 40×30 room measure 7.3 ft wide.
-- **ZoneExtents** — the areas' own rectangles. Always available, needs no model at all, and is
-  a legitimate house style rather than only a fallback.
+Exterior walls are **not** offered. They were the original request, but a slab gives the same
+picture with none of the joining problem, and carrying a second, less reliable path would mean
+maintaining the failure mode this design exists to avoid.
 
 ### Placement
 A key plan is placed through the **same placement record** as any other view — one
