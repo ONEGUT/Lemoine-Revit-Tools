@@ -493,8 +493,8 @@ right.
 against real area coordinates and checked directly — and per the ceiling-tag precedent, asserting
 on resulting **positions** rather than counts is the only version of that test worth writing.
 
-**Not in Part A:** sheet creation, bulk view generation, and every consumer integration. Part A
-ends with a library you can author — buildings, levels, areas owning real scope boxes, recipes,
+**Not in Part A:** sheet creation, bulk view generation, key plans (§9.4, deliberately last),
+and every consumer integration. Part A ends with a library you can author — buildings, levels, areas owning real scope boxes, recipes,
 per-sheet-size layouts with composite groups, and solved placements — plus one picker.
 
 ---
@@ -548,6 +548,70 @@ would mean changing the stored placement key and re-authoring every placement al
 
 ---
 
+## 9.4 Part C — Key plans from zones (build LAST)
+
+A key plan is the small locator diagram on each sheet: the building outline with *this* sheet's
+area highlighted. Zones already hold everything it needs — every area's exact extents, which
+areas exist on which level, and which sheet each one lands on.
+
+### Why a legend, not a drafting view
+**Legends are the only Revit view type placeable on more than one sheet.** A drafting view,
+like any other view, can sit on exactly one — the same constraint §5.6 already deals with. This
+repo already depends on the legend exception: `AlignSheetViewsEventHandler.PlaceLegendsOnSheet`
+places one source sheet's legends onto many target sheets.
+
+So: **one legend per area** (per level only when the footprint actually differs by level),
+carrying the outline plus that area's highlight, placed on every sheet documenting that area.
+N areas → N legends, not N × sheets.
+
+### The composition that avoids the hard problem
+The instinct is to build one closed loop of the exterior walls and fill it. That is the
+genuinely hard version — walls break at doors and curtain walls, courtyards produce inner
+loops, links need their transform, and a wall run very often does not close. Producing a
+*reliable* closed silhouette from walls is a curve-joining problem with a long tail of failures.
+
+It is also unnecessary, because the two halves of a key plan have different requirements:
+
+| Element | What it needs to be | Built from |
+|---|---|---|
+| **Building outline** | context — readable, not watertight | exterior wall location curves as **detail lines**, drawn as segments. No loop-joining. |
+| **Area highlight** | exact — it is the actual information | a **`FilledRegion`** from the area's own extents rectangle, which is already closed and already known exactly |
+
+Unjoined line segments read perfectly well as an outline at key-plan scale, and the one thing
+that must be precise — which chunk is highlighted — comes from data the zone library already
+holds. The hard problem simply does not arise.
+
+### Outline source — ordered fallback, always reported
+`OutlineSource`: `ExteriorWalls` *(default, as asked)* → `FloorSlabs` → `ZoneExtents`.
+Each run says which one it actually used; a silent downgrade would leave the user looking at a
+block diagram believing it was the building.
+
+- **ExteriorWalls** — `Wall` whose `WallType.Function == WallFunction.Exterior` (both confirmed
+  present in the 2024 metadata), location curves projected to XY. Read from the architectural
+  link with `RevitLinkInstance.GetTotalTransform()` applied, since that is where they live.
+- **FloorSlabs** — a floor's face already *is* a closed loop, so this is the robust route to a
+  filled silhouette if one is ever wanted. It reuses the small-hole filter from the ceiling
+  work: a slab is punched by shafts and stairs exactly as a ceiling is punched by fixtures, and
+  taking those loops literally is what made a 40×30 room measure 7.3 ft wide.
+- **ZoneExtents** — the areas' own rectangles. Always available, needs no model at all, and is
+  a legitimate house style rather than only a fallback.
+
+### Placement
+A key plan is placed through the **same placement record** as any other view — one
+`ZoneSheetPlacement` per (key-plan legend, title block, group), typically pinned to a sheet
+corner. Nothing new: §5's anchor pair already covers it.
+
+### Open questions for when this is built
+- **Legend coordinate space.** Detail geometry drawn at world coordinates would sit far from a
+  legend's origin. The geometry needs translating so the building centre lands at the legend
+  origin, with the legend's own scale sized to the wanted paper footprint. **UNVERIFIED** —
+  needs a Windows/Revit run to settle how a legend's scale and origin actually behave.
+- **`FilledRegion.Create` in a legend** — `IsRegionCreationEnabledInView` exists and should be
+  checked per view rather than assumed.
+- Whether one outline serves the whole building or one per level (podium vs tower).
+
+---
+
 ## 10. Risks and constraints, stated up front
 
 1. **A5 touches a large, correct file.** Pure extraction, no behaviour change, Align Sheet
@@ -562,6 +626,10 @@ would mean changing the stored placement key and re-authoring every placement al
 5. **`ViewportPositioning` interaction with `SetBoxCenter` is unverified** (§5.8).
 6. **Scope of Part A is a library and a picker, not a generator.** If that reads as too little
    to be useful, the fix is to pull "By Zone" from §9.2 into Part A — say so and I will.
+7. **Key plans (§9.4) depend on the legend multi-sheet exception.** If that ever stopped being
+   true, one legend per area would become one per area per sheet, and the whole approach would
+   need rethinking. It is load-bearing enough to state plainly, though this repo already relies
+   on it in Align Sheet Views.
 
 ---
 
