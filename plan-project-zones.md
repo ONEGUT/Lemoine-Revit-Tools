@@ -212,15 +212,34 @@ warn and mark the area unresolved (never delete it — the library outlives a de
 
 ### 4.2 Anchor mode is orthogonal to extent mode — and this matters
 The anchor is **not** forced to follow the definition. `AnchorMode` is a separate choice, and
-`GridIntersection` is available (and recommended) even when `Definition = ScopeBox`.
+`GridIntersection` is available even when `Definition = ScopeBox`.
 
-The reason is worth stating plainly: if the anchor is the extents centre, resizing a scope box
-by a foot silently moves every sheet placement built from that area — drawings that were
-correct yesterday shift with no error anywhere. A named grid intersection does not move when
-extents change. So the default is `ExtentsCentre` (it works with no extra input and matches
-what adoption implies), but the Zone Manager surfaces "pin anchor to grid intersection" on
-every area and **warns when an adopted box's extents change while the anchor is
-`ExtentsCentre`**, because that is exactly the case where placements drift unannounced.
+**What actually prevents drift — measured, not assumed.** The Python port of the solver
+(§8, A4b) was run on this exact case: an area whose extents grow 10 ft westward, on a 42×30
+sheet at 1/8".
+
+| At apply time | Where a real building point lands |
+|---|---|
+| Reuse the placement's **stored** `AnchorWorld` | unchanged — the building stays registered |
+| **Recompute** the anchor from current extents | shifted **0.052 paper ft = 5/8" on the plot** |
+
+So the primary rule is not about anchor mode at all:
+
+> **A stored placement's `AnchorWorld` is authoritative at apply time. Never recompute an
+> anchor from current extents while reusing a stored sheet coordinate.**
+
+That pairing is the record; half-refreshing it silently moves the drawing. This is why
+`ZoneSheetPlacement` stores the world anchor alongside the sheet anchor rather than deriving
+it, and the applier reads it rather than the area.
+
+`GridIntersection` is then **defence in depth**: its world anchor does not move when extents
+change, so even a mistaken recompute is harmless. `ExtentsCentre` stays the default (it needs
+no extra input and is what adoption implies), but the Zone Manager offers "pin anchor to a grid
+intersection" on every area and **warns when an adopted box's extents change while placements
+already exist** — that is precisely when a re-solve would move drawings that were correct
+yesterday.
+
+Re-solving is always explicit. Extents changing never silently re-solves a stored placement.
 
 Per CLAUDE.md's bucketing rule: extents solved from grids are the **exact** grid coordinates
 plus the user's exact typed margin. Nothing is snapped to a tolerance grid, and no bucket

@@ -43,7 +43,22 @@ namespace LemoineTools.Framework.Project
         public const string SectionFilters = "Filters";
         public const string SectionLegends = "Legends";
         public const string SectionClash   = "Clash";
+        /// <summary>
+        /// Project zones. Handled by <see cref="Zones.ZoneStore"/> under its OWN schema GUID,
+        /// NOT as a fourth field here — see the note below. The constant lives here so the
+        /// staging/save plumbing addresses every library by section name.
+        /// </summary>
+        public const string SectionZones   = "Zones";
 
+        // Fields of THIS schema. Zones is deliberately absent.
+        //
+        // An extensible-storage schema's fields are fixed the moment its GUID is registered,
+        // and a document that already holds these libraries registers the 3-field version on
+        // read. Adding a fourth field here would make Schema.Lookup return that 3-field schema
+        // and every entity.Set("Zones", …) throw — failing the whole Write, rolling back the
+        // transaction, and silently breaking saves for the other three libraries on every
+        // project that has ever used them. Zones therefore gets its own schema and its own
+        // holder element, which also means no existing document is touched at all.
         private static readonly string[] AllSections = { SectionFilters, SectionLegends, SectionClash };
 
         public static Schema? GetOrCreate()
@@ -78,7 +93,12 @@ namespace LemoineTools.Framework.Project
         {
             var map = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (var f in AllSections) map[f] = "";
+            map[SectionZones] = "";
             if (doc == null) return map;
+
+            // Zones live under their own schema — read them first so a failure in this
+            // schema cannot cost the caller its zones, and vice versa.
+            map[SectionZones] = Zones.ZoneStore.Read(doc);
 
             var schema = GetOrCreate();
             if (schema == null) return map;
@@ -127,6 +147,28 @@ namespace LemoineTools.Framework.Project
         {
             if (doc == null || sections == null || sections.Count == 0) return false;
 
+            // ── Zones — own schema, own holder ────────────────────────────────
+            bool wroteZones = false;
+            bool zonesFailed = false;
+            if (sections.TryGetValue(SectionZones, out var zonesXml))
+            {
+                wroteZones = Zones.ZoneStore.Write(doc, zonesXml ?? "");
+                if (!wroteZones)
+                {
+                    zonesFailed = true;
+                    DiagnosticsLog.Warn("ProjectLibraryStore",
+                        "The zone library could not be written — see the preceding ZoneStore error.");
+                }
+            }
+
+            // Nothing else staged? Then don't touch this schema's holder at all. Carrying the
+            // other three sections through would create an empty holder on a project that has
+            // never used them, purely as a side effect of saving zones.
+            bool anyOwnSection = false;
+            foreach (var f in AllSections)
+                if (sections.ContainsKey(f)) { anyOwnSection = true; break; }
+            if (!anyOwnSection) return wroteZones && !zonesFailed;
+
             var schema = GetOrCreate();
             if (schema == null) return false;
 
@@ -163,6 +205,11 @@ namespace LemoineTools.Framework.Project
                 }
 
                 holder.SetEntity(entity);
+
+                // Commit what worked even if the zone write failed. Returning false here would
+                // roll the transaction back and destroy a successful filter/legend/clash save
+                // for an unrelated failure in a different schema. The zone failure is already
+                // logged as an error by ZoneStore.Write and warned about above.
                 return true;
             }
             catch (Exception ex)
@@ -237,6 +284,16 @@ namespace LemoineTools.Framework.Project
             try
             {
                 if (!doc.IsWorkshared) return true;
+
+                // Zones live on their own holder element, which can be owned by a different
+                // user than the one holding the other three libraries. Probing only this
+                // schema's holder would report "writable" and then lose the zone save.
+                if (!Zones.ZoneStore.CanWrite(doc, out string? zoneWhy) && zoneWhy != null)
+                {
+                    reason = zoneWhy;
+                    return false;
+                }
+
                 var holder = FindHolder(doc);
                 if (holder == null) return true;   // not created yet; creation is fine
 

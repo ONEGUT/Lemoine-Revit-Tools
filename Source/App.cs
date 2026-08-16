@@ -229,6 +229,12 @@ namespace LemoineTools
             Framework.Project.ProjectLibraries.Register(
                 Framework.Project.ProjectLibraryStore.SectionClash,
                 xml => LemoineTools.Tools.Dimensioning.ClashDefinitionsSettings.LoadProjectLibrary(xml));
+            // Zones hold no %AppData% cache at all, so an empty payload here CLEARS the
+            // library rather than meaning "seed me" — that is what stops one project's zones
+            // appearing in the next one opened. See ZoneSettings.
+            Framework.Project.ProjectLibraries.Register(
+                Framework.Project.ProjectLibraryStore.SectionZones,
+                xml => Framework.Zones.ZoneSettings.LoadProjectLibrary(xml));
 
             ProjectHandler   = new CeilingGridEventHandler();
             ProjectEvent     = ExternalEvent.Create(ProjectHandler);
