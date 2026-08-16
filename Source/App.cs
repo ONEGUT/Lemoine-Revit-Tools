@@ -557,6 +557,13 @@ namespace LemoineTools
             // Large:    Explode View by Trade
             var viewsPanel = application.CreateRibbonPanel("Lemoine Tools", L.T("ribbon.panels.views"));
 
+            // Zones come first: scope boxes and the views built from them both hang off a zone,
+            // so the library is authored before anything that consumes it.
+            viewsPanel.AddItem(Btn(
+                "LT_ZoneManager", L.T("ribbon.buttons.zoneManager.label"), "ZoneManagerCommand",
+                L.T("ribbon.buttons.zoneManager.tip"),
+                char.ConvertFromUtf32(0xE809)));  // MapPin — a place in the building
+
             // Scope Boxes pulldown — Creator now; the Manager joins here when it lands.
             var scopeBoxPulldown = new PulldownButtonData("LT_ScopeBoxes", L.T("ribbon.buttons.scopeBoxes.label"))
             {
