@@ -106,8 +106,16 @@
       "label": "Scope\nBoxes",
       "tip":   "Create and manage scope boxes."
     },
-    "zoneManager": {
+    "zones": {
       "label": "Zones",
+      "tip":   "Project zones — define the building's levels and areas once, then use them to create views and sheets."
+    },
+    "zoneDiscover": {
+      "label": "Discover Zones",
+      "tip":   "Read a linked model and propose the buildings, levels and areas for this project's zone library. Nothing is changed until you review and accept the proposals."
+    },
+    "zoneManager": {
+      "label": "Zone Manager",
       "tip":   "Define and manage project zones — the building's levels and areas, their scope boxes, the view ranges and scales used to draw them, and the exact position each area occupies on each sheet size. Stored in the model, so the whole team shares one library."
     },
     "scopeBoxCreator": {

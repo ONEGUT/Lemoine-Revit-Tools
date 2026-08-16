@@ -121,6 +121,59 @@
     }
   },
 
+  "discover": {
+    // Zone Discover — scan a linked model and propose a zone structure.
+    "title": "Discover Zones",
+    "runLabel": "Apply to the zone library →",
+
+    "steps": {
+      "S1": "Source models",
+      "S2": "What to discover",
+      "S3": "Review proposals"
+    },
+
+    "sourceHint": "Levels and rooms are read from these documents. The architectural link is the usual source.",
+    "hostSuffix": "(host)",
+    "noSources": "No documents are available to read.",
+
+    "opt": {
+      "levels": "Levels",
+      "buildings": "Buildings (from room clusters)",
+      "areasFromBoxes": "Areas from existing scope boxes",
+      "areasFromRooms": "Areas from room clusters"
+    },
+    "optHint": "Scope boxes are the usual source for areas. Room clusters are the fallback when none have been drawn yet.",
+
+    "scan": "Scan the model",
+    "scanning": "Scanning…",
+    "notScanned": "Not scanned yet — run the scan on the previous step.",
+    "nothingFound": "The scan found nothing to propose.",
+    "nothingAccepted": "Nothing is ticked, so no zones were changed.",
+    "noHandler": "The Discover run handler is unavailable.",
+
+    "group": {
+      "buildings": "Buildings",
+      "levels": "Levels",
+      "areas": "Areas"
+    },
+
+    "action": {
+      "add": "add",
+      "update": "update",
+      "unchanged": "already present"
+    },
+
+    // Stated on the review card because it is the thing to fear from a scan.
+    "reviewNote": "Discover only adds and updates. It never deletes a zone, so anything authored by hand is safe.",
+
+    "summary": {
+      // {0} = number of source documents
+      "sources": "{0} source document(s)",
+      // {0} = accepted, {1} = total proposals
+      "review": "{0} of {1} proposals accepted"
+    }
+  },
+
   "log": {
     // Run-log lines. Every one is user-facing output, so none are hardcoded.
     // {0} = area name, {1} = box name

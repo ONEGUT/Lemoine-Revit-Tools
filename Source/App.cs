@@ -41,6 +41,12 @@ namespace LemoineTools
         internal static LemoineTools.Tools.Ceilings.CeilingTags.CeilingTagEventHandler? CeilingTagHandler { get; private set; }
         internal static ExternalEvent?                                                  CeilingTagEvent   { get; private set; }
 
+        // ── Zones ─────────────────────────────────────────────────────────────
+        internal static LemoineTools.Tools.Zones.ZoneDiscoverScanHandler? ZoneDiscoverScanHandler { get; private set; }
+        internal static ExternalEvent?                                    ZoneDiscoverScanEvent   { get; private set; }
+        internal static LemoineTools.Tools.Zones.ZoneDiscoverRunHandler?  ZoneDiscoverRunHandler  { get; private set; }
+        internal static ExternalEvent?                                    ZoneDiscoverRunEvent    { get; private set; }
+
         // ── Make Ceiling Grids ──────────────────────────────────────────────────
         internal static MakeCeilingGridsPhase1Handler? MakeCeilingGridsPhase1Handler { get; private set; }
         internal static ExternalEvent?                 MakeCeilingGridsPhase1Event   { get; private set; }
@@ -246,6 +252,12 @@ namespace LemoineTools
             // ── Tag Ceilings ──────────────────────────────────────────────────
             CeilingTagHandler = new LemoineTools.Tools.Ceilings.CeilingTags.CeilingTagEventHandler();
             CeilingTagEvent   = ExternalEvent.Create(CeilingTagHandler);
+
+            // ── Zone Discover ─────────────────────────────────────────────────
+            ZoneDiscoverScanHandler = new LemoineTools.Tools.Zones.ZoneDiscoverScanHandler();
+            ZoneDiscoverScanEvent   = ExternalEvent.Create(ZoneDiscoverScanHandler);
+            ZoneDiscoverRunHandler  = new LemoineTools.Tools.Zones.ZoneDiscoverRunHandler();
+            ZoneDiscoverRunEvent    = ExternalEvent.Create(ZoneDiscoverRunHandler);
 
             // ── Make Ceiling Grids ────────────────────────────────────────────
             MakeCeilingGridsPhase1Handler = new MakeCeilingGridsPhase1Handler();
@@ -559,10 +571,31 @@ namespace LemoineTools
 
             // Zones come first: scope boxes and the views built from them both hang off a zone,
             // so the library is authored before anything that consumes it.
-            viewsPanel.AddItem(Btn(
-                "LT_ZoneManager", L.T("ribbon.buttons.zoneManager.label"), "ZoneManagerCommand",
-                L.T("ribbon.buttons.zoneManager.tip"),
-                char.ConvertFromUtf32(0xE809)));  // MapPin — a place in the building
+            var zonesPulldown = new PulldownButtonData("LT_Zones", L.T("ribbon.buttons.zones.label"))
+            {
+                ToolTip    = L.T("ribbon.buttons.zones.tip"),
+                LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE809)),  // MapPin
+                Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE809)),
+            };
+            var zonesBtn = viewsPanel.AddItem(zonesPulldown) as PulldownButton;
+
+            zonesBtn?.AddPushButton(new PushButtonData(
+                "LT_ZoneManager", L.T("ribbon.buttons.zoneManager.label"), dll,
+                "LemoineTools.Commands.ZoneManagerCommand")
+            {
+                ToolTip    = L.T("ribbon.buttons.zoneManager.tip"),
+                LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE809)),
+                Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE809)),
+            });
+
+            zonesBtn?.AddPushButton(new PushButtonData(
+                "LT_ZoneDiscover", L.T("ribbon.buttons.zoneDiscover.label"), dll,
+                "LemoineTools.Commands.ZoneDiscoverCommand")
+            {
+                ToolTip    = L.T("ribbon.buttons.zoneDiscover.tip"),
+                LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE721)),  // Zoom / find
+                Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE721)),
+            });
 
             // Scope Boxes pulldown — Creator now; the Manager joins here when it lands.
             var scopeBoxPulldown = new PulldownButtonData("LT_ScopeBoxes", L.T("ribbon.buttons.scopeBoxes.label"))
