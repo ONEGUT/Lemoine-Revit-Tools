@@ -1,0 +1,166 @@
+{
+  // Project Zones — the per-project library of buildings, levels, areas, view
+  // recipes, sheet layouts and exact sheet placements.
+  //
+  // JSONC: // comments are stripped before parsing. Keys are dot-flattened, so
+  // "picker.summary" here is AppStrings.T("zones.picker.summary").
+  "picker": {
+    // ZonePicker — the reusable Building/Level/Area tree control.
+    "searchHint": "Search zones…",
+    "clear": "Clear",
+    "clearAll": "Clear all",
+    "selectAll": "Select all",
+    // {0} = selected cell count, {1} = total cells listed
+    "summary": "{0} of {1} selected",
+    // {0} = number of matching cells
+    "matchCount": "{0} matches",
+    // Shown when the library has no buildings/levels/areas at all.
+    "emptyLibrary": "No zones defined yet. Open the Zone Manager to create them.",
+    // {0} = the search query
+    "noMatches": "Nothing matches “{0}”.",
+    // Levels and areas not assigned to any building.
+    "unassigned": "Unassigned",
+    // A cell whose extents have never been resolved cannot be placed.
+    "noExtents": "no extents"
+  },
+
+  "manager": {
+    // Zone Manager window chrome.
+    "title": "Zone Manager",
+    "close": "Close",
+    "reload": "Reload from model",
+    // {0} = document title
+    "subtitle": "{0}",
+
+    "tabs": {
+      "structure": "Structure",
+      "recipes": "Recipes",
+      "layouts": "Layouts"
+    },
+
+    "actions": {
+      "addBuilding": "+ Building",
+      "addLevel": "+ Level",
+      "addArea": "+ Area",
+      "addRecipe": "+ Recipe",
+      "addLayout": "+ Layout",
+      "addGroup": "+ Group",
+      "duplicate": "Duplicate",
+      "delete": "Delete",
+      "resolvePlacements": "Re-solve placements",
+      "checkScopeBoxes": "Check scope boxes",
+      "readoptExtents": "Re-adopt extents"
+    },
+
+    // Footer status. {0} = zones, {1} = layouts, {2} = placements
+    "status": "{0} zones · {1} layouts · {2} placements · saved in the model",
+    "statusUnsaved": "{0} zones · {1} layouts · {2} placements · unsaved changes",
+
+    "area": {
+      "section": "Area",
+      "name": "Name",
+      "code": "Code",
+      "definition": "Defined by",
+      "scopeBox": "Scope box",
+      "extents": "Extents",
+      "anchor": "Anchor",
+      "anchorMode": "Anchor mode",
+      "appliesTo": "Appears on levels",
+      // {0} width ft, {1} depth ft
+      "extentsValue": "{0}' × {1}'",
+      "extentsUnresolved": "not resolved yet",
+      // Explains why the anchor mode is offered separately from the definition.
+      "anchorNote": "A grid intersection does not move when extents change, so placements built from it stay put. The extents centre moves with the box."
+    },
+
+    "recipe": {
+      "section": "View recipe",
+      "name": "Name",
+      "kind": "View type",
+      "familyType": "View family type",
+      "template": "View template",
+      "scaleMode": "Scale",
+      "scale": "Fixed scale",
+      "viewRange": "View range",
+      "namePattern": "View name",
+      "duplicateMode": "Second sheet size",
+      "top": "Top",
+      "cut": "Cut plane",
+      "bottom": "Bottom",
+      "depth": "View depth",
+      // Why a distinguishing token matters across sheet sizes.
+      "patternNote": "Include {SheetSize} when generating for more than one sheet size — a view can sit on only one sheet, so each size needs its own view and its own name."
+    },
+
+    "layout": {
+      "section": "Sheet",
+      "name": "Name",
+      "titleBlock": "Title block",
+      "margins": "Margins (L/R/T/B)",
+      "drawingArea": "Drawing area",
+      "composition": "Arrangement",
+      "gap": "Gap",
+      "groups": "Groups — one sheet each",
+      "placements": "Placements",
+      "continuous": "Continuous",
+      "packed": "Packed",
+      // {0} = measured or estimated
+      "drawingAreaMeasured": "{0}\" × {1}\" — measured from sheet {2}",
+      "drawingAreaDeclared": "{0}\" × {1}\" — from the title block's declared size",
+      "drawingAreaUnknown": "could not be determined",
+      "compositionNote": "Continuous holds every view in the group at one shared scale and its true world offset — so a matchline meets exactly and views cannot overlap. Packed inserts a paper gap instead.",
+      // {0} = scale label, {1} = slack in inches
+      "groupFits": "fits · {0}\" slack",
+      "groupOverflows": "does not fit",
+      "placementSolved": "solved",
+      // {0} = sheet number
+      "placementCaptured": "captured · {0}",
+      "placementNone": "not placed yet",
+      // {0} world X, {1} world Y, {2} sheet X in, {3} sheet Y in
+      "placementValue": "world {0}, {1} → sheet {2}\", {3}\""
+    }
+  },
+
+  "log": {
+    // Run-log lines. Every one is user-facing output, so none are hardcoded.
+    // {0} = area name, {1} = box name
+    "boxMissing": "Area '{0}': scope box '{1}' is not in this document — the area is left in place but cannot be used until it is re-pointed.",
+    // {0} = area, {1} = box, {2} = drift ft
+    "boxResized": "Area '{0}': scope box '{1}' has been resized since it was adopted (largest edge difference {2}').",
+    "boxResizedPlaced": " Sheet placements already exist for this area, so re-adopting will move where its views land.",
+    // {0} matched, {1} resized, {2} missing, {3} total
+    "boxSummary": "Scope box check: {0} unchanged, {1} resized, {2} missing across {3} area(s).",
+    "noBoxes": "No scope boxes found in this document.",
+    "noTitleBlocks": "No title block types found in this document.",
+    // {0} = title block name
+    "titleBlockNoSize": "Title block '{0}' does not declare a sheet size — placements for it must be measured from a real sheet.",
+    // {0} = layout name
+    "noDrawingArea": "Layout '{0}': could not determine a drawing area. Placements for it cannot be solved.",
+    "areaEstimated": "Layout '{0}': drawing area estimated from the title block's declared size — no placed sheet was available to measure.",
+    // {0} = layout, {1} = group, {2} = scale, {3} = short X in, {4} = short Y in
+    "groupOverflow": "Layout '{0}', group '{1}': the areas do not fit the drawing area even at {2} (short by {3}\" × {4}\").",
+    // {0} = layout, {1} = group, {2} = area A, {3} = area B, {4} = w in, {5} = h in
+    "groupOverlap": "Layout '{0}', group '{1}': '{2}' and '{3}' overlap by {4}\" × {5}\" on the sheet.",
+    // {0} = area name
+    "noExtents": "Area '{0}': no extents resolved yet — it cannot be placed. Adopt or solve its extents first.",
+    // {0} = area, {1} = sheet number
+    "keptCaptured": "Area '{0}': keeping the placement captured from sheet {1} rather than replacing it with a solved one.",
+    // {0} solved, {1} kept, {2} skipped, {3} overflowing
+    "solveSummary": "Layout '{0}': {1} placement(s) solved, {2} captured one(s) kept, {3} skipped, {4} group(s) overflowing.",
+    // {0} = area, {1} = sheet, {2} = scale label
+    "captured": "Captured the placement of '{0}' from sheet {1} at {2}.",
+    // {0} = view name, {1} = plane label, {2} = reason
+    "viewRangeBadLevel": "'{0}': {1} references a level that does not exist here ({2}). The view range was NOT changed.",
+    "viewRangeInvalid": "'{0}': the recipe's view range is not valid ({1}). The view range was NOT changed.",
+    "viewRangeRefused": "'{0}': Revit refused the view range.",
+    // {0} = view name
+    "viewRangeUnvalidated": "'{0}': could not validate the view range; applying it anyway.",
+    // {0} = view name, {1} = view scale label, {2} = placement scale label
+    "scaleMismatch": "'{0}' is at {1} but its placement was authored at {2}. It will register on the stored anchor, but the drawing will not be the size the placement assumed.",
+    // {0} = layout, {1..4} = sizes
+    "titleBlockChanged": "Layout '{0}': the title block is now {1}\" × {2}\" but placements were stored against {3}\" × {4}\". Stored placements will not land where they did before.",
+    // Name-collision pre-check. {0} = the duplicated name, {1} = how many want it.
+    "nameCollision": "{1} views would be named '{0}'. A view name must be unique in Revit — add {{SheetSize}} to the pattern so each sheet size gets its own name.",
+    "nameCollisionAbort": "Nothing was created: {0} name collision(s) would have failed mid-run."
+  }
+}
