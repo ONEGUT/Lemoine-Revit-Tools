@@ -272,31 +272,31 @@ namespace LemoineTools.Tools.Zones
             bool filled = false;
             if (fillId != ElementId.InvalidElementId && area.HasExtents)
             {
+                // NOTE: FilledRegion.IsRegionCreationEnabledInView EXISTS on the type but is
+                // marked `assembly` (internal) in RevitAPI.dll, so it cannot be called from
+                // here. There is no public pre-check, so this attempts the create and reports
+                // the refusal — which is the honest shape anyway: a view that rejects filled
+                // regions tells us so by refusing.
                 try
                 {
-                    if (FilledRegion.IsRegionCreationEnabledInView(legend))
-                    {
-                        var loop = new CurveLoop();
-                        var p1 = Shift(area.MinX, area.MinY);
-                        var p2 = Shift(area.MaxX, area.MinY);
-                        var p3 = Shift(area.MaxX, area.MaxY);
-                        var p4 = Shift(area.MinX, area.MaxY);
-                        loop.Append(Line.CreateBound(p1, p2));
-                        loop.Append(Line.CreateBound(p2, p3));
-                        loop.Append(Line.CreateBound(p3, p4));
-                        loop.Append(Line.CreateBound(p4, p1));
+                    var loop = new CurveLoop();
+                    var p1 = Shift(area.MinX, area.MinY);
+                    var p2 = Shift(area.MaxX, area.MinY);
+                    var p3 = Shift(area.MaxX, area.MaxY);
+                    var p4 = Shift(area.MinX, area.MaxY);
+                    loop.Append(Line.CreateBound(p1, p2));
+                    loop.Append(Line.CreateBound(p2, p3));
+                    loop.Append(Line.CreateBound(p3, p4));
+                    loop.Append(Line.CreateBound(p4, p1));
 
-                        FilledRegion.Create(doc, fillId, legend.Id, new List<CurveLoop> { loop });
-                        filled = true;
-                    }
-                    else
-                    {
-                        Log($"'{name}': this legend does not allow filled regions — the area is not highlighted.", "warn");
-                    }
+                    FilledRegion.Create(doc, fillId, legend.Id, new List<CurveLoop> { loop });
+                    filled = true;
                 }
                 catch (Exception ex)
                 {
-                    Log($"'{name}': the highlight could not be drawn — {ex.Message}", "warn");
+                    Log($"'{name}': the area highlight could not be drawn — {ex.Message}. " +
+                        "The outline is still there; a legend that refuses filled regions needs " +
+                        "the highlight drawn by hand.", "warn");
                     DiagnosticsLog.Swallowed($"ZoneKeyPlan: filled region on '{name}'", ex);
                 }
             }
