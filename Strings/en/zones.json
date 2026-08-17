@@ -263,6 +263,42 @@
     }
   },
 
+  "keyplan": {
+    // Key Plans from Zones — one locator legend per area.
+    "title": "Key Plans from Zones",
+    "runLabel": "Create the key plans →",
+
+    "steps": {
+      "S1": "Source",
+      "S2": "Areas",
+      "S3": "Review"
+    },
+
+    "seedHint": "Pick a legend to duplicate. Revit has no API to create a legend, so each key plan starts as a copy of one that already exists — the same reason the Scope Box Creator needs a seed box.",
+    "noLegends": "This project has no legend views. Create one legend by hand first, then run this.",
+    "noSeedPicked": "No seed legend picked",
+    "sourceHint": "Which model supplies the slab edges. The architectural link is the usual source.",
+    "hostDoc": "(host document)",
+    "levelHint": "Which level's slab becomes the outline.",
+    "noLevels": "This project has no zone levels yet.",
+    "noAreas": "This project has no zone areas yet.",
+    "noHandler": "The key plan run handler is unavailable.",
+
+    // {0} = number of key plans
+    "plannedCount": "{0} key plan(s) will be created.",
+    // {0} = comma-separated area names
+    "noExtentsWarn": "These areas have no resolved extents, so nothing will be highlighted on their key plans: {0}.",
+
+    "reviewNote": "Each key plan is a legend, so one per area can be placed on every sheet that documents that area.",
+
+    "summary": {
+      // {0} = seed legend name, {1} = level name
+      "source": "from '{0}', outline on {1}",
+      // {0} = area count
+      "areas": "{0} area(s)"
+    }
+  },
+
   "log": {
     // Run-log lines. Every one is user-facing output, so none are hardcoded.
     // {0} = area name, {1} = box name

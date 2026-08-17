@@ -1,6 +1,7 @@
 # Plan — Project Zones ("view templates for 3D space")
 
-**Status:** proposal, awaiting approval. No code written yet.
+**Status:** Part A complete. Part B: the two generators (views, sheets) built; the remaining
+tool integrations deliberately deferred until a Revit run — see §9.2. Part C complete.
 **Branch:** `claude/revit-3d-view-templates-wwq3sk` (base TBC — see §12).
 
 **Decisions taken** (§12): concept is **Zone**; structure is the **Areas × Levels matrix**;
@@ -558,7 +559,15 @@ would find nothing and report every sheet as empty, so there is one function, no
 
 ---
 
-## 9.4 Part C — Key plans from zones (build LAST)
+## 9.4 Part C — Key plans from zones — BUILT
+
+**One constraint found while building it, which shapes the whole tool:** there is no
+legend-creation API at all. `ViewLegend` does not exist as a type and nothing on
+`Document.Create` makes one — a legend can only be produced by **duplicating an existing
+legend**. So the tool takes a seed legend the user picks, exactly as the Scope Box Creator
+takes a seed scope box for the same reason. A drafting view is creatable but can sit on only
+one sheet, which defeats the point.
+
 
 A key plan is the small locator diagram on each sheet: the building outline with *this* sheet's
 area highlighted. Zones already hold everything it needs — every area's exact extents, which
