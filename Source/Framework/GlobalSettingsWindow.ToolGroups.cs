@@ -144,6 +144,29 @@ namespace LemoineTools.Framework
                 body.Children.Add(ulToggles);
             }));
 
+            // ── Replace Link ──────────────────────────────────────────────────
+            var rl = ReplaceLinkSettings.Instance;
+            panel.Children.Add(ToolSection.Build(AppStrings.T("globalSettings.groups.replaceLinkSub"), body =>
+            {
+                // No position default: Replace Link always re-seats the new model onto the
+                // old link's captured Survey Point / Project Base Point. It is the tool's
+                // defining behaviour, not a preference.
+                AddGroupNote(body, AppStrings.T("globalSettings.groups.replaceLinkPositionNote"));
+
+                var rlToggles = new ToggleSwitches();
+                rlToggles.SetItems(new List<ToggleItem>
+                {
+                    new ToggleItem { Id = "backup", Label = AppStrings.T("globalSettings.groups.backupOriginal"),
+                                     Desc = AppStrings.T("globalSettings.groups.backupOriginalDesc"), DefaultOn = rl.BackupOriginal },
+                });
+                rlToggles.StateChanged += state =>
+                {
+                    if (state.TryGetValue("backup", out var b)) rl.BackupOriginal = b;
+                    rl.Save();
+                };
+                body.Children.Add(rlToggles);
+            }));
+
             return scroll;
         }
 
