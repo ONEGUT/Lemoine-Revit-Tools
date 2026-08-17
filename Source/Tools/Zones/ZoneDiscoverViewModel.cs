@@ -368,6 +368,20 @@ namespace LemoineTools.Tools.Zones
         /// </summary>
         public string? ReviewNote => AppStrings.T("zones.discover.reviewNote");
 
+        /// <summary>
+        /// Re-adopting an area's extents moves where its views land on a sheet, so an accepted
+        /// Update is the one proposal worth stopping on.
+        /// </summary>
+        public string? ReviewWarning
+        {
+            get
+            {
+                if (_result == null) return null;
+                int updates = _result.Areas.Count(a => a.Accepted && a.Action == ZoneProposalAction.Update);
+                return updates > 0 ? AppStrings.T("zones.discover.updateWarning", updates) : null;
+            }
+        }
+
         public void Run(Action<string, string> pushLog,
                         Action<int, int, int, int> onProgress,
                         Action<int, int, int> onComplete)

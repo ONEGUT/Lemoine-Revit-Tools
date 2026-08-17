@@ -192,6 +192,26 @@ namespace LemoineTools.Tools.Zones
         public IList<string>? ReviewChips => null;
         public string? ReviewNote => AppStrings.T("zones.sheets.reviewNote");
 
+        /// <summary>
+        /// Without a stored placement Revit centres the view wherever it likes: the sheet looks
+        /// plausible and is not to standard, which is exactly the failure worth a banner.
+        /// </summary>
+        public string? ReviewWarning
+        {
+            get
+            {
+                int missing = 0;
+                foreach (var lay in Lib.Layouts.Where(l => _layoutIds.Contains(l.Id)))
+                foreach (var g in lay.Groups ?? new List<ZoneSheetGroup>())
+                foreach (var aid in g.AreaIds ?? new List<string>())
+                {
+                    string key = (g.AreaIds!.Count > 1) ? g.Id : "";
+                    if (Lib.Placement(aid, lay.TitleBlockTypeName, key) == null) missing++;
+                }
+                return missing > 0 ? AppStrings.T("zones.sheets.noPlacementWarn", missing) : null;
+            }
+        }
+
         public void Run(Action<string, string> pushLog,
                         Action<int, int, int, int> onProgress,
                         Action<int, int, int> onComplete)

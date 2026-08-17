@@ -8,6 +8,9 @@ using Autodesk.Revit.UI;
 using LemoineTools.Framework;
 using LemoineTools.Framework.Zones;
 
+// Autodesk.Revit.UI also defines ComboBox, so the WPF one is aliased (CLAUDE.md).
+using WpfComboBox = System.Windows.Controls.ComboBox;
+
 namespace LemoineTools.Tools.Zones
 {
     /// <summary>
@@ -211,6 +214,20 @@ namespace LemoineTools.Tools.Zones
         public IList<string>? ReviewChips => null;
         public string? ReviewNote => AppStrings.T("zones.keyplan.reviewNote");
 
+        /// <summary>An area with no extents produces a key plan with nothing highlighted.</summary>
+        public string? ReviewWarning
+        {
+            get
+            {
+                var noExtents = _areaIds.Select(id => Lib.Area(id))
+                                        .Where(a => a != null && !a.HasExtents)
+                                        .Select(a => a!.Name).ToList();
+                return noExtents.Count > 0
+                    ? AppStrings.T("zones.keyplan.noExtentsWarn", string.Join(", ", noExtents))
+                    : null;
+            }
+        }
+
         public void Run(Action<string, string> pushLog,
                         Action<int, int, int, int> onProgress,
                         Action<int, int, int> onComplete)
@@ -232,16 +249,16 @@ namespace LemoineTools.Tools.Zones
             _event.Raise();
         }
 
-        private static ComboBox Combo(List<string> options, string current, Action<string> onChange)
+        private static WpfComboBox Combo(List<string> options, string current, Action<string> onChange)
         {
-            var c = new ComboBox
+            var c = new WpfComboBox
             {
                 Margin = new Thickness(0, 2, 0, 8),
                 MaxWidth = 320,
                 HorizontalAlignment = HorizontalAlignment.Left,
                 VerticalContentAlignment = VerticalAlignment.Center,
             };
-            c.SetResourceReference(ComboBox.FontSizeProperty, "LemoineFS_SM");
+            c.SetResourceReference(WpfComboBox.FontSizeProperty, "LemoineFS_SM");
             foreach (var o in options) c.Items.Add(o);
             c.SelectedItem = options.Contains(current) ? current : options.FirstOrDefault();
             c.SelectionChanged += (s, e) =>

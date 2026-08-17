@@ -183,6 +183,8 @@
 
     // Stated on the review card because it is the thing to fear from a scan.
     "reviewNote": "Discover only adds and updates. It never deletes a zone, so anything authored by hand is safe.",
+    // Banner shown when accepted proposals would re-adopt extents. {0} = count
+    "updateWarning": "{0} accepted proposal(s) will re-adopt an existing area's extents. If that area already has sheet placements, its views will move — re-solve placements afterwards.",
 
     "summary": {
       // {0} = number of source documents

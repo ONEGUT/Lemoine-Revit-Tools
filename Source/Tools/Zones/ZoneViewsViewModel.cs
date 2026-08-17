@@ -8,6 +8,9 @@ using LemoineTools.Framework;
 using LemoineTools.Framework.Controls;
 using LemoineTools.Framework.Zones;
 
+// Autodesk.Revit.UI also defines ComboBox, so the WPF one is aliased (CLAUDE.md).
+using WpfComboBox = System.Windows.Controls.ComboBox;
+
 namespace LemoineTools.Tools.Zones
 {
     /// <summary>
@@ -142,8 +145,8 @@ namespace LemoineTools.Tools.Zones
                 var options = new List<string> { AppStrings.T("zones.views.noLayout") };
                 options.AddRange(Lib.Layouts.Select(l => l.Name));
 
-                var combo = new ComboBox { Margin = new Thickness(0, 4, 0, 0), MaxWidth = 260, HorizontalAlignment = HorizontalAlignment.Left };
-                combo.SetResourceReference(ComboBox.FontSizeProperty, "LemoineFS_SM");
+                var combo = new WpfComboBox { Margin = new Thickness(0, 4, 0, 0), MaxWidth = 260, HorizontalAlignment = HorizontalAlignment.Left };
+                combo.SetResourceReference(WpfComboBox.FontSizeProperty, "LemoineFS_SM");
                 foreach (var o in options) combo.Items.Add(o);
                 combo.SelectedIndex = 0;
                 combo.SelectionChanged += (s, e) =>
@@ -224,6 +227,24 @@ namespace LemoineTools.Tools.Zones
 
         public IList<string>? ReviewChips => null;
         public string? ReviewNote => AppStrings.T("zones.views.reviewNote");
+
+        /// <summary>
+        /// Generating for a sheet size with a name pattern that does not vary by layout is the
+        /// one way this run fails wholesale, so it is the banner rather than a note.
+        /// </summary>
+        public string? ReviewWarning
+        {
+            get
+            {
+                if (string.IsNullOrEmpty(_layoutId)) return null;
+                var risky = Lib.Recipes
+                    .Where(r => _recipeIds.Contains(r.Id) && !ZoneNamingTokens.VariesByLayout(r.NamePattern))
+                    .Select(r => r.Name).ToList();
+                return risky.Count > 0
+                    ? AppStrings.T("zones.views.patternWarn", string.Join(", ", risky))
+                    : null;
+            }
+        }
 
         public void Run(Action<string, string> pushLog,
                         Action<int, int, int, int> onProgress,
