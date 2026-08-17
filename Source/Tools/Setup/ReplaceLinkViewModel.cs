@@ -54,6 +54,13 @@ namespace LemoineTools.Tools.Setup
         private bool   _scanning;
         private string? _scanError;
 
+        // True while RebuildLinksTable is constructing rows. SingleSelect.Items AUTO-SELECTS
+        // index 0 as a side effect of its setter, which raises SelectionChanged — so every row
+        // rebuild would otherwise re-enter RebuildLinksTable from inside the control it is busy
+        // creating (infinite recursion), and a row's model would be rewritten by a selection the
+        // user never made. The handler ignores events while this is set.
+        private bool   _buildingRows;
+
         // Live UI handles
         private StackPanel? _linksContainer, _destContainer, _posContainer;
         private Dispatcher? _disp;
@@ -115,6 +122,14 @@ namespace LemoineTools.Tools.Setup
         private List<HostLinkInfo> Replaceable => _hostLinks.Where(l => l.Replaceable).ToList();
 
         private void RebuildLinksTable()
+        {
+            if (_linksContainer == null) return;
+            _buildingRows = true;
+            try { RebuildLinksTableCore(); }
+            finally { _buildingRows = false; }
+        }
+
+        private void RebuildLinksTableCore()
         {
             if (_linksContainer == null) return;
             _linksContainer.Children.Clear();
@@ -220,11 +235,27 @@ namespace LemoineTools.Tools.Setup
             top.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             top.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
+            // A "choose…" entry occupies index 0 so the Items setter's forced auto-select lands
+            // on a non-choice instead of silently adopting the first real link. Without it the
+            // combo SHOWS a link the row never recorded — and that first link can then never be
+            // picked, because selecting the already-selected value raises no event.
+            string placeholder = AppStrings.T("replaceLink.labels.pickLink");
             var linkPick = new SingleSelect();
-            linkPick.Items = replaceable.Select(LinkLabel).ToList();
-            linkPick.SelectedItem = row.TypeId != 0 ? LinkLabelFor(row.TypeId, replaceable) : null;
+            // Subscribed BEFORE Items: the setter raises SelectionChanged itself, and that event
+            // is the only signal for it. _buildingRows keeps it from re-entering the rebuild.
             linkPick.SelectionChanged += sel =>
             {
+                if (_buildingRows) return;
+
+                if (string.Equals(sel, placeholder, StringComparison.Ordinal))
+                {
+                    // Back to "nothing picked" — clear the row rather than leaving a stale link.
+                    row.TypeId = 0; row.LinkName = ""; row.LinkPath = "";
+                    RebuildLinksTable();
+                    Changed();
+                    return;
+                }
+
                 var hit = replaceable.FirstOrDefault(l => string.Equals(LinkLabel(l), sel, StringComparison.Ordinal));
                 if (hit == null) return;
                 row.TypeId   = hit.TypeId;
@@ -237,6 +268,10 @@ namespace LemoineTools.Tools.Setup
                 RebuildLinksTable();
                 Changed();
             };
+            var pickItems = new List<string> { placeholder };
+            pickItems.AddRange(replaceable.Select(LinkLabel));
+            linkPick.Items = pickItems;
+            linkPick.SelectedItem = row.TypeId != 0 ? LinkLabelFor(row.TypeId, replaceable) : placeholder;
             Grid.SetColumn(linkPick, 0);
             top.Children.Add(linkPick);
 
@@ -297,6 +332,13 @@ namespace LemoineTools.Tools.Setup
                 }
                 content.Children.Add(meta);
             }
+
+            // Name what this row is still missing. The step-level "Required" banner alone can't
+            // say which half is unanswered, which reads as the tool ignoring a made choice.
+            if (row.TypeId == 0)
+                content.Children.Add(Warn(AppStrings.T("replaceLink.labels.needLink")));
+            else if (string.IsNullOrEmpty(row.NewFilePath))
+                content.Children.Add(Warn(AppStrings.T("replaceLink.labels.needFile")));
 
             // Save-as name — only meaningful for the two non-overwrite destinations.
             if (_dest != ReplaceDestination.OverwriteLinkedFile && row.TypeId != 0)

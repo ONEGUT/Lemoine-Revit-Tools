@@ -29,6 +29,8 @@
     "addRow":        "＋ Add replacement",
     "clearList":     "Clear list",
     "pickLink":      "Choose a link…",
+    "needLink":      "Pick which link this row replaces.",
+    "needFile":      "Pick the replacement file for this link.",
     "replaceWith":   "↓ replace with",
     "browse":        "Browse…",
     "pickFile":      "Choose a Revit file…",
