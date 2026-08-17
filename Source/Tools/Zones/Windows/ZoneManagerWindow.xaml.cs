@@ -489,14 +489,30 @@ namespace LemoineTools.Tools.Zones.Windows
             _detailStack.Children.Add(WrapCard(comp));
 
             var grp = MakeCard(AppStrings.T("zones.manager.layout.groups"));
-            foreach (var g in y.Groups.OrderBy(g => g.SortIndex))
+            foreach (var g in y.Groups.OrderBy(g => g.SortIndex).ToList())
+                grp.Children.Add(BuildGroupCard(y, g));
+
+            if (y.Groups.Count == 0) grp.Children.Add(MakeNote(AppStrings.T("zones.manager.layout.noGroups")));
+
+            var addRow = new StackPanel
             {
-                string names = string.Join(" + ", g.AreaIds.Select(id => Lib.Area(id)?.Name ?? "?"));
-                grp.Children.Add(MakeReadOnlyField(
-                    string.IsNullOrEmpty(g.Suffix) ? names : $"{g.Suffix} · {names}",
-                    g.ScaleOverride > 0 ? ZoneScaleFit.Label(g.ScaleOverride) : AppStrings.T("zones.manager.layout.placementNone")));
-            }
-            if (y.Groups.Count == 0) grp.Children.Add(MakeNote(AppStrings.T("zones.picker.emptyLibrary")));
+                Orientation = System.Windows.Controls.Orientation.Horizontal,
+                Margin = new Thickness(0, 8, 0, 0),
+            };
+            addRow.Children.Add(MakeButton(AppStrings.T("zones.manager.actions.addGroup"),
+                                           () => AddGroup(y), accent: true));
+            grp.Children.Add(addRow);
+
+            // Areas with no group at this sheet size will simply never be generated for it.
+            // That is silent by nature, so it is stated rather than left to be discovered.
+            var loose = Lib.Areas
+                .Where(a => a != null && Lib.GroupFor(y, a.Id) == null)
+                .Select(a => a.Name)
+                .ToList();
+            if (loose.Count > 0)
+                grp.Children.Add(MakeWarn(AppStrings.T("zones.manager.layout.unassigned",
+                                                       loose.Count, string.Join(", ", loose))));
+
             _detailStack.Children.Add(WrapCard(grp));
         }
 
@@ -634,6 +650,319 @@ namespace LemoineTools.Tools.Zones.Windows
         private void UpdateStatus()
             => _statusText.Text = AppStrings.T("zones.manager.status",
                                                Lib.Areas.Count, Lib.Layouts.Count, Lib.Placements.Count);
+
+        // ── Group editing ─────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Solves one group live, so the fit and matchline verdicts shown next to it are the
+        /// real solver's answer rather than a guess.
+        ///
+        /// Uses the title block's DECLARED size: this window has no document, so it cannot
+        /// measure a placed sheet. That is an estimate, and the layout card says so.
+        /// Returns null when the group cannot be solved at all (no title block, no extents).
+        /// </summary>
+        private ZoneGroupSolver.Result? SolveGroupPreview(ZoneSheetLayout layout, ZoneSheetGroup group)
+        {
+            if (layout == null || group == null) return null;
+            var tb = _titleBlocks.FirstOrDefault(t => t.Name == layout.TitleBlockTypeName);
+            if (tb == null || !tb.HasSize) return null;
+
+            var inputs = new List<ZoneGroupSolver.AreaInput>();
+            foreach (var id in group.AreaIds ?? new List<string>())
+            {
+                var a = Lib.Area(id);
+                if (a == null || !a.HasExtents) continue;
+                inputs.Add(new ZoneGroupSolver.AreaInput
+                {
+                    AreaId = a.Id, Label = a.Name,
+                    MinX = a.MinX, MinY = a.MinY, MaxX = a.MaxX, MaxY = a.MaxY,
+                    AnchorX = a.HasAnchor ? a.AnchorX : (a.MinX + a.MaxX) / 2.0,
+                    AnchorY = a.HasAnchor ? a.AnchorY : (a.MinY + a.MaxY) / 2.0,
+                });
+            }
+            if (inputs.Count == 0) return null;
+
+            var area = ZoneGroupSolver.DrawingArea.FromSize(
+                tb.WidthFt, tb.HeightFt,
+                layout.MarginLeftFt, layout.MarginRightFt, layout.MarginBottomFt, layout.MarginTopFt);
+
+            return ZoneGroupSolver.Solve(inputs, area, layout.Composition,
+                                          layout.GapPaperFt, group.ScaleOverride);
+        }
+
+        private UIElement BuildGroupCard(ZoneSheetLayout layout, ZoneSheetGroup group)
+        {
+            var body = new StackPanel();
+
+            // ── Row 1: suffix · scale · verdict · delete ──────────────────────
+            var row1 = new StackPanel
+            {
+                Orientation = System.Windows.Controls.Orientation.Horizontal,
+                Margin = new Thickness(0, 0, 0, 7),
+            };
+
+            row1.Children.Add(SmallLabel(AppStrings.T("zones.manager.layout.suffix")));
+
+            var suffix = new WpfTextBox
+            {
+                Text = group.Suffix ?? "",
+                Width = 56,
+                VerticalContentAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(6, 0, 12, 0),
+            };
+            suffix.SetResourceReference(WpfTextBox.FontSizeProperty, "LemoineFS_SM");
+            suffix.TextChanged += (s, e) => group.Suffix = suffix.Text ?? "";
+            row1.Children.Add(suffix);
+
+            row1.Children.Add(SmallLabel(AppStrings.T("zones.manager.layout.scale")));
+
+            // "Auto" plus the standard ladder. Stored as an int, 0 meaning solve it.
+            var scaleOptions = new List<string> { AppStrings.T("zones.manager.layout.scaleAuto") };
+            scaleOptions.AddRange(ZoneScaleFit.DefaultLadder.Select(ZoneScaleFit.Label));
+            string currentScale = group.ScaleOverride > 0
+                ? ZoneScaleFit.Label(group.ScaleOverride)
+                : scaleOptions[0];
+
+            var scaleCombo = MakeCombo(scaleOptions.ToArray(), currentScale, v =>
+            {
+                if (string.Equals(v, scaleOptions[0], StringComparison.Ordinal))
+                {
+                    group.ScaleOverride = 0;
+                }
+                else
+                {
+                    int match = ZoneScaleFit.DefaultLadder.FirstOrDefault(d => ZoneScaleFit.Label(d) == v);
+                    group.ScaleOverride = match;
+                }
+                RebuildDetail();
+            });
+            scaleCombo.Width = 150;
+            scaleCombo.Margin = new Thickness(6, 0, 12, 0);
+            row1.Children.Add(scaleCombo);
+
+            var solved = SolveGroupPreview(layout, group);
+            if (solved != null)
+            {
+                row1.Children.Add(Chip(ZoneScaleFit.Label(solved.Scale), "LemoineTextDim", "LemoineBorder"));
+                row1.Children.Add(solved.Fits
+                    ? Chip(AppStrings.T("zones.manager.layout.groupFits",
+                                        $"{Math.Min(solved.SlackXFt, solved.SlackYFt) * 12:0.#}"),
+                           "LemoineGreen", "LemoineGreen")
+                    : Chip(AppStrings.T("zones.manager.layout.groupOverflows"), "LemoineRed", "LemoineRed"));
+            }
+            else
+            {
+                row1.Children.Add(Chip(AppStrings.T("zones.manager.layout.cannotSolve"),
+                                       "LemoineTextDim", "LemoineBorder"));
+            }
+
+            var del = MakeButton(AppStrings.T("zones.manager.actions.deleteGroup"), () =>
+            {
+                layout.Groups.Remove(group);
+                // Placements keyed to this group are meaningless without it, so they go too —
+                // leaving them would silently reserve sheet positions for a group that is gone.
+                Lib.Placements.RemoveAll(p => string.Equals(p.GroupId, group.Id, StringComparison.Ordinal));
+                Rebuild();
+            });
+            del.Margin = new Thickness(12, 0, 0, 0);
+            row1.Children.Add(del);
+
+            body.Children.Add(row1);
+
+            // ── Row 2: the areas on this sheet ────────────────────────────────
+            var row2 = new StackPanel
+            {
+                Orientation = System.Windows.Controls.Orientation.Horizontal,
+                Margin = new Thickness(0, 0, 0, 4),
+            };
+            row2.Children.Add(SmallLabel(AppStrings.T("zones.manager.layout.areas")));
+
+            var chips = new WrapPanel { Margin = new Thickness(6, 0, 0, 0) };
+            foreach (var id in (group.AreaIds ?? new List<string>()).ToList())
+            {
+                var a = Lib.Area(id);
+                string label = a?.Name ?? AppStrings.T("zones.manager.layout.missingArea");
+                chips.Children.Add(AreaChip(label, () =>
+                {
+                    group.AreaIds.Remove(id);
+                    Lib.Placements.RemoveAll(p =>
+                        string.Equals(p.AreaId, id, StringComparison.Ordinal) &&
+                        string.Equals(p.GroupId, group.Id, StringComparison.Ordinal));
+                    RebuildDetail();
+                }));
+            }
+
+            // Only areas not already on this sheet are offered — an area cannot be in two
+            // groups of the same layout without its placement key becoming ambiguous.
+            var available = Lib.Areas
+                .Where(a => a != null && Lib.GroupFor(layout, a.Id) == null)
+                .OrderBy(a => a.Name, NaturalOrderComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (available.Count > 0)
+            {
+                var addOptions = new List<string> { AppStrings.T("zones.manager.layout.addArea") };
+                addOptions.AddRange(available.Select(a => a.Name));
+
+                var addCombo = MakeCombo(addOptions.ToArray(), addOptions[0], v =>
+                {
+                    if (string.Equals(v, addOptions[0], StringComparison.Ordinal)) return;
+                    var pick = available.FirstOrDefault(a => a.Name == v);
+                    if (pick == null) return;
+                    if (group.AreaIds == null) group.AreaIds = new List<string>();
+                    group.AreaIds.Add(pick.Id);
+                    RebuildDetail();
+                });
+                addCombo.MinWidth = 120;
+                addCombo.Margin = new Thickness(4, 2, 0, 2);
+                chips.Children.Add(addCombo);
+            }
+
+            row2.Children.Add(chips);
+            body.Children.Add(row2);
+
+            // ── Verdict detail: overlaps and overflow, in words ───────────────
+            if (solved != null)
+            {
+                foreach (var o in solved.Overlaps)
+                    body.Children.Add(MakeWarn(AppStrings.T("zones.manager.layout.overlapWarn",
+                        o.LabelA, o.LabelB,
+                        $"{o.OverlapWidthFt * 12:0.#}", $"{o.OverlapHeightFt * 12:0.#}")));
+
+                if (!solved.Fits)
+                    body.Children.Add(MakeWarn(AppStrings.T("zones.manager.layout.overflowWarn",
+                        $"{Math.Max(0, -solved.SlackXFt) * 12:0.#}",
+                        $"{Math.Max(0, -solved.SlackYFt) * 12:0.#}",
+                        ZoneScaleFit.Label(solved.Scale))));
+
+                // Continuous composition guarantees matchline continuity when nothing overlaps,
+                // and that guarantee is the reason to use it — so it is stated, not assumed.
+                if (solved.Overlaps.Count == 0 && solved.Items.Count > 1 &&
+                    layout.Composition == ZoneComposition.Continuous)
+                    body.Children.Add(MakeOk(AppStrings.T("zones.manager.layout.matchlineOk")));
+            }
+
+            var card = new Border
+            {
+                CornerRadius = new CornerRadius(6),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(11, 9, 11, 9),
+                Margin = new Thickness(0, 0, 0, 7),
+                Child = body,
+            };
+            card.SetResourceReference(Border.BackgroundProperty,  "LemoineBg");
+            card.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            return card;
+        }
+
+        private void AddGroup(ZoneSheetLayout layout)
+        {
+            if (layout.Groups == null) layout.Groups = new List<ZoneSheetGroup>();
+            layout.Groups.Add(new ZoneSheetGroup
+            {
+                Id = ZoneId.New(),
+                SortIndex = layout.Groups.Count,
+            });
+            Rebuild();
+        }
+
+        private TextBlock SmallLabel(string text)
+        {
+            var t = new TextBlock { Text = text, VerticalAlignment = VerticalAlignment.Center };
+            t.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextSub");
+            t.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            return t;
+        }
+
+        private Border Chip(string text, string fgKey, string borderKey)
+        {
+            var b = new Border
+            {
+                CornerRadius = new CornerRadius(3),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(7, 2, 7, 2),
+                Margin = new Thickness(0, 0, 6, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+                Background = Brushes.Transparent,
+            };
+            b.SetResourceReference(Border.BorderBrushProperty, borderKey);
+            var t = new TextBlock { Text = text, Background = Brushes.Transparent };
+            t.SetResourceReference(TextBlock.ForegroundProperty, fgKey);
+            t.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            b.Child = t;
+            return b;
+        }
+
+        /// <summary>An area chip with an inline remove affordance.</summary>
+        private Border AreaChip(string label, Action onRemove)
+        {
+            var sp = new StackPanel
+            {
+                Orientation = System.Windows.Controls.Orientation.Horizontal,
+                Background = Brushes.Transparent,
+            };
+
+            var t = new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center, Background = Brushes.Transparent };
+            t.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            t.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            sp.Children.Add(t);
+
+            var x = new TextBlock
+            {
+                // Codepoint, not a literal glyph or a \uXXXX escape — those break the Edit
+                // tool's exact-match (CLAUDE.md), so future edits to this file would fail.
+                Text = char.ConvertFromUtf32(0x2715),   // ✕
+                Margin = new Thickness(7, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+                Cursor = Cursors.Hand,
+                // A null background leaves only the glyph hit-testable; this makes the whole
+                // little box clickable.
+                Background = Brushes.Transparent,
+            };
+            x.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            x.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            x.MouseLeftButtonUp += (s, e) =>
+            {
+                try { onRemove(); }
+                catch (Exception ex) { DiagnosticsLog.Error("ZoneManagerWindow: remove area from group", ex); }
+                e.Handled = true;
+            };
+            sp.Children.Add(x);
+
+            var b = new Border
+            {
+                CornerRadius = new CornerRadius(3),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(9, 3, 6, 3),
+                Margin = new Thickness(0, 2, 5, 2),
+                Child = sp,
+            };
+            b.SetResourceReference(Border.BackgroundProperty,  "LemoineAccentDim");
+            b.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
+            return b;
+        }
+
+        private UIElement MakeWarn(string text)
+        {
+            var t = new TextBlock
+            {
+                Text = text, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 5, 0, 0),
+            };
+            t.SetResourceReference(TextBlock.ForegroundProperty, "LemoineRed");
+            t.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            return t;
+        }
+
+        private UIElement MakeOk(string text)
+        {
+            var t = new TextBlock
+            {
+                Text = text, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 5, 0, 0),
+            };
+            t.SetResourceReference(TextBlock.ForegroundProperty, "LemoineGreen");
+            t.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            return t;
+        }
 
         // ── Small builders ────────────────────────────────────────────────────
         private UIElement MakeGroupHeader(string text)

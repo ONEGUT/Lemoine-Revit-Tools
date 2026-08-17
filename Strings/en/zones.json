@@ -45,6 +45,7 @@
       "addRecipe": "+ Recipe",
       "addLayout": "+ Layout",
       "addGroup": "+ Group",
+      "deleteGroup": "Delete group",
       "duplicate": "Duplicate",
       "delete": "Delete",
       "resolvePlacements": "Re-solve placements",
@@ -116,6 +117,23 @@
       // {0} = sheet number
       "placementCaptured": "captured · {0}",
       "placementNone": "not placed yet",
+
+      // ── Group editor ──
+      "suffix": "Sheet suffix",
+      "scale": "Scale",
+      "scaleAuto": "Auto (fit)",
+      "areas": "Areas",
+      "addArea": "+ Add area",
+      "noGroups": "No groups yet. Add one, then put the areas that share a sheet into it.",
+      "cannotSolve": "cannot solve",
+      "missingArea": "(area deleted)",
+      // {0} = count, {1} = comma-separated names
+      "unassigned": "{0} area(s) are not on any sheet at this size: {1}. They will not be generated for this layout until they are added to a group.",
+      // {0} = area A, {1} = area B, {2} = overlap width in, {3} = overlap height in
+      "overlapWarn": "'{0}' and '{1}' overlap by {2}\" × {3}\" on the sheet. On Continuous composition that means the areas overlap in the model.",
+      // {0} = short X in, {1} = short Y in, {2} = scale label
+      "overflowWarn": "Short by {0}\" × {1}\" at {2}. Set the scale to Auto, or move an area to its own group.",
+      "matchlineOk": "Matchline exact — every area in this group shares one scale and sits at its true world offset, so their edges meet and nothing overlaps.",
       // {0} world X, {1} world Y, {2} sheet X in, {3} sheet Y in
       "placementValue": "world {0}, {1} → sheet {2}\", {3}\""
     }
