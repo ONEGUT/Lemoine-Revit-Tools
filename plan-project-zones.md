@@ -513,11 +513,18 @@ per-sheet-size layouts with composite groups, and solved placements — plus one
 
 ### 9.2 Tools that CONSUME zones
 
+**Status:** the flagship (**Bulk Views → By Zone**) is BUILT, shipped as its own tool
+*Create Views from Zones* under the Zones pulldown rather than as a sixth mode inside Bulk
+Views. Same behaviour, lower risk: the Bulk Views composite routes prefixed step ids across
+five inner tools, and folding a sixth in touches that routing, its command and its conditional
+step visibility. Merging it in remains worth doing and is now a self-contained refactor of
+working code rather than a prerequisite for output. Everything else below is still to build.
+
 Ordered by value:
 
 | Tool | Zone input | Payoff |
 |---|---|---|
-| **Bulk Views** | a 6th mode, "By Zone" | Flagship. Pick cells → get views with the right family type, template, scale, view range, crop, section box and name. The existing By-Level and By-Scope-Box modes are already 90% of this shape. |
+| **Bulk Views** ✅ | shipped standalone as *Create Views from Zones* | Flagship. Pick cells → get views with the right family type, template, scale, view range, crop, section box and name. The existing By-Level and By-Scope-Box modes are already 90% of this shape. |
 | **Place Dependent Views** | title block + scale + exact placement from the zone | Replaces packing with a known-correct position. |
 | **Align Sheet Views** | the zone's stored placement as target | See above. |
 | **Clash Finder / Clash Elevation Finder** | survey scoped to a zone's 3D box | "Run clash detection on Area 1, Level 3" — currently view-scoped only. High practical value. |

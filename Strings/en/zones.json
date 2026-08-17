@@ -192,6 +192,43 @@
     }
   },
 
+  "views": {
+    // Create Views from Zones — the first consumer of the zone library.
+    "title": "Create Views from Zones",
+    "runLabel": "Create the views →",
+
+    "steps": {
+      "S1": "Zones",
+      "S2": "View recipes",
+      "S3": "Review"
+    },
+
+    "noLibrary": "This project has no zones yet. Use Discover Zones or the Zone Manager first.",
+    "noRecipes": "No view recipes are defined. Add one in the Zone Manager.",
+    "noHandler": "The view run handler is unavailable.",
+
+    "layoutHint": "Optional — pick a sheet size to reuse the scale already solved into its placements. Without one, each recipe's own scale is used.",
+    "noLayout": "(no sheet size)",
+
+    // {0} = number of views the run intends to create
+    "plannedCount": "{0} view(s) will be created.",
+    // {0} = comma-separated recipe names
+    "patternWarn": "These recipes have no {{SheetSize}} token in their name pattern: {0}. That is fine for one sheet size, but generating a second would try to reuse the same view names, and a view name must be unique.",
+    // {0} = comma-separated area names
+    "noExtentsWarn": "These areas have no resolved extents and their views will be uncropped: {0}.",
+
+    "reviewNote": "Views are skipped, never overwritten, when one of that name already exists.",
+
+    "summary": {
+      // {0} = cells selected
+      "zones": "{0} zone(s) selected",
+      // {0} = recipes selected
+      "recipes": "{0} recipe(s) selected",
+      // {0} = planned view count
+      "planned": "{0} view(s) planned"
+    }
+  },
+
   "log": {
     // Run-log lines. Every one is user-facing output, so none are hardcoded.
     // {0} = area name, {1} = box name

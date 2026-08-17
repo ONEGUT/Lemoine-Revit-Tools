@@ -46,6 +46,8 @@ namespace LemoineTools
         internal static ExternalEvent?                                    ZoneDiscoverScanEvent   { get; private set; }
         internal static LemoineTools.Tools.Zones.ZoneDiscoverRunHandler?  ZoneDiscoverRunHandler  { get; private set; }
         internal static ExternalEvent?                                    ZoneDiscoverRunEvent    { get; private set; }
+        internal static LemoineTools.Tools.Zones.ZoneViewsRunHandler?     ZoneViewsRunHandler     { get; private set; }
+        internal static ExternalEvent?                                    ZoneViewsRunEvent       { get; private set; }
 
         // ── Make Ceiling Grids ──────────────────────────────────────────────────
         internal static MakeCeilingGridsPhase1Handler? MakeCeilingGridsPhase1Handler { get; private set; }
@@ -258,6 +260,8 @@ namespace LemoineTools
             ZoneDiscoverScanEvent   = ExternalEvent.Create(ZoneDiscoverScanHandler);
             ZoneDiscoverRunHandler  = new LemoineTools.Tools.Zones.ZoneDiscoverRunHandler();
             ZoneDiscoverRunEvent    = ExternalEvent.Create(ZoneDiscoverRunHandler);
+            ZoneViewsRunHandler     = new LemoineTools.Tools.Zones.ZoneViewsRunHandler();
+            ZoneViewsRunEvent       = ExternalEvent.Create(ZoneViewsRunHandler);
 
             // ── Make Ceiling Grids ────────────────────────────────────────────
             MakeCeilingGridsPhase1Handler = new MakeCeilingGridsPhase1Handler();
@@ -595,6 +599,15 @@ namespace LemoineTools
                 ToolTip    = L.T("ribbon.buttons.zoneDiscover.tip"),
                 LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE721)),  // Zoom / find
                 Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE721)),
+            });
+
+            zonesBtn?.AddPushButton(new PushButtonData(
+                "LT_ZoneViews", L.T("ribbon.buttons.zoneViews.label"), dll,
+                "LemoineTools.Commands.ZoneViewsCommand")
+            {
+                ToolTip    = L.T("ribbon.buttons.zoneViews.tip"),
+                LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE8A9)),  // ViewAll
+                Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE8A9)),
             });
 
             // Scope Boxes pulldown — Creator now; the Manager joins here when it lands.
