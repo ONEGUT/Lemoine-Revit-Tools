@@ -40,7 +40,11 @@ namespace LemoineTools.Tools.Zones
         // ── Inputs, set before Raise() ────────────────────────────────────────
         public List<string> LevelIds  { get; set; } = new List<string>();
         public List<string> LayoutIds { get; set; } = new List<string>();
-        public List<string> RecipeIds { get; set; } = new List<string>();
+        /// <summary>
+        /// Which of each level's views to place, BY NAME — a view def belongs to a level, so
+        /// its id is not shared across levels.
+        /// </summary>
+        public List<string> ViewNames { get; set; } = new List<string>();
 
         public Action<string, string>?     PushLog    { get; set; }
         public Action<int, int, int, int>? OnProgress { get; set; }
@@ -88,7 +92,7 @@ namespace LemoineTools.Tools.Zones
                 var planned = new List<PlannedSheet>();
                 foreach (string layoutId in LayoutIds ?? new List<string>())
                 {
-                    var layout = lib.Layout(layoutId);
+                    var layout = lib.SheetSet(layoutId);
                     if (layout == null) continue;
 
                     if (!titleBlocks.TryGetValue(layout.TitleBlockTypeName, out var tbId))
@@ -223,13 +227,17 @@ namespace LemoineTools.Tools.Zones
                             }
 
                             foreach (var area in p.Areas)
-                            foreach (string rid in RecipeIds ?? new List<string>())
+                            // The level owns the view defs and the area may override fields;
+                            // ResolveViewDefs combines them exactly as the view run did, so the
+                            // names looked up here match the names that were created.
+                            foreach (var viewDef in lib.ResolveViewDefs(p.Level, area))
                             {
-                                var recipe = lib.Recipe(rid);
-                                if (recipe == null) continue;
+                                if (ViewNames != null && ViewNames.Count > 0 &&
+                                    !ViewNames.Contains(viewDef.Name ?? "", StringComparer.OrdinalIgnoreCase))
+                                    continue;
 
                                 string viewName = ZoneNamingTokens.ResolveViewName(
-                                    recipe, p.Building, p.Level, area, p.Layout, p.Group,
+                                    viewDef, p.Building, p.Level, area, p.Layout, p.Group,
                                     msg => Log(msg, "warn"));
 
                                 if (!viewsByName.TryGetValue(viewName, out var view))
@@ -288,7 +296,7 @@ namespace LemoineTools.Tools.Zones
 
                 LevelIds  = new List<string>();
                 LayoutIds = new List<string>();
-                RecipeIds = new List<string>();
+                ViewNames = new List<string>();
             }
         }
 
@@ -350,7 +358,7 @@ namespace LemoineTools.Tools.Zones
 
         private sealed class PlannedSheet
         {
-            public ZoneSheetLayout Layout   = null!;
+            public ZoneSheetSet Layout   = null!;
             public ZoneLevel       Level    = null!;
             public ZoneSheetGroup  Group    = null!;
             public ZoneBuilding?   Building;

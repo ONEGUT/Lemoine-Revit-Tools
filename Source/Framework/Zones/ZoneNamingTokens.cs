@@ -16,7 +16,7 @@ namespace LemoineTools.Framework.Zones
     // A view can be placed on exactly ONE sheet in Revit, so documenting the
     // same area at two sheet sizes needs TWO views — and View.Name is unique
     // with a setter that THROWS on a duplicate. Without a token that varies by
-    // layout, generating an A1 and an A3 set from one recipe produces two views
+    // layout, generating an A1 and an A3 set from one view def produces two views
     // wanting one name and the second one fails. ValidateDistinctAcrossLayouts
     // below is what turns that into a pre-run check instead of a mid-run throw.
     // =========================================================================
@@ -28,7 +28,7 @@ namespace LemoineTools.Framework.Zones
         public const string KeyZoneCode    = "ZoneCode";
         public const string KeySheetSize   = "SheetSize";
         public const string KeySheetSuffix = "SheetSuffix";
-        public const string KeyRecipe      = "Recipe";
+        public const string KeyView        = "View";
 
         /// <summary>Zone tokens for a picker naming <paramref name="entity"/>.</summary>
         public static List<TokenDefinition> For(TokenEntity entity) => new List<TokenDefinition>
@@ -46,8 +46,8 @@ namespace LemoineTools.Framework.Zones
                 "sheet size, or the two runs produce views wanting the same name."),
             new TokenDefinition(KeySheetSuffix, "Sheet suffix", TokenOrigin.Computed, TokenSubject.Target, entity,
                 "The sheet group's suffix, when a level needs more than one sheet at this size."),
-            new TokenDefinition(KeyRecipe, "Recipe", TokenOrigin.Computed, TokenSubject.Target, entity,
-                "The view recipe's name, e.g. Floor Plan or RCP."),
+            new TokenDefinition(KeyView, "View", TokenOrigin.Computed, TokenSubject.Target, entity,
+                "The level view's name, e.g. Floor Plan or RCP."),
         };
 
         /// <summary>
@@ -55,7 +55,7 @@ namespace LemoineTools.Framework.Zones
         /// </summary>
         public static Dictionary<string, string> ValuesFor(
             ZoneLibrary? library, ZoneBuilding? building, ZoneLevel? level, ZoneArea? area,
-            ZoneViewRecipe? recipe = null, ZoneSheetLayout? layout = null, ZoneSheetGroup? group = null)
+            ZoneViewDef? view = null, ZoneSheetSet? layout = null, ZoneSheetGroup? group = null)
         {
             var v = new Dictionary<string, string>(StringComparer.Ordinal)
             {
@@ -65,7 +65,7 @@ namespace LemoineTools.Framework.Zones
                 [KeyZoneCode]    = ZoneCode(building, level, area),
                 [KeySheetSize]   = layout?.TitleBlockTypeName ?? "",
                 [KeySheetSuffix] = group?.Suffix  ?? "",
-                [KeyRecipe]      = recipe?.Name   ?? "",
+                [KeyView]        = view?.Name     ?? "",
             };
             return v;
         }
@@ -90,26 +90,26 @@ namespace LemoineTools.Framework.Zones
         }
 
         /// <summary>
-        /// The name a view for this (level, area, recipe, layout, group) gets.
+        /// The name a view for this (level, area, view def, layout, group) gets.
         ///
         /// SHARED DELIBERATELY. The sheet builder finds the views to place BY NAME, so if it
         /// resolved names even slightly differently from the view builder it would silently
         /// find nothing and report every sheet as empty. One function, both callers.
         /// </summary>
         public static string ResolveViewName(
-            ZoneViewRecipe recipe, ZoneBuilding? building, ZoneLevel level, ZoneArea area,
-            ZoneSheetLayout? layout, ZoneSheetGroup? group, Action<string>? onWarn = null)
+            ZoneViewDef view, ZoneBuilding? building, ZoneLevel level, ZoneArea area,
+            ZoneSheetSet? layout, ZoneSheetGroup? group, Action<string>? onWarn = null)
         {
             var ctx = new TokenContext();
-            foreach (var kv in ValuesFor(null, building, level, area, recipe, layout, group))
+            foreach (var kv in ValuesFor(null, building, level, area, view, layout, group))
                 ctx.Computed[kv.Key] = kv.Value;
 
-            string pattern = string.IsNullOrWhiteSpace(recipe.NamePattern)
-                ? "{Level} - {Area} - {Recipe}"
-                : recipe.NamePattern;
+            string pattern = string.IsNullOrWhiteSpace(view.NamePattern)
+                ? "{Level} - {Area} - {View}"
+                : view.NamePattern;
 
             string resolved = TokenResolver.Resolve(pattern, ctx, onWarn);
-            string fallback = $"{level.Name} - {area.Name} - {recipe.Name}";
+            string fallback = $"{level.Name} - {area.Name} - {view.Name}";
             return TokenResolver.GuardDegenerate(resolved, ctx, fallback, onWarn);
         }
 
@@ -119,7 +119,7 @@ namespace LemoineTools.Framework.Zones
         /// run starts, so the check and the write must agree exactly.
         /// </summary>
         public static void ResolveSheetName(
-            ZoneSheetLayout layout, ZoneBuilding? building, ZoneLevel level, ZoneSheetGroup? group,
+            ZoneSheetSet layout, ZoneBuilding? building, ZoneLevel level, ZoneSheetGroup? group,
             out string number, out string name, Action<string>? onWarn = null)
         {
             var ctx = new TokenContext();
@@ -146,7 +146,7 @@ namespace LemoineTools.Framework.Zones
             public string Name     = "";
             public string AreaId   = "";
             public string LevelId  = "";
-            public string RecipeId = "";
+            public string ViewDefId = "";
             public string LayoutId = "";
             public string Describe => $"{Name}";
         }

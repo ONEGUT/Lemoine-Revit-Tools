@@ -105,7 +105,7 @@ namespace LemoineTools.Framework.Zones
                     DiagnosticsLog.Info("ZoneSettings",
                         $"Loaded zone library for '{key}': {lib.Buildings.Count} building(s), " +
                         $"{lib.Levels.Count} level(s), {lib.Areas.Count} area(s), " +
-                        $"{lib.Recipes.Count} recipe(s), {lib.Layouts.Count} layout(s), " +
+                        $"{lib.ViewDefs.Count} view(s), {lib.SheetSets.Count} sheet set(s), " +
                         $"{lib.Placements.Count} placement(s).");
                 }
             }
@@ -166,15 +166,15 @@ namespace LemoineTools.Framework.Zones
             if (lib.Levels     == null) lib.Levels     = new System.Collections.Generic.List<ZoneLevel>();
             if (lib.Areas      == null) lib.Areas      = new System.Collections.Generic.List<ZoneArea>();
             if (lib.Cells      == null) lib.Cells      = new System.Collections.Generic.List<ZoneCell>();
-            if (lib.Recipes    == null) lib.Recipes    = new System.Collections.Generic.List<ZoneViewRecipe>();
-            if (lib.Layouts    == null) lib.Layouts    = new System.Collections.Generic.List<ZoneSheetLayout>();
+            if (lib.ViewDefs    == null) lib.ViewDefs    = new System.Collections.Generic.List<ZoneViewDef>();
+            if (lib.SheetSets    == null) lib.SheetSets    = new System.Collections.Generic.List<ZoneSheetSet>();
             if (lib.Placements == null) lib.Placements = new System.Collections.Generic.List<ZoneSheetPlacement>();
 
             foreach (var b in lib.Buildings) if (b != null && string.IsNullOrEmpty(b.Id)) b.Id = ZoneId.New();
             foreach (var l in lib.Levels)    if (l != null && string.IsNullOrEmpty(l.Id)) l.Id = ZoneId.New();
             foreach (var a in lib.Areas)     if (a != null && string.IsNullOrEmpty(a.Id)) a.Id = ZoneId.New();
-            foreach (var r in lib.Recipes)   if (r != null && string.IsNullOrEmpty(r.Id)) r.Id = ZoneId.New();
-            foreach (var y in lib.Layouts)
+            foreach (var r in lib.ViewDefs)   if (r != null && string.IsNullOrEmpty(r.Id)) r.Id = ZoneId.New();
+            foreach (var y in lib.SheetSets)
             {
                 if (y == null) continue;
                 if (string.IsNullOrEmpty(y.Id)) y.Id = ZoneId.New();

@@ -6,7 +6,7 @@ using Autodesk.Revit.DB;
 namespace LemoineTools.Framework.Zones
 {
     // =========================================================================
-    // ZoneViewRangeApplier — reads and writes a plan's view range from a recipe.
+    // ZoneViewRangeApplier — reads and writes a plan's view range from a view def.
     //
     // This is the "RCP and floor plans already set and ready to use" half of a
     // zone: a scope box can say WHERE a plan looks, but only a view range says
@@ -28,7 +28,7 @@ namespace LemoineTools.Framework.Zones
     //
     // CheckPlanViewRangeValidity is why a bad range is REPORTED rather than
     // thrown: an impossible combination (top below the cut plane, say) is a
-    // configuration error in the recipe, and the user needs to be told which
+    // configuration error in the view def, and the user needs to be told which
     // plane is wrong, not handed a stack trace.
     //
     // PlanViewPlane.UnderlayBottom is deliberately never written. It belongs to
@@ -169,14 +169,14 @@ namespace LemoineTools.Framework.Zones
                 }
             }
 
-            // Validate before committing it to the view. An impossible range is a recipe
+            // Validate before committing it to the view. An impossible range is a view def
             // problem, and naming the offending plane is the only useful thing to say.
             try
             {
                 IList<PlanViewRangeError> errors = view.CheckPlanViewRangeValidity(pvr);
                 if (errors != null && errors.Count > 0)
                 {
-                    Say($"'{view.Name}': the recipe's view range is not valid ({DescribeErrors(errors)}). " +
+                    Say($"'{view.Name}': the viewDef's view range is not valid ({DescribeErrors(errors)}). " +
                         "The view range was NOT changed.", "fail");
                     return false;
                 }

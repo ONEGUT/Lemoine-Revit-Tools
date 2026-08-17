@@ -49,7 +49,7 @@ namespace LemoineTools.Framework.Zones
         /// survives a re-solve. Mutates the library only — no Revit writes, no transaction.
         /// </summary>
         public static SolveReport SolveLayout(Document? doc, ZoneLibrary? library,
-                                              ZoneSheetLayout? layout,
+                                              ZoneSheetSet? layout,
                                               bool overwriteCaptured = false,
                                               Action<string, string>? log = null)
         {

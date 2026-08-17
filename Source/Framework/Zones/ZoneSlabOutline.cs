@@ -11,44 +11,86 @@ namespace LemoineTools.Framework.Zones
     // Slabs rather than exterior walls, deliberately. A slab face is ALREADY a
     // closed loop; a wall run is not. Walls break at doors and curtain walls,
     // courtyards add inner loops, and joining them into a reliable outline is a
-    // curve-joining problem with a long tail of failures. Nothing about a slab
-    // needs joining.
+    // curve-joining problem with a long tail of failures.
     //
-    // API surface, confirmed against libs/RevitAPI.dll (2024):
+    // WHY A UNION, AND NOT JUST THE SLAB LOOPS:
+    //
+    //   Emitting every slab's loops verbatim draws the floor plan, not the
+    //   building outline. Three separate artefacts come out of that:
+    //
+    //     • two abutting slabs each draw the edge they share, so a line runs
+    //       straight through the middle of the building;
+    //     • every opening that survives an area filter is drawn as a hole;
+    //     • a shape-edited or sloped slab has SEVERAL top faces, and each one
+    //       contributes its own ring — those are the "slope" lines.
+    //
+    //   So each slab's OUTER loop is flattened to z=0, extruded into a prism,
+    //   and all the prisms are unioned. Dropping inner loops at the source is
+    //   what fills the holes (no threshold to tune); the union is what removes
+    //   the shared edges and merges a sloped slab's faces back into one shape.
+    //   Reading only the union's upward faces' outermost loops is what leaves a
+    //   single continuous line around the outside.
+    //
+    //   Disjoint masses — a campus, a detached wing — union into separate lumps
+    //   and yield one ring each, which is correct.
+    //
+    // API surface, confirmed against libs/RevitAPI.dll (2024) by reading the
+    // metadata tables scoped to each declaring type, never a string search:
     //
     //   IList<Reference>  HostObjectUtils.GetTopFaces(HostObject)
     //   Face              element.GetGeometryObjectFromReference(r) as Face
     //   IList<CurveLoop>  Face.GetEdgesAsCurveLoops()
     //   IList<XYZ>        Curve.Tessellate()
-    //
-    // GetTopFaces is what keeps this simple: no geometry options, no solid
-    // walking, no hunting for a face whose normal points up.
+    //   Solid             GeometryCreationUtilities.CreateExtrusionGeometry(
+    //                         profileLoops, extrusionDir, extrusionDist)
+    //   Solid             BooleanOperationsUtils.ExecuteBooleanOperation(
+    //                         solid0, solid1, booleanType)
+    //   BooleanOperationsType.Union
+    //   FaceArray         Solid.Faces
+    //   XYZ               PlanarFace.FaceNormal
     //
     // Tessellating is the other half. Arcs, ellipses and splines all become
     // points, so the consumer only ever draws straight segments — one code path
     // regardless of how the slab edge was modelled, and the precision loss is
-    // invisible at key-plan scale.
+    // invisible at key-plan scale. It is also what lets a non-planar (sloped)
+    // face's loop be rebuilt as a flat, extrudable profile.
     //
     // Read-only. No transaction. One pass per level.
+    //
+    // UNVERIFIED, needs a Windows/Revit run: the boolean union itself. The API
+    // members and signatures are confirmed, but how Revit's booleans behave on
+    // real slab profiles — near-tangent edges, slivers where two slabs meet at a
+    // hair of overlap — has not been observed. Every fold is guarded and a total
+    // failure falls back to the per-slab rings WITH A LOG LINE, never silently.
     // =========================================================================
     public static class ZoneSlabOutline
     {
         /// <summary>
-        /// Openings smaller than this are dropped, in square feet. A slab is punched by shafts,
-        /// stairs and risers exactly as a ceiling is punched by light fittings, and taking those
-        /// loops literally is what made a 40×30 room measure 7.3 ft wide in the ceiling work.
-        /// An atrium or a lightwell clears this and is drawn.
+        /// How far apart two tessellated points must be to count as distinct, in feet.
+        /// Revit rejects a zero-length curve, so a raw tessellation cannot be rebuilt into a
+        /// CurveLoop without this weld.
         /// </summary>
-        public const double MinOpeningAreaFt2 = 100.0;
+        public const double WeldToleranceFt = 1e-4;
+
+        /// <summary>
+        /// Depth of the throwaway prism each slab profile is extruded into, in feet. Its only
+        /// job is to give the boolean union something with volume to work on; nothing reads it.
+        /// </summary>
+        public const double ExtrusionDepthFt = 1.0;
 
         /// <summary>Where an outline came from. Always reported — never a silent downgrade.</summary>
         public enum Source { SlabEdges, Roofs, ZoneExtents, None }
 
-        /// <summary>One closed ring of the outline, as world XY points.</summary>
+        /// <summary>
+        /// One closed ring of the outline, as world XY points.
+        ///
+        /// Always an outer boundary now: openings are dropped before the union rather than
+        /// carried through it, so a key plan never draws a hole. IsOuter is kept so an existing
+        /// consumer still compiles and reads correctly.
+        /// </summary>
         public sealed class Ring
         {
             public List<XYZ> Points { get; } = new List<XYZ>();
-            /// <summary>False for an opening (a hole) that survived the area filter.</summary>
             public bool IsOuter { get; set; } = true;
         }
 
@@ -115,6 +157,10 @@ namespace LemoineTools.Framework.Zones
             return result;
         }
 
+        /// <summary>
+        /// Collects one category's slabs, flattens each one's OUTER loop, unions them, and
+        /// emits the union's outline. Returns false when the category yielded nothing.
+        /// </summary>
         private static bool TryHosts(Document doc, Level? level, BuiltInCategory category,
                                      Transform tf, Result result, Action<string, string> say)
         {
@@ -151,7 +197,8 @@ namespace LemoineTools.Framework.Zones
 
             if (hosts.Count == 0) return false;
 
-            int before = result.Rings.Count;
+            // ── Read every slab's OUTER profile, flattened to z=0 ─────────────
+            var profiles = new List<List<XYZ>>();
             foreach (var h in hosts)
             {
                 IList<Reference>? faces = null;
@@ -183,55 +230,203 @@ namespace LemoineTools.Framework.Zones
                     }
                     if (loops == null || loops.Count == 0) continue;
 
-                    // The largest loop is the outline; the rest are openings, and small ones
-                    // are dropped so risers and stair voids do not clutter a key plan.
-                    var measured = loops
-                        .Select(l => (Loop: l, Area: LoopAreaFt2(l)))
-                        .OrderByDescending(x => x.Area)
-                        .ToList();
-
-                    for (int i = 0; i < measured.Count; i++)
+                    // The largest loop is this face's outline. Every other loop is an opening
+                    // and is DROPPED — that is what fills the holes, with no threshold to tune.
+                    CurveLoop? outer = null;
+                    double best = -1;
+                    foreach (var l in loops)
                     {
-                        bool outer = i == 0;
-                        if (!outer && measured[i].Area < MinOpeningAreaFt2) continue;
-                        AddRing(result, measured[i].Loop, tf, outer);
+                        double a = LoopAreaFt2(l);
+                        if (a > best) { best = a; outer = l; }
                     }
+                    if (outer == null) continue;
+
+                    var pts = FlattenLoop(outer, tf);
+                    if (pts.Count >= 3) profiles.Add(pts);
                 }
             }
 
+            if (profiles.Count == 0) return false;
+
+            // ── Union them ───────────────────────────────────────────────────
+            var rings = UnionOutline(profiles, say);
+            if (rings.Count == 0)
+            {
+                // The union failed outright. Falling back to the raw profiles still draws a
+                // readable key plan, but it is a DOWNGRADE and is stated rather than hidden.
+                say($"The slab outline could not be unioned ({profiles.Count} profile(s)); the key plan " +
+                    "will show each slab's own edge, so shared edges between slabs may appear.", "warn");
+                rings = profiles;
+            }
+
+            int before = result.Rings.Count;
+            foreach (var ring in rings) AddRing(result, ring);
             return result.Rings.Count > before;
         }
 
-        private static void AddRing(Result result, CurveLoop loop, Transform tf, bool outer)
+        /// <summary>
+        /// A curve loop as world XY points at z=0. Tessellated, so an arc or spline profile
+        /// becomes something that can be rebuilt as a planar, extrudable loop of straight lines.
+        /// </summary>
+        private static List<XYZ> FlattenLoop(CurveLoop loop, Transform tf)
         {
-            var ring = new Ring { IsOuter = outer };
+            var pts = new List<XYZ>();
             try
             {
                 foreach (var c in loop)
                 {
-                    // Tessellate: every curve type collapses to points, so the drawing side
-                    // never has to special-case an arc or a spline.
-                    var pts = c.Tessellate();
-                    if (pts == null) continue;
+                    var t = c.Tessellate();
+                    if (t == null) continue;
                     // Skip the last point of each curve — it repeats the next curve's first.
-                    for (int i = 0; i < pts.Count - 1; i++)
+                    for (int i = 0; i < t.Count - 1; i++)
                     {
-                        XYZ w = tf.OfPoint(pts[i]);
-                        ring.Points.Add(new XYZ(w.X, w.Y, 0));
-                        if (w.X < result.MinX) result.MinX = w.X;
-                        if (w.Y < result.MinY) result.MinY = w.Y;
-                        if (w.X > result.MaxX) result.MaxX = w.X;
-                        if (w.Y > result.MaxY) result.MaxY = w.Y;
+                        XYZ w = tf.OfPoint(t[i]);
+                        pts.Add(new XYZ(w.X, w.Y, 0));
                     }
                 }
             }
             catch (Exception ex)
             {
                 DiagnosticsLog.Swallowed("ZoneSlabOutline: tessellate loop", ex);
-                return;
+                return new List<XYZ>();
+            }
+            return Dedupe(pts);
+        }
+
+        /// <summary>
+        /// Drops points closer together than <see cref="WeldToleranceFt"/>, including a first
+        /// point that coincides with the last. Revit rejects a zero-length curve, so an
+        /// undeduplicated tessellation cannot be turned into a CurveLoop at all.
+        /// </summary>
+        private static List<XYZ> Dedupe(List<XYZ> pts)
+        {
+            var outPts = new List<XYZ>();
+            foreach (var p in pts)
+            {
+                if (outPts.Count > 0 && outPts[outPts.Count - 1].DistanceTo(p) < WeldToleranceFt) continue;
+                outPts.Add(p);
+            }
+            while (outPts.Count >= 2 &&
+                   outPts[0].DistanceTo(outPts[outPts.Count - 1]) < WeldToleranceFt)
+                outPts.RemoveAt(outPts.Count - 1);
+            return outPts;
+        }
+
+        /// <summary>
+        /// Extrudes each flattened profile into a prism, unions them all, and returns the
+        /// outermost loop of every upward-facing face of the result — one continuous ring per
+        /// connected mass, holes already filled because the inner loops never went in.
+        ///
+        /// Returns an empty list when nothing could be unioned; the caller reports that.
+        /// </summary>
+        private static List<List<XYZ>> UnionOutline(List<List<XYZ>> profiles, Action<string, string> say)
+        {
+            var rings = new List<List<XYZ>>();
+
+            Solid? merged = null;
+            int built = 0, failedExtrude = 0, failedUnion = 0;
+
+            foreach (var profile in profiles)
+            {
+                Solid? prism = null;
+                try
+                {
+                    var loop = new CurveLoop();
+                    for (int i = 0; i < profile.Count; i++)
+                    {
+                        var a = profile[i];
+                        var b = profile[(i + 1) % profile.Count];
+                        if (a.DistanceTo(b) < WeldToleranceFt) continue;
+                        loop.Append(Line.CreateBound(a, b));
+                    }
+
+                    prism = GeometryCreationUtilities.CreateExtrusionGeometry(
+                        new List<CurveLoop> { loop }, XYZ.BasisZ, ExtrusionDepthFt);
+                }
+                catch (Exception ex)
+                {
+                    // A self-intersecting or degenerate slab profile is a real condition, not a
+                    // reason to lose every other slab.
+                    failedExtrude++;
+                    DiagnosticsLog.Swallowed("ZoneSlabOutline: extrude slab profile", ex);
+                    continue;
+                }
+                if (prism == null) { failedExtrude++; continue; }
+
+                if (merged == null) { merged = prism; built++; continue; }
+
+                try
+                {
+                    merged = BooleanOperationsUtils.ExecuteBooleanOperation(
+                        merged, prism, BooleanOperationsType.Union);
+                    built++;
+                }
+                catch (Exception ex)
+                {
+                    // Keep what has merged so far — one refusing solid must not discard the rest.
+                    failedUnion++;
+                    DiagnosticsLog.Swallowed("ZoneSlabOutline: union slab prisms", ex);
+                }
             }
 
-            if (ring.Points.Count >= 3) result.Rings.Add(ring);
+            if (failedExtrude > 0 || failedUnion > 0)
+                say($"Outline union: {built} of {profiles.Count} slab profile(s) merged " +
+                    $"({failedExtrude} could not be extruded, {failedUnion} could not be unioned).", "warn");
+
+            if (merged == null) return rings;
+
+            try
+            {
+                foreach (Face f in merged.Faces)
+                {
+                    // Only the top of the prism describes the footprint. The bottom repeats it
+                    // and the sides are the extrusion walls.
+                    if (!(f is PlanarFace pf)) continue;
+                    if (pf.FaceNormal == null || pf.FaceNormal.Z < 0.9) continue;
+
+                    var loops = f.GetEdgesAsCurveLoops();
+                    if (loops == null || loops.Count == 0) continue;
+
+                    // The union filled the holes already; if Revit still reports inner loops
+                    // (a genuine void that no slab ever covered), only the outermost is drawn —
+                    // the outline is meant to be one continuous line.
+                    CurveLoop? outer = null;
+                    double best = -1;
+                    foreach (var l in loops)
+                    {
+                        double a = LoopAreaFt2(l);
+                        if (a > best) { best = a; outer = l; }
+                    }
+                    if (outer == null) continue;
+
+                    var pts = FlattenLoop(outer, Transform.Identity);
+                    if (pts.Count >= 3) rings.Add(pts);
+                }
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Error("ZoneSlabOutline: read union faces", ex);
+                return new List<List<XYZ>>();
+            }
+
+            return rings;
+        }
+
+        /// <summary>Records one finished ring and grows the result's world bounds.</summary>
+        private static void AddRing(Result result, List<XYZ> pts)
+        {
+            if (pts == null || pts.Count < 3) return;
+
+            var ring = new Ring { IsOuter = true };
+            foreach (var p in pts)
+            {
+                ring.Points.Add(p);
+                if (p.X < result.MinX) result.MinX = p.X;
+                if (p.Y < result.MinY) result.MinY = p.Y;
+                if (p.X > result.MaxX) result.MaxX = p.X;
+                if (p.Y > result.MaxY) result.MaxY = p.Y;
+            }
+            result.Rings.Add(ring);
         }
 
         /// <summary>

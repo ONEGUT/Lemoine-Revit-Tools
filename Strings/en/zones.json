@@ -1,6 +1,6 @@
 {
   // Project Zones — the per-project library of buildings, levels, areas, view
-  // recipes, sheet layouts and exact sheet placements.
+  // view definitions, sheet sets and exact sheet placements.
   //
   // JSONC: // comments are stripped before parsing. Keys are dot-flattened, so
   // "picker.summary" here is AppStrings.T("zones.picker.summary").
@@ -32,30 +32,76 @@
     // {0} = document title
     "subtitle": "{0}",
 
-    "tabs": {
-      "structure": "Structure",
-      "recipes": "Recipes",
-      "layouts": "Layouts"
+    // Tree node type labels, shown as the row's meta or the detail card heading.
+    "node": {
+      "building": "Building",
+      "level": "Level",
+      "sheets": "Sheets"
     },
 
     "actions": {
-      "addBuilding": "+ Building",
-      "addLevel": "+ Level",
-      "addArea": "+ Area",
-      "addRecipe": "+ Recipe",
-      "addLayout": "+ Layout",
-      "addGroup": "+ Group",
+      "addBuilding": "Building",
+      "addLevel": "Level",
+      "addArea": "Area",
+      "addView": "View",
+      "addSheetSet": "Sheet size",
+      "addGroup": "Group",
       "deleteGroup": "Delete group",
       "duplicate": "Duplicate",
       "delete": "Delete",
+      "discover": "Discover",
       "resolvePlacements": "Re-solve placements",
       "checkScopeBoxes": "Check scope boxes",
       "readoptExtents": "Re-adopt extents"
     },
 
-    // Footer status. {0} = zones, {1} = layouts, {2} = placements
-    "status": "{0} zones · {1} layouts · {2} placements · saved in the model",
-    "statusUnsaved": "{0} zones · {1} layouts · {2} placements · unsaved changes",
+    // Names given to a freshly created record, before the user renames it.
+    "defaults": {
+      "building": "Building",
+      "level": "Level",
+      "area": "Area",
+      "view": "Floor Plan",
+      "sheetSet": "Sheet size"
+    },
+
+    "pickSomething": "Pick something on the left to edit it.",
+    "gone": "That record no longer exists.",
+    "noMatches": "Nothing matches that search.",
+
+    "building": {
+      "levels": "Levels"
+    },
+
+    "level": {
+      "hostLevel": "Host level",
+      "bandBase": "Band base (ft)",
+      "bandTop": "Band top (ft)",
+      "views": "Views",
+      "noViews": "No views yet. Add one — every area on this level inherits it.",
+      "viewsNote": "Defined here, inherited by every area on this level. An area can override any field."
+    },
+
+    "view": {
+      "inherited": "inherited",
+      // {0} = number of overridden fields
+      "overriddenN": "overridden · {0} field(s)",
+      "noneOnLevel": "This level defines no views yet.",
+      "overrideSection": "Overrides for this area",
+      "overrideNote": "Tick a field to override it for this area only. Unticked fields keep tracking the level, so changing the level later still reaches this area.",
+      "overrideTip": "Override this field for this area",
+      "resetSection": "Reset",
+      "resetAll": "Reset every field to the level"
+    },
+
+    "status": {
+      "reloaded": "Reloaded after Discover.",
+      "openingDiscover": "Opening Discover Zones…",
+      "discoverUnavailable": "Discover is unavailable — the event handler is not registered.",
+      "saveFailed": "The zone library could not be saved; Discover was not opened."
+    },
+
+    // Footer status. {0} = zones, {1} = sheet sizes, {2} = placements
+    "statusLine": "{0} zones · {1} sheet sizes · {2} placements · saved in the model",
 
     "area": {
       "section": "Area",
@@ -70,12 +116,14 @@
       // {0} width ft, {1} depth ft
       "extentsValue": "{0}' × {1}'",
       "extentsUnresolved": "not resolved yet",
+      // {0} = scope box name
+      "boxMissing": "Scope box '{0}' is not in this document. The area is kept, but its extents cannot be refreshed until it is re-pointed.",
       // Explains why the anchor mode is offered separately from the definition.
       "anchorNote": "A grid intersection does not move when extents change, so placements built from it stay put. The extents centre moves with the box."
     },
 
-    "recipe": {
-      "section": "View recipe",
+    "viewDef": {
+      "section": "View",
       "name": "Name",
       "kind": "View type",
       "familyType": "View family type",
@@ -90,7 +138,9 @@
       "bottom": "Bottom",
       "depth": "View depth",
       // Why a distinguishing token matters across sheet sizes.
-      "patternNote": "Include {SheetSize} when generating for more than one sheet size — a view can sit on only one sheet, so each size needs its own view and its own name."
+      "patternNote": "Include {SheetSize} when generating for more than one sheet size — a view can sit on only one sheet, so each size needs its own view and its own name.",
+      // {0} = level name
+      "levelNote": "Defined on {0}. Every area on that level inherits this view; an area can override any field."
     },
 
     "layout": {
@@ -127,6 +177,8 @@
       "noGroups": "No groups yet. Add one, then put the areas that share a sheet into it.",
       "cannotSolve": "cannot solve",
       "missingArea": "(area deleted)",
+      "noAreas": "(no areas)",
+      "noSets": "No sheet sizes yet. Add one, then group the areas that share a sheet.",
       // {0} = count, {1} = comma-separated names
       "unassigned": "{0} area(s) are not on any sheet at this size: {1}. They will not be generated for this layout until they are added to a group.",
       // {0} = area A, {1} = area B, {2} = overlap width in, {3} = overlap height in
@@ -145,9 +197,10 @@
     "runLabel": "Apply to the zone library →",
 
     "steps": {
-      "S1": "Source models",
-      "S2": "What to discover",
-      "S3": "Review proposals"
+      "S1": "Source model",
+      "S2": "Discover",
+      "S3": "Results",
+      "S4": "Confirm & commit"
     },
 
     "sourceHint": "Levels and rooms are read from these documents. The architectural link is the usual source.",
@@ -164,8 +217,15 @@
 
     "scan": "Scan the model",
     "scanning": "Scanning…",
-    "notScanned": "Not scanned yet — run the scan on the previous step.",
+    "notScanned": "Not scanned yet — run the scan on the Discover step.",
     "nothingFound": "The scan found nothing to propose.",
+    // Shown on Results when the scan itself failed. {0} = the reason.
+    "scanFailed": "The scan failed: {0}",
+    "scanFailedUnknown": "the scan reported no reason",
+    "resultsHint": "Untick anything you do not want. Nothing is written until the last step.",
+    "keepAll": "keep all",
+    // Every discovered level is seeded with one view, so the areas under it produce something.
+    "defaultViewName": "Floor Plan",
     "nothingAccepted": "Nothing is ticked, so no zones were changed.",
     "noHandler": "The Discover run handler is unavailable.",
 
@@ -201,21 +261,21 @@
 
     "steps": {
       "S1": "Zones",
-      "S2": "View recipes",
+      "S2": "Views",
       "S3": "Review"
     },
 
     "noLibrary": "This project has no zones yet. Use Discover Zones or the Zone Manager first.",
-    "noRecipes": "No view recipes are defined. Add one in the Zone Manager.",
+    "noViewsOnLevels": "The selected levels define no views. Add one to a level in the Zone Manager — every area on that level then inherits it.",
     "noHandler": "The view run handler is unavailable.",
 
-    "layoutHint": "Optional — pick a sheet size to reuse the scale already solved into its placements. Without one, each recipe's own scale is used.",
+    "layoutHint": "Optional — pick a sheet size to reuse the scale already solved into its placements. Without one, each view's own scale is used.",
     "noLayout": "(no sheet size)",
 
     // {0} = number of views the run intends to create
     "plannedCount": "{0} view(s) will be created.",
-    // {0} = comma-separated recipe names
-    "patternWarn": "These recipes have no {{SheetSize}} token in their name pattern: {0}. That is fine for one sheet size, but generating a second would try to reuse the same view names, and a view name must be unique.",
+    // {0} = comma-separated view names
+    "patternWarn": "These views have no {{SheetSize}} token in their name pattern: {0}. That is fine for one sheet size, but generating a second would try to reuse the same view names, and a view name must be unique.",
     // {0} = comma-separated area names
     "noExtentsWarn": "These areas have no resolved extents and their views will be uncropped: {0}.",
 
@@ -224,8 +284,8 @@
     "summary": {
       // {0} = cells selected
       "zones": "{0} zone(s) selected",
-      // {0} = recipes selected
-      "recipes": "{0} recipe(s) selected",
+      // {0} = views selected
+      "views": "{0} view(s) selected",
       // {0} = planned view count
       "planned": "{0} view(s) planned"
     }
@@ -239,13 +299,13 @@
     "steps": {
       "S1": "Levels",
       "S2": "Sheet sizes",
-      "S3": "View recipes",
+      "S3": "Views",
       "S4": "Review"
     },
 
     "noLevels": "This project has no zone levels. Use Discover Zones or the Zone Manager first.",
     "noLayouts": "No sheet sizes are defined. Add a layout in the Zone Manager.",
-    "noRecipes": "No view recipes are defined. Add one in the Zone Manager.",
+    "noViewsOnLevels": "The selected levels define no views. Add one to a level in the Zone Manager.",
     "noHandler": "The sheet run handler is unavailable.",
 
     // {0} = number of sheets the run intends to create
@@ -260,7 +320,7 @@
     "summary": {
       "levels":  "{0} level(s)",
       "layouts": "{0} sheet size(s)",
-      "recipes": "{0} recipe(s)",
+      "views": "{0} view(s)",
       "planned": "{0} sheet(s) planned"
     }
   },
@@ -331,7 +391,7 @@
     "captured": "Captured the placement of '{0}' from sheet {1} at {2}.",
     // {0} = view name, {1} = plane label, {2} = reason
     "viewRangeBadLevel": "'{0}': {1} references a level that does not exist here ({2}). The view range was NOT changed.",
-    "viewRangeInvalid": "'{0}': the recipe's view range is not valid ({1}). The view range was NOT changed.",
+    "viewRangeInvalid": "'{0}': the view's view range is not valid ({1}). The view range was NOT changed.",
     "viewRangeRefused": "'{0}': Revit refused the view range.",
     // {0} = view name
     "viewRangeUnvalidated": "'{0}': could not validate the view range; applying it anyway.",

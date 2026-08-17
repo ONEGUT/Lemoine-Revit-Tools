@@ -14,21 +14,28 @@ namespace LemoineTools.Framework.Zones
     // ever opening this tool, and a cached extent that silently disagreed with
     // the model would place drawings using numbers that are no longer true.
     //
-    // Divergence is REPORTED, never silently corrected. Three outcomes, all
-    // logged, none destructive:
+    // WHO DECIDES WHAT TO DO ABOUT A DIVERGENCE:
     //
-    //   Match    → nothing to do
-    //   Resized  → warn; the user re-adopts explicitly (which may invalidate
-    //              stored placements, so it cannot be automatic)
-    //   Missing  → warn and mark the area unresolved. The area is NEVER deleted:
-    //              the library outlives any one box, and a box that vanished is
-    //              far more likely to be an accident than an instruction.
+    //   This file only MEASURES it. Reconcile() reports; AdoptExtents() writes
+    //   when a caller asks it to. Neither decides policy.
     //
-    // Why re-adoption cannot be automatic: a stored placement pairs a WORLD
-    // anchor with a SHEET coordinate. Re-solving extents moves an ExtentsCentre
-    // anchor, and a moved anchor against an unchanged sheet coordinate shifts
-    // the drawing — measured at 5/8" on a 1/8" plot for a 10 ft extents change.
-    // See SheetAnchorMath.
+    //   The Zone Manager's policy is to RE-ADOPT AUTOMATICALLY — on opening, on
+    //   returning from Discover, and the moment a box is picked. That was an
+    //   explicit product decision and it overrides the older rule this comment
+    //   used to state ("never silently corrected"), so it is recorded here
+    //   rather than left contradicting the code.
+    //
+    //   What it costs, and why the Manager logs every single one: a stored
+    //   placement pairs a WORLD anchor with a SHEET coordinate. Re-solving
+    //   extents moves an ExtentsCentre anchor, and a moved anchor against an
+    //   unchanged sheet coordinate shifts the drawing — measured at 5/8" on a
+    //   1/8" plot for a 10 ft extents change. See SheetAnchorMath. A
+    //   GridIntersection anchor is immune, which is the whole reason that mode
+    //   exists.
+    //
+    //   A MISSING box is still never destructive: the area keeps its cached
+    //   extents and is reported. The library outlives any one box, and a box
+    //   that vanished is far more likely to be an accident than an instruction.
     //
     // Read-only. No transaction. Main thread.
     // =========================================================================
@@ -116,7 +123,11 @@ namespace LemoineTools.Framework.Zones
         }
 
         /// <summary>
-        /// Reconciles every adopted area in the library against the document.
+        /// Reconciles every adopted area in the library against the document, REPORTING ONLY.
+        ///
+        /// The Zone Manager does its own reconcile inline because it also writes; this stays as
+        /// the read-only report for any caller that wants to show divergence without changing
+        /// anything.
         ///
         /// Reports a zero result explicitly — a silent empty list is indistinguishable from a
         /// broken collector, and that silence has hidden real bugs in this repo before.
@@ -217,7 +228,11 @@ namespace LemoineTools.Framework.Zones
             return results;
         }
 
-        /// <summary>Copies a box's current extents onto the area. Caller decides when — never automatic.</summary>
+        /// <summary>
+        /// Copies a box's current extents onto the area. The CALLER decides when: this method
+        /// has no policy of its own, and the Zone Manager calls it automatically (logging each
+        /// one) while other callers may choose to prompt.
+        /// </summary>
         public static void AdoptExtents(ZoneArea? area, BoxInfo? box)
         {
             if (area == null || box == null || !box.HasBounds) return;

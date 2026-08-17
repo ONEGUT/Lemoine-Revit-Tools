@@ -63,7 +63,7 @@ namespace LemoineTools.Framework.Zones
         public const string Manual           = "Manual";
     }
 
-    /// <summary>View-kind tokens for <see cref="ZoneViewRecipe.Kind"/>. Map onto <c>ViewFamily</c>.</summary>
+    /// <summary>View-kind tokens for <see cref="ZoneViewDef.Kind"/>. Map onto <c>ViewFamily</c>.</summary>
     public static class ZoneViewKind
     {
         public const string FloorPlan   = "FloorPlan";
@@ -77,10 +77,10 @@ namespace LemoineTools.Framework.Zones
             => kind == FloorPlan || kind == CeilingPlan || kind == AreaPlan;
     }
 
-    /// <summary>Scale-mode tokens for <see cref="ZoneViewRecipe.ScaleMode"/>.</summary>
+    /// <summary>Scale-mode tokens for <see cref="ZoneViewDef.ScaleMode"/>.</summary>
     public static class ZoneScaleMode
     {
-        /// <summary>Use <see cref="ZoneViewRecipe.Scale"/> verbatim.</summary>
+        /// <summary>Use <see cref="ZoneViewDef.Scale"/> verbatim.</summary>
         public const string Fixed            = "Fixed";
         /// <summary>Solve the largest standard scale that fits the title block.</summary>
         public const string FitToTitleBlock  = "FitToTitleBlock";
@@ -168,6 +168,15 @@ namespace LemoineTools.Framework.Zones
         /// <summary>Top of this level's 3D band, relative to the level (feet).</summary>
         [XmlAttribute("bandTop")]  public double BandTopOffsetFt  { get; set; } = 14.0;
 
+        /// <summary>
+        /// The views every area on this level gets. The level is where a view is DEFINED —
+        /// every area under it inherits the whole set, which is what makes "every area has a
+        /// view dedicated to it" true by construction rather than by remembering to add one.
+        /// An area may override any individual field (see <see cref="ZoneArea.ViewOverrides"/>).
+        /// </summary>
+        [XmlArray("ViewDefs"), XmlArrayItem("V")]
+        public List<ZoneViewDef> ViewDefs { get; set; } = new List<ZoneViewDef>();
+
         [XmlAttribute("sort")] public int SortIndex { get; set; }
     }
 
@@ -217,6 +226,13 @@ namespace LemoineTools.Framework.Zones
         [XmlArray("Levels"), XmlArrayItem("L")]
         public List<string> AppliesToLevelIds { get; set; } = new List<string>();
 
+        /// <summary>
+        /// Per-field departures from the level's view defs, stored ONLY where this area really
+        /// differs. An area with none inherits its level's set exactly.
+        /// </summary>
+        [XmlArray("ViewOverrides"), XmlArrayItem("O")]
+        public List<ZoneViewOverride> ViewOverrides { get; set; } = new List<ZoneViewOverride>();
+
         [XmlAttribute("sort")] public int SortIndex { get; set; }
 
         public double WidthFt => MaxX - MinX;
@@ -246,7 +262,7 @@ namespace LemoineTools.Framework.Zones
         [XmlAttribute("hasExtents")] public bool HasExtents { get; set; }
     }
 
-    // ── View recipes ─────────────────────────────────────────────────────────
+    // ── View definitions ─────────────────────────────────────────────────────
 
     /// <summary>One plane of a plan view range: a level reference plus an offset.</summary>
     public sealed class ZoneViewRangePlane
@@ -304,8 +320,11 @@ namespace LemoineTools.Framework.Zones
     /// What a zone produces for one view type: the family type and template to use, the scale,
     /// the view range, and how the view is named. This is the "view template for 3D space"
     /// payload — it REFERENCES a Revit view template for graphics rather than replacing it.
+    ///
+    /// Defined on a <see cref="ZoneLevel"/>; every area on that level inherits it, and may
+    /// override individual fields through <see cref="ZoneViewOverride"/>.
     /// </summary>
-    public sealed class ZoneViewRecipe
+    public sealed class ZoneViewDef
     {
         [XmlAttribute("id")]   public string Id   { get; set; } = "";
         [XmlAttribute("name")] public string Name { get; set; } = "";
@@ -346,6 +365,88 @@ namespace LemoineTools.Framework.Zones
         [XmlAttribute("dupMode")] public string DuplicateMode { get; set; } = ZoneDuplicateMode.AsDependent;
 
         [XmlAttribute("sort")] public int SortIndex { get; set; }
+
+        /// <summary>
+        /// A detached copy, including the view range. Used to build the base an area's
+        /// overrides are applied onto, so resolving never mutates the level's own def.
+        /// </summary>
+        public ZoneViewDef Clone() => new ZoneViewDef
+        {
+            Id = Id, Name = Name, Kind = Kind,
+            ViewFamilyTypeName = ViewFamilyTypeName, ViewTemplateName = ViewTemplateName,
+            ScaleMode = ScaleMode, Scale = Scale,
+            ViewRange = ViewRange?.Clone(),
+            Discipline = Discipline, DetailLevel = DetailLevel, PhaseName = PhaseName,
+            AnnotationCropPaperFt = AnnotationCropPaperFt,
+            AnnotationCropEnabled = AnnotationCropEnabled,
+            SectionBoxFromBand = SectionBoxFromBand,
+            NamePattern = NamePattern, DuplicateMode = DuplicateMode,
+            SortIndex = SortIndex,
+        };
+    }
+
+    /// <summary>Field-name tokens for <see cref="ZoneViewOverride.OverriddenFields"/>.</summary>
+    /// <remarks>
+    /// Logic tokens, persisted and compared with <c>==</c> — never externalized. Adding a new
+    /// overridable field means adding its token here AND a case in
+    /// <see cref="ZoneLibrary.ResolveViewDef"/>; a token with no case silently does nothing,
+    /// so the two are kept adjacent on purpose.
+    /// </remarks>
+    public static class ZoneViewFields
+    {
+        public const string Kind                  = "Kind";
+        public const string ViewFamilyTypeName    = "ViewFamilyTypeName";
+        public const string ViewTemplateName      = "ViewTemplateName";
+        public const string ScaleMode             = "ScaleMode";
+        public const string Scale                 = "Scale";
+        public const string ViewRange             = "ViewRange";
+        public const string Discipline            = "Discipline";
+        public const string DetailLevel           = "DetailLevel";
+        public const string PhaseName             = "PhaseName";
+        public const string AnnotationCropPaperFt = "AnnotationCropPaperFt";
+        public const string AnnotationCropEnabled = "AnnotationCropEnabled";
+        public const string SectionBoxFromBand    = "SectionBoxFromBand";
+        public const string NamePattern           = "NamePattern";
+        public const string DuplicateMode         = "DuplicateMode";
+
+        /// <summary>Every overridable field, in the order the editor lists them.</summary>
+        public static readonly string[] All =
+        {
+            Kind, ViewFamilyTypeName, ViewTemplateName, ScaleMode, Scale, ViewRange,
+            Discipline, DetailLevel, PhaseName,
+            AnnotationCropPaperFt, AnnotationCropEnabled, SectionBoxFromBand,
+            NamePattern, DuplicateMode,
+        };
+    }
+
+    /// <summary>
+    /// One area's departure from a level's view def, PER FIELD.
+    ///
+    /// Why a field-NAME list rather than nullable members: XmlSerializer cannot round-trip
+    /// <c>Nullable&lt;T&gt;</c> on an <c>[XmlAttribute]</c> without the parallel
+    /// <c>…Specified</c> convention, and for the value-typed fields (Scale,
+    /// AnnotationCropPaperFt, SectionBoxFromBand) a default value is otherwise
+    /// indistinguishable from "not overridden" — the same class of bug
+    /// <see cref="ZoneArea.HasExtents"/> exists to avoid. It also makes the editor's
+    /// per-field "is this overridden" indicator a single Contains check.
+    /// </summary>
+    public sealed class ZoneViewOverride
+    {
+        /// <summary>Id of the level view def this overrides.</summary>
+        [XmlAttribute("base")] public string BaseId { get; set; } = "";
+
+        /// <summary>
+        /// Which fields this area actually overrides. A field absent from this list keeps
+        /// tracking the level, whatever <see cref="Values"/> happens to hold.
+        /// </summary>
+        [XmlArray("Fields"), XmlArrayItem("F")]
+        public List<string> OverriddenFields { get; set; } = new List<string>();
+
+        /// <summary>The overriding values. Only the fields named above are ever read from it.</summary>
+        public ZoneViewDef Values { get; set; } = new ZoneViewDef();
+
+        public bool Overrides(string field)
+            => OverriddenFields != null && OverriddenFields.Contains(field);
     }
 
     // ── Sheet layouts and groups ─────────────────────────────────────────────
@@ -374,7 +475,7 @@ namespace LemoineTools.Framework.Zones
     /// because the answer genuinely differs by size: two areas may share an A1 and need two
     /// separate A3s.
     /// </summary>
-    public sealed class ZoneSheetLayout
+    public sealed class ZoneSheetSet
     {
         [XmlAttribute("id")]   public string Id   { get; set; } = "";
         [XmlAttribute("name")] public string Name { get; set; } = "";
@@ -468,21 +569,38 @@ namespace LemoineTools.Framework.Zones
         [XmlArray("Levels"),     XmlArrayItem("L")] public List<ZoneLevel>          Levels     { get; set; } = new List<ZoneLevel>();
         [XmlArray("Areas"),      XmlArrayItem("A")] public List<ZoneArea>           Areas      { get; set; } = new List<ZoneArea>();
         [XmlArray("Cells"),      XmlArrayItem("C")] public List<ZoneCell>           Cells      { get; set; } = new List<ZoneCell>();
-        [XmlArray("Recipes"),    XmlArrayItem("R")] public List<ZoneViewRecipe>     Recipes    { get; set; } = new List<ZoneViewRecipe>();
-        [XmlArray("Layouts"),    XmlArrayItem("Y")] public List<ZoneSheetLayout>    Layouts    { get; set; } = new List<ZoneSheetLayout>();
+        /// <summary>
+        /// Project-wide view defs a level can seed from. GENERATION NEVER READS THIS — it reads
+        /// the level's own <see cref="ZoneLevel.ViewDefs"/>, so a view always belongs to a level.
+        /// </summary>
+        [XmlArray("ViewDefs"),   XmlArrayItem("V")] public List<ZoneViewDef>     ViewDefs   { get; set; } = new List<ZoneViewDef>();
+        [XmlArray("SheetSets"),  XmlArrayItem("S")] public List<ZoneSheetSet>    SheetSets  { get; set; } = new List<ZoneSheetSet>();
         [XmlArray("Placements"), XmlArrayItem("P")] public List<ZoneSheetPlacement> Placements { get; set; } = new List<ZoneSheetPlacement>();
 
         public bool IsEmpty
             => Buildings.Count == 0 && Levels.Count == 0 && Areas.Count == 0 &&
-               Recipes.Count == 0 && Layouts.Count == 0;
+               ViewDefs.Count == 0 && SheetSets.Count == 0;
 
         // ── Lookups ──────────────────────────────────────────────────────────
 
         public ZoneBuilding?    Building(string? id) => Find(Buildings, b => b.Id, id);
         public ZoneLevel?       Level(string? id)    => Find(Levels,    l => l.Id, id);
         public ZoneArea?        Area(string? id)     => Find(Areas,     a => a.Id, id);
-        public ZoneViewRecipe?  Recipe(string? id)   => Find(Recipes,   r => r.Id, id);
-        public ZoneSheetLayout? Layout(string? id)   => Find(Layouts,   y => y.Id, id);
+        public ZoneViewDef?  ViewDef(string? id)  => Find(ViewDefs,  r => r.Id, id);
+        public ZoneSheetSet? SheetSet(string? id) => Find(SheetSets, y => y.Id, id);
+
+        /// <summary>A level's view def by id, searched across every level.</summary>
+        public ZoneViewDef? LevelViewDef(string? id)
+        {
+            if (string.IsNullOrEmpty(id)) return null;
+            foreach (var lv in Levels)
+            {
+                if (lv?.ViewDefs == null) continue;
+                foreach (var v in lv.ViewDefs)
+                    if (v != null && string.Equals(v.Id, id, StringComparison.Ordinal)) return v;
+            }
+            return null;
+        }
 
         private static T? Find<T>(List<T> list, Func<T, string> idOf, string? id) where T : class
         {
@@ -575,11 +693,108 @@ namespace LemoineTools.Framework.Zones
             Placements.Add(placement);
         }
 
-        /// <summary>The group in a layout that carries this area, or null when it is solo.</summary>
-        public ZoneSheetGroup? GroupFor(ZoneSheetLayout? layout, string? areaId)
+        // ── View resolution ──────────────────────────────────────────────────
+
+        /// <summary>
+        /// The view defs that apply to one (Area, Level) pair: the LEVEL's set, with each of
+        /// the area's per-field overrides laid on top. One place, used by both the Zone Manager
+        /// preview and the run handler, so the editor can never show something the run would
+        /// not produce.
+        /// </summary>
+        public List<ZoneViewDef> ResolveViewDefs(ZoneLevel? level, ZoneArea? area)
         {
-            if (layout?.Groups == null || string.IsNullOrEmpty(areaId)) return null;
-            foreach (var g in layout.Groups)
+            var list = new List<ZoneViewDef>();
+            if (level?.ViewDefs == null) return list;
+
+            foreach (var def in level.ViewDefs)
+            {
+                if (def == null) continue;
+                list.Add(ResolveViewDef(level, area, def));
+            }
+            return list;
+        }
+
+        /// <summary>
+        /// One level view def with an area's overrides applied. Returns a CLONE always — never
+        /// the level's own instance — so a caller that mutates the result cannot silently edit
+        /// the level's definition for every other area.
+        /// </summary>
+        public ZoneViewDef ResolveViewDef(ZoneLevel? level, ZoneArea? area, ZoneViewDef def)
+        {
+            var result = def.Clone();
+
+            var ov = OverrideFor(area, def.Id);
+            if (ov?.Values == null || ov.OverriddenFields == null) return result;
+
+            var v = ov.Values;
+            foreach (var field in ov.OverriddenFields)
+            {
+                switch (field)
+                {
+                    case ZoneViewFields.Kind:                  result.Kind                  = v.Kind;                  break;
+                    case ZoneViewFields.ViewFamilyTypeName:    result.ViewFamilyTypeName    = v.ViewFamilyTypeName;    break;
+                    case ZoneViewFields.ViewTemplateName:      result.ViewTemplateName      = v.ViewTemplateName;      break;
+                    case ZoneViewFields.ScaleMode:             result.ScaleMode             = v.ScaleMode;             break;
+                    case ZoneViewFields.Scale:                 result.Scale                 = v.Scale;                 break;
+                    // A view range is edited as a unit, so it overrides as a unit — splitting
+                    // it into four planes would mean four indicators for one decision.
+                    case ZoneViewFields.ViewRange:             result.ViewRange             = v.ViewRange?.Clone();    break;
+                    case ZoneViewFields.Discipline:            result.Discipline            = v.Discipline;            break;
+                    case ZoneViewFields.DetailLevel:           result.DetailLevel           = v.DetailLevel;           break;
+                    case ZoneViewFields.PhaseName:             result.PhaseName             = v.PhaseName;             break;
+                    case ZoneViewFields.AnnotationCropPaperFt: result.AnnotationCropPaperFt = v.AnnotationCropPaperFt; break;
+                    case ZoneViewFields.AnnotationCropEnabled: result.AnnotationCropEnabled = v.AnnotationCropEnabled; break;
+                    case ZoneViewFields.SectionBoxFromBand:    result.SectionBoxFromBand    = v.SectionBoxFromBand;    break;
+                    case ZoneViewFields.NamePattern:           result.NamePattern           = v.NamePattern;           break;
+                    case ZoneViewFields.DuplicateMode:         result.DuplicateMode         = v.DuplicateMode;         break;
+                    default:
+                        // An unknown token is a library written by a newer build. Ignoring it
+                        // is the documented degrade path, but it is never silent.
+                        DiagnosticsLog.Warn("ZoneLibrary",
+                            $"View override on area '{area?.Name}' names an unknown field '{field}' — ignored.");
+                        break;
+                }
+            }
+            return result;
+        }
+
+        /// <summary>This area's override record for one level view def, or null when it inherits.</summary>
+        public ZoneViewOverride? OverrideFor(ZoneArea? area, string? viewDefId)
+        {
+            if (area?.ViewOverrides == null || string.IsNullOrEmpty(viewDefId)) return null;
+            foreach (var o in area.ViewOverrides)
+                if (o != null && string.Equals(o.BaseId, viewDefId, StringComparison.Ordinal))
+                    return o;
+            return null;
+        }
+
+        /// <summary>
+        /// The area's override record for a def, created empty if it does not exist yet.
+        /// An override with no fields listed still resolves to the level's values, so calling
+        /// this is never itself a change.
+        /// </summary>
+        public ZoneViewOverride EnsureOverride(ZoneArea area, string viewDefId)
+        {
+            var existing = OverrideFor(area, viewDefId);
+            if (existing != null) return existing;
+
+            if (area.ViewOverrides == null) area.ViewOverrides = new List<ZoneViewOverride>();
+            var ov = new ZoneViewOverride { BaseId = viewDefId };
+
+            // Seed Values from the level's def so an unset field shows the inherited value in
+            // the editor rather than a type default.
+            var baseDef = LevelViewDef(viewDefId);
+            if (baseDef != null) ov.Values = baseDef.Clone();
+
+            area.ViewOverrides.Add(ov);
+            return ov;
+        }
+
+        /// <summary>The group in a sheet set that carries this area, or null when it is solo.</summary>
+        public ZoneSheetGroup? GroupFor(ZoneSheetSet? sheetSet, string? areaId)
+        {
+            if (sheetSet?.Groups == null || string.IsNullOrEmpty(areaId)) return null;
+            foreach (var g in sheetSet.Groups)
                 if (g?.AreaIds != null && g.AreaIds.Contains(areaId))
                     return g;
             return null;

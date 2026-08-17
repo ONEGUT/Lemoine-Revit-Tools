@@ -12,7 +12,7 @@ namespace LemoineTools.Tools.Zones
     /// <summary>
     /// Build Sheets from Zones — the end of the chain.
     ///
-    /// Pick levels, pick sheet sizes, pick recipes; each (level × sheet size × group)
+    /// Pick levels, pick sheet sizes, pick views; each (level × sheet size × group)
     /// becomes one sheet with its views already in their recorded positions.
     /// </summary>
     public sealed class ZoneSheetsViewModel : IStepFlowTool, IStepAware, IReviewableTool, IRunResult, IToolCleanup
@@ -35,8 +35,8 @@ namespace LemoineTools.Tools.Zones
         private readonly ExternalEvent?        _event;
 
         private readonly HashSet<string> _levelIds  = new HashSet<string>(StringComparer.Ordinal);
-        private readonly HashSet<string> _layoutIds = new HashSet<string>(StringComparer.Ordinal);
-        private readonly HashSet<string> _recipeIds = new HashSet<string>(StringComparer.Ordinal);
+        private readonly HashSet<string> _sheetSetIds = new HashSet<string>(StringComparer.Ordinal);
+        private readonly HashSet<string> _viewNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         private Action<string>? _refreshStep;
 
@@ -57,7 +57,9 @@ namespace LemoineTools.Tools.Zones
         {
             // S4 summarises S1-S3, so it must rebuild on activation rather than render the
             // empty state it was constructed with.
-            if (stepId == "S4") _refreshStep?.Invoke("S4");
+            // S3 lists the views defined on the levels chosen in S1, and S4 summarises
+            // everything — both read earlier steps, so both rebuild here.
+            if (stepId == "S3" || stepId == "S4") _refreshStep?.Invoke(stepId);
         }
 
         public void OnWindowClosed()
@@ -75,15 +77,37 @@ namespace LemoineTools.Tools.Zones
                 case "S1": return CheckList(Lib.Levels.OrderBy(l => l.SortIndex).ThenBy(l => l.ElevationFt)
                                                .Select(l => (l.Id, l.Name, "")).ToList(),
                                             _levelIds, AppStrings.T("zones.sheets.noLevels"));
-                case "S2": return CheckList(Lib.Layouts.OrderBy(l => l.SortIndex)
+                case "S2": return CheckList(Lib.SheetSets.OrderBy(l => l.SortIndex)
                                                .Select(l => (l.Id, l.Name, l.TitleBlockTypeName)).ToList(),
-                                            _layoutIds, AppStrings.T("zones.sheets.noLayouts"));
-                case "S3": return CheckList(Lib.Recipes.OrderBy(r => r.SortIndex)
-                                               .Select(r => (r.Id, r.Name, r.Kind)).ToList(),
-                                            _recipeIds, AppStrings.T("zones.sheets.noRecipes"));
+                                            _sheetSetIds, AppStrings.T("zones.sheets.noLayouts"));
+                // Views are defined on a LEVEL, so the choice is by name across the levels
+                // picked on S1 — the id of "Floor Plan" differs on every level.
+                case "S3": return CheckList(AvailableViews(), _viewNames,
+                                            AppStrings.T("zones.sheets.noViewsOnLevels"));
                 case "S4": return BuildReview();
                 default:   return null;
             }
+        }
+
+        /// <summary>
+        /// Views available across the selected levels, keyed by NAME. Distinct, so a view
+        /// defined on every level is offered once.
+        /// </summary>
+        private List<(string Id, string Name, string Meta)> AvailableViews()
+        {
+            var rows = new List<(string, string, string)>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var levelId in _levelIds)
+            {
+                var level = Lib.Level(levelId);
+                if (level?.ViewDefs == null) continue;
+                foreach (var v in level.ViewDefs.OrderBy(x => x.SortIndex))
+                {
+                    if (v == null || string.IsNullOrWhiteSpace(v.Name)) continue;
+                    if (seen.Add(v.Name)) rows.Add((v.Name, v.Name, v.Kind));
+                }
+            }
+            return rows;
         }
 
         private FrameworkElement CheckList(List<(string Id, string Name, string Meta)> items,
@@ -117,17 +141,17 @@ namespace LemoineTools.Tools.Zones
             var panel = new StackPanel();
             panel.Children.Add(Note(AppStrings.T("zones.sheets.plannedCount", PlannedSheetCount())));
 
-            // A layout with no groups produces no sheets at all, which is silent otherwise.
-            var emptyLayouts = Lib.Layouts
-                .Where(l => _layoutIds.Contains(l.Id) && (l.Groups == null || l.Groups.Count == 0))
+            // A sheet set with no groups produces no sheets at all, which is silent otherwise.
+            var emptySets = Lib.SheetSets
+                .Where(l => _sheetSetIds.Contains(l.Id) && (l.Groups == null || l.Groups.Count == 0))
                 .Select(l => l.Name).ToList();
-            if (emptyLayouts.Count > 0)
-                panel.Children.Add(Warn(AppStrings.T("zones.sheets.noGroupsWarn", string.Join(", ", emptyLayouts))));
+            if (emptySets.Count > 0)
+                panel.Children.Add(Warn(AppStrings.T("zones.sheets.noGroupsWarn", string.Join(", ", emptySets))));
 
             // Placements are what put views in the right spot; without them Revit centres
             // whatever it likes and the sheet looks plausible but is not to standard.
             int missing = 0;
-            foreach (var lay in Lib.Layouts.Where(l => _layoutIds.Contains(l.Id)))
+            foreach (var lay in Lib.SheetSets.Where(l => _sheetSetIds.Contains(l.Id)))
             foreach (var g in lay.Groups ?? new List<ZoneSheetGroup>())
             foreach (var aid in g.AreaIds ?? new List<string>())
             {
@@ -143,7 +167,7 @@ namespace LemoineTools.Tools.Zones
         private int PlannedSheetCount()
         {
             int n = 0;
-            foreach (var lay in Lib.Layouts.Where(l => _layoutIds.Contains(l.Id)))
+            foreach (var lay in Lib.SheetSets.Where(l => _sheetSetIds.Contains(l.Id)))
             {
                 int groups = (lay.Groups ?? new List<ZoneSheetGroup>()).Count;
                 n += groups * _levelIds.Count;
@@ -156,8 +180,8 @@ namespace LemoineTools.Tools.Zones
             switch (stepId)
             {
                 case "S1": return _levelIds.Count  > 0;
-                case "S2": return _layoutIds.Count > 0;
-                case "S3": return _recipeIds.Count > 0;
+                case "S2": return _sheetSetIds.Count > 0;
+                case "S3": return _viewNames.Count > 0;
                 default:   return true;
             }
         }
@@ -167,8 +191,8 @@ namespace LemoineTools.Tools.Zones
             switch (stepId)
             {
                 case "S1": return AppStrings.T("zones.sheets.summary.levels",  _levelIds.Count);
-                case "S2": return AppStrings.T("zones.sheets.summary.layouts", _layoutIds.Count);
-                case "S3": return AppStrings.T("zones.sheets.summary.recipes", _recipeIds.Count);
+                case "S2": return AppStrings.T("zones.sheets.summary.layouts", _sheetSetIds.Count);
+                case "S3": return AppStrings.T("zones.sheets.summary.views", _viewNames.Count);
                 default:   return AppStrings.T("zones.sheets.summary.planned", PlannedSheetCount());
             }
         }
@@ -177,7 +201,7 @@ namespace LemoineTools.Tools.Zones
         {
             ("levels",  AppStrings.T("zones.sheets.steps.S1")),
             ("layouts", AppStrings.T("zones.sheets.steps.S2")),
-            ("recipes", AppStrings.T("zones.sheets.steps.S3")),
+            ("views",   AppStrings.T("zones.sheets.steps.S3")),
             ("planned", AppStrings.T("zones.sheets.steps.S4")),
         };
 
@@ -185,7 +209,7 @@ namespace LemoineTools.Tools.Zones
         {
             ["levels"]  = SummaryFor("S1"),
             ["layouts"] = SummaryFor("S2"),
-            ["recipes"] = SummaryFor("S3"),
+            ["views"]   = SummaryFor("S3"),
             ["planned"] = SummaryFor("S4"),
         };
 
@@ -201,7 +225,7 @@ namespace LemoineTools.Tools.Zones
             get
             {
                 int missing = 0;
-                foreach (var lay in Lib.Layouts.Where(l => _layoutIds.Contains(l.Id)))
+                foreach (var lay in Lib.SheetSets.Where(l => _sheetSetIds.Contains(l.Id)))
                 foreach (var g in lay.Groups ?? new List<ZoneSheetGroup>())
                 foreach (var aid in g.AreaIds ?? new List<string>())
                 {
@@ -224,8 +248,8 @@ namespace LemoineTools.Tools.Zones
             }
 
             _handler.LevelIds   = _levelIds.ToList();
-            _handler.LayoutIds  = _layoutIds.ToList();
-            _handler.RecipeIds  = _recipeIds.ToList();
+            _handler.LayoutIds  = _sheetSetIds.ToList();
+            _handler.ViewNames  = _viewNames.ToList();
             _handler.PushLog    = pushLog;
             _handler.OnProgress = onProgress;
             _handler.OnComplete = onComplete;

@@ -13,8 +13,14 @@ namespace LemoineTools.Commands
 {
     /// <summary>
     /// Opens Zone Discover on its own STA thread. The selectable source documents are
-    /// captured here, on Revit's main thread; the scan itself runs later through an
-    /// ExternalEvent so the window never touches the Revit API.
+    /// captured on Revit's main thread; the scan itself runs later through an ExternalEvent
+    /// so the window never touches the Revit API.
+    ///
+    /// Zone Discover has NO ribbon button — it is reached from the Zone Manager's Discover
+    /// button, exactly as Discover Rules is reached from inside Auto Filters. The opening
+    /// logic therefore lives in the static <see cref="Open"/> so both the (still-registered)
+    /// command and <see cref="LemoineTools.Tools.Zones.ZoneOpenDiscoverEventHandler"/> share
+    /// one launcher.
     /// </summary>
     [Transaction(TransactionMode.Manual)]
     [Regeneration(RegenerationOption.Manual)]
@@ -24,8 +30,17 @@ namespace LemoineTools.Commands
 
         public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
         {
-            var uiApp = commandData?.Application;
-            var doc   = uiApp?.ActiveUIDocument?.Document;
+            Open(commandData?.Application);
+            return Result.Succeeded;
+        }
+
+        /// <summary>
+        /// Opens (or re-activates) the Zone Discover window. MUST be called on Revit's main
+        /// thread — it reads the active document to enumerate link instances.
+        /// </summary>
+        public static void Open(UIApplication? uiApp)
+        {
+            var doc = uiApp?.ActiveUIDocument?.Document;
 
             DocumentKey.SetCurrent(doc);
             LemoineTools.Framework.Project.ProjectLibraries.LoadForDocument(doc);
@@ -39,7 +54,7 @@ namespace LemoineTools.Commands
                         if (_window.IsVisible) _window.Activate();
                         else _window = null;
                     });
-                    if (_window != null) return Result.Succeeded;
+                    if (_window != null) return;
                 }
                 catch (Exception ex)
                 {
@@ -118,7 +133,6 @@ namespace LemoineTools.Commands
 
             ready.Wait();
             _window = win;
-            return Result.Succeeded;
         }
     }
 }

@@ -50,26 +50,26 @@
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
 
+                <!-- Rail: search | zone tree | row actions.
+                     The tab strip is gone: buildings, levels, areas, their views and the sheet
+                     sets are ONE tree now, so what belongs to what is visible rather than
+                     inferred from which tab you happen to be on. -->
                 <Border x:Name="_railBorder" Grid.Column="0" BorderThickness="0,0,1,0">
                     <Grid Margin="10">
                         <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="*" />
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
 
-                        <Grid Grid.Row="0">
+                        <Grid Grid.Row="0" Margin="0,0,0,8">
                             <TextBox x:Name="_searchBox" VerticalContentAlignment="Center" />
                             <TextBlock x:Name="_searchHint" Margin="9,0,0,0"
                                        VerticalAlignment="Center" FontStyle="Italic"
                                        IsHitTestVisible="False" />
                         </Grid>
 
-                        <StackPanel x:Name="_tabStrip" Grid.Row="1"
-                                    Orientation="Horizontal" Margin="0,10,0,8" />
-
-                        <Border x:Name="_listBorder" Grid.Row="2" BorderThickness="1"
+                        <Border x:Name="_listBorder" Grid.Row="1" BorderThickness="1"
                                 CornerRadius="{DynamicResource LemoineRadius_SM}">
                             <ScrollViewer x:Name="_listScroll"
                                           VerticalScrollBarVisibility="Auto"
@@ -79,7 +79,7 @@
                             </ScrollViewer>
                         </Border>
 
-                        <StackPanel x:Name="_railActions" Grid.Row="3"
+                        <StackPanel x:Name="_railActions" Grid.Row="2"
                                     Orientation="Horizontal" Margin="0,8,0,0" />
                     </Grid>
                 </Border>

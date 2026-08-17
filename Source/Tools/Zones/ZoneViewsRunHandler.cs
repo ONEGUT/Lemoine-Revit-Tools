@@ -13,7 +13,7 @@ namespace LemoineTools.Tools.Zones
     // ZoneViewsRunHandler — creates views from zones.
     //
     // This is the first thing in the zone chain that produces output. For each
-    // (cell × recipe) it creates one view carrying everything the zone knows:
+    // (cell × view def) it creates one view carrying everything the zone knows:
     // family type, template, scale, view range, crop and name.
     //
     // Ordering that matters, all of it recorded rather than rediscovered:
@@ -27,9 +27,9 @@ namespace LemoineTools.Tools.Zones
     //     is unique in Revit and its setter throws, so a duplicate discovered
     //     mid-run leaves a half-built set behind. The run refuses to start.
     //
-    // Scale resolution, in order: the recipe's fixed scale; else the scale
+    // Scale resolution, in order: the viewDef's fixed scale; else the scale
     // already solved into the chosen layout's placement for that area; else the
-    // recipe default, reported.
+    // viewDef default, reported.
     // =========================================================================
     public sealed class ZoneViewsRunHandler : IExternalEventHandler
     {
@@ -42,9 +42,16 @@ namespace LemoineTools.Tools.Zones
 
         // ── Inputs, set before Raise() ────────────────────────────────────────
         public List<CellRef> Cells     { get; set; } = new List<CellRef>();
-        public List<string>  RecipeIds { get; set; } = new List<string>();
+
+        /// <summary>
+        /// Which of each level's views to build, BY NAME. A view def is defined on a level, so
+        /// the same view ("Floor Plan") is a different record with a different id on every
+        /// level — selecting by id would build it on one level only.
+        /// </summary>
+        public List<string> ViewNames { get; set; } = new List<string>();
+
         /// <summary>Optional: the sheet size whose solved scale/placement should be used.</summary>
-        public string LayoutId { get; set; } = "";
+        public string SheetSetId { get; set; } = "";
 
         public Action<string, string>?     PushLog    { get; set; }
         public Action<int, int, int, int>? OnProgress { get; set; }
@@ -102,7 +109,7 @@ namespace LemoineTools.Tools.Zones
                     else existingNames.Add(v.Name);
                 }
 
-                var layout = lib.Layout(LayoutId);
+                var layout = lib.SheetSet(SheetSetId);
 
                 // ── Plan phase: build every intended view, off-model ───────────
                 var planned = new List<Planned>();
@@ -118,33 +125,41 @@ namespace LemoineTools.Tools.Zones
                     }
                     var building = lib.Building(area.BuildingId) ?? lib.Building(level.BuildingId);
 
-                    foreach (var rid in RecipeIds ?? new List<string>())
+                    // The level owns the view definitions; the area may override individual
+                    // fields. ResolveViewDefs is the single place that combines the two, so the
+                    // Zone Manager preview and this run can never disagree.
+                    var resolved = lib.ResolveViewDefs(level, area);
+                    if (resolved.Count == 0)
+                        Log($"Level '{level.Name}' defines no views, so '{area.Name}' produced none.", "warn");
+
+                    foreach (var viewDef in resolved)
                     {
-                        var recipe = lib.Recipe(rid);
-                        if (recipe == null) continue;
+                        if (ViewNames != null && ViewNames.Count > 0 &&
+                            !ViewNames.Contains(viewDef.Name ?? "", StringComparer.OrdinalIgnoreCase))
+                            continue;
 
                         var group   = layout != null ? lib.GroupFor(layout, area.Id) : null;
                         string gkey = (group != null && group.AreaIds.Count > 1) ? group.Id : "";
 
                         planned.Add(new Planned
                         {
-                            Level = level, Area = area, Recipe = recipe, Building = building,
-                            Name  = ResolveName(recipe, building, level, area, layout, group),
-                            Scale = ResolveScale(lib, recipe, area, layout, gkey),
+                            Level = level, Area = area, ViewDef = viewDef, Building = building,
+                            Name  = ResolveName(viewDef, building, level, area, layout, group),
+                            Scale = ResolveScale(lib, viewDef, area, layout, gkey),
                         });
                     }
                 }
 
                 if (planned.Count == 0)
                 {
-                    Log("Nothing to create — no zone and recipe combination was selected.", "warn");
+                    Log("Nothing to create — no zone and view combination was selected.", "warn");
                     return;
                 }
 
                 // ── Name collision pre-check — refuse rather than half-build ───
                 var collisions = ZoneNamingTokens.FindCollisions(planned.Select(p => new ZoneNamingTokens.PlannedName
                 {
-                    Name = p.Name, AreaId = p.Area.Id, LevelId = p.Level.Id, RecipeId = p.Recipe.Id,
+                    Name = p.Name, AreaId = p.Area.Id, LevelId = p.Level.Id, ViewDefId = p.ViewDef.Id,
                 }));
 
                 foreach (var group in collisions)
@@ -227,8 +242,8 @@ namespace LemoineTools.Tools.Zones
 
                 // Static handler — clear the payload or it outlives the run.
                 Cells     = new List<CellRef>();
-                RecipeIds = new List<string>();
-                LayoutId  = "";
+                ViewNames = new List<string>();
+                SheetSetId = "";
             }
         }
 
@@ -236,7 +251,7 @@ namespace LemoineTools.Tools.Zones
         {
             public ZoneLevel      Level    = null!;
             public ZoneArea       Area     = null!;
-            public ZoneViewRecipe Recipe   = null!;
+            public ZoneViewDef ViewDef   = null!;
             public ZoneBuilding?  Building;
             public string         Name     = "";
             public int            Scale    = 96;
@@ -251,38 +266,38 @@ namespace LemoineTools.Tools.Zones
         {
             // ── Resolve the view family type ──────────────────────────────────
             ViewFamilyType? vft = null;
-            if (!string.IsNullOrEmpty(p.Recipe.ViewFamilyTypeName))
-                vftByKey.TryGetValue(p.Recipe.ViewFamilyTypeName, out vft);
+            if (!string.IsNullOrEmpty(p.ViewDef.ViewFamilyTypeName))
+                vftByKey.TryGetValue(p.ViewDef.ViewFamilyTypeName, out vft);
 
-            ViewFamily wanted = FamilyFor(p.Recipe.Kind);
+            ViewFamily wanted = FamilyFor(p.ViewDef.Kind);
             if (vft == null)
                 vft = vftByKey.Values.FirstOrDefault(t => t.ViewFamily == wanted);
 
             if (vft == null)
             {
-                Log($"'{p.Name}': no view family type available for {p.Recipe.Kind}.", "fail");
+                Log($"'{p.Name}': no view family type available for {p.ViewDef.Kind}.", "fail");
                 return null;
             }
             if (vft.ViewFamily != wanted)
             {
-                Log($"'{p.Name}': view family type '{p.Recipe.ViewFamilyTypeName}' is not a {p.Recipe.Kind} type.", "fail");
+                Log($"'{p.Name}': view family type '{p.ViewDef.ViewFamilyTypeName}' is not a {p.ViewDef.Kind} type.", "fail");
                 return null;
             }
 
             View view;
             string boxName = ZoneSettings.Instance.Library.ScopeBoxFor(p.Area, p.Level);
 
-            if (p.Recipe.Kind == ZoneViewKind.ThreeD)
+            if (p.ViewDef.Kind == ZoneViewKind.ThreeD)
             {
                 var v3 = View3D.CreateIsometric(doc, vft.Id);
                 if (v3 == null) { Log($"'{p.Name}': Revit refused to create the 3D view.", "fail"); return null; }
                 view = v3;
                 SetName(view, p.Name);
-                ApplyTemplate(view, p.Recipe, templatesByName);   // template BEFORE geometry
+                ApplyTemplate(view, p.ViewDef, templatesByName);   // template BEFORE geometry
 
                 // A 3D view cannot carry the Scope Box parameter, so the area's XY extents and
                 // the level's band become a section box instead.
-                if (p.Recipe.SectionBoxFromBand && p.Area.HasExtents)
+                if (p.ViewDef.SectionBoxFromBand && p.Area.HasExtents)
                 {
                     var level = ResolveLevel(p, levelsByName);
                     double baseZ = (level?.Elevation ?? 0) + p.Level.BandBaseOffsetFt;
@@ -315,7 +330,7 @@ namespace LemoineTools.Tools.Zones
                 var plan = ViewPlan.Create(doc, vft.Id, level.Id);
                 view = plan;
                 SetName(view, p.Name);
-                ApplyTemplate(view, p.Recipe, templatesByName);   // template BEFORE geometry
+                ApplyTemplate(view, p.ViewDef, templatesByName);   // template BEFORE geometry
 
                 // Scope box drives the crop, and it is live — the view follows the box.
                 if (!string.IsNullOrEmpty(boxName) && boxesByName.TryGetValue(boxName, out var boxId))
@@ -339,8 +354,8 @@ namespace LemoineTools.Tools.Zones
                 }
 
                 // View range — the "RCP and floor plans ready to use" half of a zone.
-                if (ZoneViewKind.IsPlan(p.Recipe.Kind) && p.Recipe.ViewRange != null)
-                    ZoneViewRangeApplier.Apply(plan, p.Recipe.ViewRange, doc, Log);
+                if (ZoneViewKind.IsPlan(p.ViewDef.Kind) && p.ViewDef.ViewRange != null)
+                    ZoneViewRangeApplier.Apply(plan, p.ViewDef.ViewRange, doc, Log);
             }
 
             // ── Scale ─────────────────────────────────────────────────────────
@@ -354,7 +369,7 @@ namespace LemoineTools.Tools.Zones
                 DiagnosticsLog.Swallowed($"ZoneViews: scale on '{p.Name}'", ex);
             }
 
-            ApplyDisciplineAndDetail(view, p.Recipe);
+            ApplyDisciplineAndDetail(view, p.ViewDef);
             Log($"Created '{p.Name}' at {ZoneScaleFit.Label(p.Scale)}.", "pass");
             return view;
         }
@@ -377,12 +392,12 @@ namespace LemoineTools.Tools.Zones
             }
         }
 
-        private void ApplyTemplate(View view, ZoneViewRecipe recipe, Dictionary<string, View> templates)
+        private void ApplyTemplate(View view, ZoneViewDef viewDef, Dictionary<string, View> templates)
         {
-            if (string.IsNullOrEmpty(recipe.ViewTemplateName)) return;
-            if (!templates.TryGetValue(recipe.ViewTemplateName, out var tpl))
+            if (string.IsNullOrEmpty(viewDef.ViewTemplateName)) return;
+            if (!templates.TryGetValue(viewDef.ViewTemplateName, out var tpl))
             {
-                Log($"'{view.Name}': view template '{recipe.ViewTemplateName}' is not in this document.", "warn");
+                Log($"'{view.Name}': view template '{viewDef.ViewTemplateName}' is not in this document.", "warn");
                 return;
             }
 
@@ -391,22 +406,22 @@ namespace LemoineTools.Tools.Zones
             try { view.ViewTemplateId = tpl.Id; }
             catch (Exception ex)
             {
-                Log($"'{view.Name}': view template '{recipe.ViewTemplateName}' does not apply to this view type.", "warn");
+                Log($"'{view.Name}': view template '{viewDef.ViewTemplateName}' does not apply to this view type.", "warn");
                 DiagnosticsLog.Swallowed($"ZoneViews: template on '{view.Name}'", ex);
             }
         }
 
-        private void ApplyDisciplineAndDetail(View view, ZoneViewRecipe recipe)
+        private void ApplyDisciplineAndDetail(View view, ZoneViewDef viewDef)
         {
-            if (!string.IsNullOrEmpty(recipe.Discipline) &&
-                Enum.TryParse<ViewDiscipline>(recipe.Discipline, true, out var disc))
+            if (!string.IsNullOrEmpty(viewDef.Discipline) &&
+                Enum.TryParse<ViewDiscipline>(viewDef.Discipline, true, out var disc))
             {
                 try { view.Discipline = disc; }
                 catch (Exception ex) { DiagnosticsLog.Swallowed($"ZoneViews: discipline on '{view.Name}'", ex); }
             }
 
-            if (!string.IsNullOrEmpty(recipe.DetailLevel) &&
-                Enum.TryParse<ViewDetailLevel>(recipe.DetailLevel, true, out var det))
+            if (!string.IsNullOrEmpty(viewDef.DetailLevel) &&
+                Enum.TryParse<ViewDetailLevel>(viewDef.DetailLevel, true, out var det))
             {
                 try { view.DetailLevel = det; }
                 catch (Exception ex) { DiagnosticsLog.Swallowed($"ZoneViews: detail level on '{view.Name}'", ex); }
@@ -426,13 +441,13 @@ namespace LemoineTools.Tools.Zones
         }
 
         /// <summary>
-        /// Scale, in order: the recipe's fixed value; the scale already solved into the chosen
-        /// layout's placement for this area; then the recipe default, with a note.
+        /// Scale, in order: the viewDef's fixed value; the scale already solved into the chosen
+        /// layout's placement for this area; then the viewDef default, with a note.
         /// </summary>
-        private int ResolveScale(ZoneLibrary lib, ZoneViewRecipe recipe, ZoneArea area,
-                                 ZoneSheetLayout? layout, string groupKey)
+        private int ResolveScale(ZoneLibrary lib, ZoneViewDef viewDef, ZoneArea area,
+                                 ZoneSheetSet? layout, string groupKey)
         {
-            if (recipe.ScaleMode == ZoneScaleMode.Fixed && recipe.Scale > 0) return recipe.Scale;
+            if (viewDef.ScaleMode == ZoneScaleMode.Fixed && viewDef.Scale > 0) return viewDef.Scale;
 
             if (layout != null)
             {
@@ -440,16 +455,16 @@ namespace LemoineTools.Tools.Zones
                 if (pl != null && pl.Scale > 0) return pl.Scale;
             }
 
-            return recipe.Scale > 0 ? recipe.Scale : 96;
+            return viewDef.Scale > 0 ? viewDef.Scale : 96;
         }
 
         /// <summary>
         /// Delegates to the SHARED resolver. The sheet builder locates these views by name, so
         /// both must resolve identically or it finds nothing.
         /// </summary>
-        private string ResolveName(ZoneViewRecipe recipe, ZoneBuilding? building, ZoneLevel level,
-                                   ZoneArea area, ZoneSheetLayout? layout, ZoneSheetGroup? group)
-            => ZoneNamingTokens.ResolveViewName(recipe, building, level, area, layout, group,
+        private string ResolveName(ZoneViewDef viewDef, ZoneBuilding? building, ZoneLevel level,
+                                   ZoneArea area, ZoneSheetSet? layout, ZoneSheetGroup? group)
+            => ZoneNamingTokens.ResolveViewName(viewDef, building, level, area, layout, group,
                                                 msg => Log(msg, "warn"));
     }
 }

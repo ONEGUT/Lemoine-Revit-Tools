@@ -61,7 +61,10 @@ namespace LemoineTools.Commands
 
             // ── Main-thread capture ───────────────────────────────────────────
             var titleBlocks  = new List<ZoneTitleBlocks.TitleBlockType>();
-            var scopeBoxes   = new List<string>();
+            // Scope boxes are handed over WITH THEIR BOUNDS. Capturing only the names was why
+            // picking a box in the manager could never resolve an area's extents — the numbers
+            // were read here and then thrown away, so no later code could have fixed it.
+            var scopeBoxes   = new List<ZoneScopeBoxSync.BoxInfo>();
             var levelNames   = new List<string>();
 
             if (doc != null)
@@ -69,10 +72,8 @@ namespace LemoineTools.Commands
                 titleBlocks = ZoneTitleBlocks.Collect(doc);
 
                 scopeBoxes = ZoneScopeBoxSync.CollectBoxes(doc)
-                    .Select(b => b.Name)
-                    .Where(n => !string.IsNullOrEmpty(n))
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .OrderBy(n => n, NaturalOrderComparer.OrdinalIgnoreCase)
+                    .Where(b => !string.IsNullOrEmpty(b.Name))
+                    .OrderBy(b => b.Name, NaturalOrderComparer.OrdinalIgnoreCase)
                     .ToList();
 
                 try
@@ -91,9 +92,10 @@ namespace LemoineTools.Commands
 
                 // A zero result is reported rather than presented as an empty picker — a silent
                 // empty list is indistinguishable from a broken collector.
+                int withBounds = scopeBoxes.Count(b => b.HasBounds);
                 DiagnosticsLog.Info("ZoneManagerCommand",
-                    $"Captured {titleBlocks.Count} title block type(s), {scopeBoxes.Count} scope box(es), " +
-                    $"{levelNames.Count} level(s) for the Zone Manager.");
+                    $"Captured {titleBlocks.Count} title block type(s), {scopeBoxes.Count} scope box(es) " +
+                    $"({withBounds} with readable bounds), {levelNames.Count} level(s) for the Zone Manager.");
             }
 
             string docTitle = doc?.Title ?? "";

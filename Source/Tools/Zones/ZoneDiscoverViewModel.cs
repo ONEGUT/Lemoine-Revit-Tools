@@ -4,6 +4,7 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Threading;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Framework;
@@ -22,8 +23,29 @@ namespace LemoineTools.Tools.Zones
     ///
     /// Nothing is applied until the run: the scan only proposes, and every proposal is a
     /// tick box carrying what it would do and where it came from.
+    ///
+    /// FOUR steps, in the house shape:
+    ///
+    ///   S1 Source model    which documents to read
+    ///   S2 Discover        what to look for, and the Scan button
+    ///   S3 Results         what the scan found — keep or drop each proposal
+    ///   S4 Confirm         the review summary and Run
+    ///
+    /// Pressing Scan on S2 ADVANCES to S3 (via IStepNavigable) once the results are in, so
+    /// the button visibly leads somewhere rather than appearing to do nothing.
+    ///
+    /// THREADING — the reason this tool did nothing at all before:
+    ///
+    ///   ZoneDiscoverScanHandler.Execute runs on REVIT'S MAIN THREAD, but every element this
+    ///   ViewModel builds belongs to the tool window's own dedicated STA thread. Wiring
+    ///   OnScanComplete straight to a method that touches those elements threw
+    ///   InvalidOperationException inside the ExternalEvent, where Revit discards it — no
+    ///   proposals, no error, no log line. StepFlowWindow marshals pushLog/onProgress/
+    ///   onComplete for us, but NOT handler callbacks a ViewModel wires itself. So both
+    ///   callbacks below are marshalled explicitly through the window's dispatcher.
     /// </summary>
-    public sealed class ZoneDiscoverViewModel : IStepFlowTool, IStepAware, IReviewableTool, IRunResult, IToolCleanup
+    public sealed class ZoneDiscoverViewModel
+        : IStepFlowTool, IStepAware, IStepNavigable, IReviewableTool, IRunResult, IToolCleanup
     {
         public string? ResultNoun => "zones";
         public IReadOnlyList<ResultChip>? ResultChips => null;
@@ -31,11 +53,18 @@ namespace LemoineTools.Tools.Zones
         public string Title    => AppStrings.T("zones.discover.title");
         public string RunLabel => AppStrings.T("zones.discover.runLabel");
 
+        // Step ids. Logic tokens, deliberately not externalized.
+        private const string StepSource  = "S1";
+        private const string StepWhat    = "S2";
+        private const string StepResults = "S3";
+        private const string StepConfirm = "S4";
+
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("S1", AppStrings.T("zones.discover.steps.S1"), required: true),
-            new StepDefinition("S2", AppStrings.T("zones.discover.steps.S2"), required: true),
-            new StepDefinition("S3", AppStrings.T("zones.discover.steps.S3"), required: false),
+            new StepDefinition(StepSource,  AppStrings.T("zones.discover.steps.S1"), required: true),
+            new StepDefinition(StepWhat,    AppStrings.T("zones.discover.steps.S2"), required: true),
+            new StepDefinition(StepResults, AppStrings.T("zones.discover.steps.S3"), required: false),
+            new StepDefinition(StepConfirm, AppStrings.T("zones.discover.steps.S4"), required: false),
         };
 
         /// <summary>One selectable source document, captured on the main thread.</summary>
@@ -60,13 +89,24 @@ namespace LemoineTools.Tools.Zones
         private bool _areasFromRooms;
 
         private ZoneDiscoverResult? _result;
-        private bool _scanning;
+        private bool   _scanning;
+        /// <summary>Last scan failure, shown on S3. Null when the scan has not failed.</summary>
+        private string? _scanError;
 
         private Action<string>? _refreshStep;
-        private StackPanel? _reviewPanel;
+        private StackPanel? _resultsPanel;
+
+        /// <summary>
+        /// The tool window's dispatcher. Captured lazily in GetStepContent, which runs on the
+        /// window's STA thread — the constructor does NOT, it runs on Revit's main thread inside
+        /// the launching command, so capturing there would grab the wrong dispatcher entirely.
+        /// </summary>
+        private Dispatcher? _wpfDispatcher;
 
         public event EventHandler? ValidationChanged;
         private void Fire() => ValidationChanged?.Invoke(this, EventArgs.Empty);
+
+        public event EventHandler<int>? NavigateRequested;
 
         public ZoneDiscoverViewModel(
             ZoneDiscoverScanHandler? scanHandler, ExternalEvent? scanEvent,
@@ -88,9 +128,9 @@ namespace LemoineTools.Tools.Zones
 
         public void OnStepActivated(string stepId)
         {
-            // Step content is built eagerly at window construction, so the review step must
-            // rebuild itself here or it renders once, empty, and never updates.
-            if (stepId == "S3") _refreshStep?.Invoke("S3");
+            // Step content is built eagerly at window construction, so any step that reads an
+            // earlier step's state must rebuild itself here or it renders once, stale, forever.
+            if (stepId == StepResults || stepId == StepConfirm) _refreshStep?.Invoke(stepId);
         }
 
         public void OnWindowClosed()
@@ -106,50 +146,115 @@ namespace LemoineTools.Tools.Zones
                 _runHandler.OnProgress = null;
                 _runHandler.OnComplete = null;
             }
+            _wpfDispatcher = null;
         }
 
         // ── Step content ──────────────────────────────────────────────────────
         public FrameworkElement? GetStepContent(string stepId)
         {
+            // First call happens on the window's STA thread during construction. This is the
+            // only correct moment to capture the dispatcher the handler callbacks marshal to.
+            if (_wpfDispatcher == null) _wpfDispatcher = Dispatcher.CurrentDispatcher;
+
             switch (stepId)
             {
-                case "S1": return BuildSourceStep();
-                case "S2": return BuildOptionsStep();
-                case "S3": return BuildReviewStep();
-                default:   return null;
+                case StepSource:  return BuildSourceStep();
+                case StepWhat:    return BuildWhatStep();
+                case StepResults: return BuildResultsStep();
+                case StepConfirm: return BuildConfirmStep();
+                default:          return null;
             }
         }
 
+        // ── S1 — Source model ─────────────────────────────────────────────────
+
+        /// <summary>
+        /// The same card list Discover Rules uses to pick links, minus the trade column — Zone
+        /// Discover has no trade concept, and that is the only difference between the two.
+        /// </summary>
         private FrameworkElement BuildSourceStep()
         {
-            var panel = new StackPanel();
-            panel.Children.Add(Hint(AppStrings.T("zones.discover.sourceHint")));
-
-            foreach (var d in _docs)
+            var sv = new ScrollViewer
             {
-                var cb = new CheckBox
-                {
-                    Content = d.Label + (d.IsHost ? "  " + AppStrings.T("zones.discover.hostSuffix") : ""),
-                    IsChecked = _selectedDocs.Contains(d.Label),
-                    Margin = new Thickness(0, 3, 0, 3),
-                };
-                cb.SetResourceReference(CheckBox.FontSizeProperty, "LemoineFS_SM");
-                string label = d.Label;
-                cb.Click += (s, e) =>
-                {
-                    if (cb.IsChecked == true) _selectedDocs.Add(label); else _selectedDocs.Remove(label);
-                    Fire();
-                };
-                panel.Children.Add(cb);
-            }
+                VerticalScrollBarVisibility   = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                MaxHeight = 320,
+            };
+            ControlStyles.WireBubblingScroll(sv);
+
+            var sp = new StackPanel { Margin = new Thickness(0, 0, 8, 0) };
+            sp.Children.Add(Hint(AppStrings.T("zones.discover.sourceHint")));
 
             if (_docs.Count == 0)
-                panel.Children.Add(Hint(AppStrings.T("zones.discover.noSources")));
+            {
+                sp.Children.Add(new WarnBanner(AppStrings.T("zones.discover.noSources")));
+            }
+            else
+            {
+                foreach (var d in _docs) sp.Children.Add(BuildSourceRow(d));
+            }
 
-            return panel;
+            sv.Content = sp;
+            return sv;
         }
 
-        private FrameworkElement BuildOptionsStep()
+        private FrameworkElement BuildSourceRow(DocEntry doc)
+        {
+            var card = new Border
+            {
+                BorderThickness = new Thickness(1),
+                CornerRadius    = new CornerRadius(4),
+                Margin          = new Thickness(0, 0, 0, 4),
+                Padding         = new Thickness(8, 6, 8, 6),
+            };
+            card.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            card.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
+
+            var g = new WpfGrid();
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var cb = new CheckBox
+            {
+                IsChecked         = _selectedDocs.Contains(doc.Label),
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin            = new Thickness(0, 0, 8, 0),
+            };
+            string label = doc.Label;
+            cb.Checked   += (s, e) => { _selectedDocs.Add(label);    Fire(); };
+            cb.Unchecked += (s, e) => { _selectedDocs.Remove(label); Fire(); };
+
+            var lbl = new TextBlock
+            {
+                Text              = doc.Label,
+                VerticalAlignment = VerticalAlignment.Center,
+                TextTrimming      = TextTrimming.CharacterEllipsis,
+                HorizontalAlignment = HorizontalAlignment.Left,
+            };
+            lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+
+            WpfGrid.SetColumn(cb,  0);
+            WpfGrid.SetColumn(lbl, 1);
+            g.Children.Add(cb);
+            g.Children.Add(lbl);
+
+            // The host document is tagged rather than renamed, so its real title still reads.
+            if (doc.IsHost)
+            {
+                var tag = Chip(AppStrings.T("zones.discover.hostSuffix"));
+                WpfGrid.SetColumn(tag, 2);
+                g.Children.Add(tag);
+            }
+
+            card.Child = g;
+            return card;
+        }
+
+        // ── S2 — Discover ─────────────────────────────────────────────────────
+        private FrameworkElement BuildWhatStep()
         {
             var panel = new StackPanel();
             panel.Children.Add(Toggle(AppStrings.T("zones.discover.opt.levels"), _discoverLevels,
@@ -176,53 +281,104 @@ namespace LemoineTools.Tools.Zones
             return panel;
         }
 
-        private FrameworkElement BuildReviewStep()
+        // ── S3 — Results ──────────────────────────────────────────────────────
+        private FrameworkElement BuildResultsStep()
         {
-            _reviewPanel = new StackPanel();
-            RenderReview();
-            return _reviewPanel;
+            var sv = new ScrollViewer
+            {
+                VerticalScrollBarVisibility   = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                MaxHeight = 360,
+            };
+            ControlStyles.WireBubblingScroll(sv);
+
+            _resultsPanel = new StackPanel { Margin = new Thickness(0, 0, 8, 0) };
+            RenderResults();
+            sv.Content = _resultsPanel;
+            return sv;
         }
 
-        private void RenderReview()
+        private void RenderResults()
         {
-            if (_reviewPanel == null) return;
-            _reviewPanel.Children.Clear();
+            if (_resultsPanel == null) return;
+            _resultsPanel.Children.Clear();
 
             if (_scanning)
             {
-                _reviewPanel.Children.Add(Hint(AppStrings.T("zones.discover.scanning")));
+                _resultsPanel.Children.Add(Hint(AppStrings.T("zones.discover.scanning")));
                 return;
             }
+
+            // A failed scan used to reach DiagnosticsLog only, so the user saw an empty step and
+            // no reason for it. It is stated here, in the step where the results should be.
+            if (_scanError != null)
+            {
+                _resultsPanel.Children.Add(new WarnBanner(
+                    AppStrings.T("zones.discover.scanFailed", _scanError)));
+                return;
+            }
+
             if (_result == null)
             {
-                _reviewPanel.Children.Add(Hint(AppStrings.T("zones.discover.notScanned")));
+                _resultsPanel.Children.Add(Hint(AppStrings.T("zones.discover.notScanned")));
                 return;
             }
+
+            _resultsPanel.Children.Add(Hint(AppStrings.T("zones.discover.resultsHint")));
 
             AddProposalGroup(AppStrings.T("zones.discover.group.buildings"), _result.Buildings.Cast<ZoneProposal>().ToList());
             AddProposalGroup(AppStrings.T("zones.discover.group.levels"),    _result.Levels.Cast<ZoneProposal>().ToList());
             AddProposalGroup(AppStrings.T("zones.discover.group.areas"),     _result.Areas.Cast<ZoneProposal>().ToList());
 
+            // Every "Found 0 ..." note the collector produced is surfaced here — a silent empty
+            // result is indistinguishable from a broken collector.
             foreach (var note in _result.Notes)
-                _reviewPanel.Children.Add(Warn(note));
+                _resultsPanel.Children.Add(Warn(note));
 
             if (_result.TotalProposals == 0)
-                _reviewPanel.Children.Add(Warn(AppStrings.T("zones.discover.nothingFound")));
+                _resultsPanel.Children.Add(Warn(AppStrings.T("zones.discover.nothingFound")));
         }
 
         private void AddProposalGroup(string title, List<ZoneProposal> items)
         {
             if (items.Count == 0) return;
 
+            var headerRow = new WpfGrid { Margin = new Thickness(0, 10, 0, 4) };
+            headerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            headerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
             var header = new TextBlock
             {
                 Text = $"{title} ({items.Count})",
-                Margin = new Thickness(0, 8, 0, 4),
                 FontWeight = FontWeights.SemiBold,
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Left,
             };
             header.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextSub");
             header.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            _reviewPanel!.Children.Add(header);
+            WpfGrid.SetColumn(header, 0);
+            headerRow.Children.Add(header);
+
+            // Keep-all / drop-all for the group, so a 60-level scan is not 60 clicks.
+            var all = new CheckBox
+            {
+                Content = AppStrings.T("zones.discover.keepAll"),
+                IsChecked = items.All(p => p.Accepted),
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            all.SetResourceReference(CheckBox.FontSizeProperty, "LemoineFS_SM");
+            var groupItems = items;
+            all.Click += (s, e) =>
+            {
+                bool on = all.IsChecked == true;
+                foreach (var p in groupItems) p.Accepted = on;
+                RenderResults();
+                Fire();
+            };
+            WpfGrid.SetColumn(all, 1);
+            headerRow.Children.Add(all);
+
+            _resultsPanel!.Children.Add(headerRow);
 
             foreach (var p in items)
             {
@@ -267,18 +423,63 @@ namespace LemoineTools.Tools.Zones
                 WpfGrid.SetColumn(meta, 2);
                 g.Children.Add(meta);
 
-                _reviewPanel!.Children.Add(g);
+                _resultsPanel!.Children.Add(g);
             }
+        }
+
+        // ── S4 — Confirm ──────────────────────────────────────────────────────
+        private FrameworkElement BuildConfirmStep()
+        {
+            var panel = new StackPanel();
+
+            if (_result == null)
+            {
+                panel.Children.Add(new WarnBanner(AppStrings.T("zones.discover.notScanned")));
+                return panel;
+            }
+            if (_result.AcceptedCount == 0)
+            {
+                panel.Children.Add(new WarnBanner(AppStrings.T("zones.discover.nothingAccepted")));
+                return panel;
+            }
+
+            panel.Children.Add(Hint(AppStrings.T("zones.discover.summary.review",
+                                                 _result.AcceptedCount, _result.TotalProposals)));
+
+            AddConfirmLine(panel, AppStrings.T("zones.discover.group.buildings"),
+                           _result.Buildings.Count(b => b.Accepted));
+            AddConfirmLine(panel, AppStrings.T("zones.discover.group.levels"),
+                           _result.Levels.Count(l => l.Accepted));
+            AddConfirmLine(panel, AppStrings.T("zones.discover.group.areas"),
+                           _result.Areas.Count(a => a.Accepted));
+
+            return panel;
+        }
+
+        private void AddConfirmLine(StackPanel panel, string label, int count)
+        {
+            if (count == 0) return;
+            var t = new TextBlock { Text = $"{label} · {count}", Margin = new Thickness(0, 2, 0, 2) };
+            t.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            t.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            panel.Children.Add(t);
         }
 
         // ── Scan ──────────────────────────────────────────────────────────────
         private void StartScan()
         {
-            if (_scanHandler == null || _scanEvent == null) return;
+            if (_scanHandler == null || _scanEvent == null)
+            {
+                _scanError = AppStrings.T("zones.discover.noHandler");
+                RenderResults();
+                GoToResults();
+                return;
+            }
 
-            _scanning = true;
-            _result   = null;
-            RenderReview();
+            _scanning  = true;
+            _result    = null;
+            _scanError = null;
+            RenderResults();
             Fire();
 
             _scanHandler.IncludeHost = _docs.Any(d => d.IsHost && _selectedDocs.Contains(d.Label));
@@ -291,24 +492,75 @@ namespace LemoineTools.Tools.Zones
             _scanHandler.AreasFromScopeBoxes   = _areasFromScopeBoxes;
             _scanHandler.AreasFromRoomClusters = _areasFromRooms;
 
-            _scanHandler.OnScanComplete = r =>
+            // Both callbacks fire on REVIT'S MAIN THREAD. Everything they touch lives on this
+            // window's STA thread, so both must be marshalled — doing this inline was the bug
+            // that made the whole tool look like it never scanned.
+            _scanHandler.OnScanComplete = r => OnUiThread(() =>
             {
-                _scanning = false;
-                _result   = r;
-                RenderReview();
-                _refreshStep?.Invoke("S3");
+                _scanning  = false;
+                _scanError = null;
+                _result    = r;
+                RenderResults();
+                _refreshStep?.Invoke(StepResults);
                 Fire();
-            };
-            _scanHandler.OnError = msg =>
+                GoToResults();
+            });
+
+            _scanHandler.OnError = msg => OnUiThread(() =>
             {
-                _scanning = false;
-                _result   = null;
-                RenderReview();
+                _scanning  = false;
+                _result    = null;
+                _scanError = string.IsNullOrWhiteSpace(msg)
+                    ? AppStrings.T("zones.discover.scanFailedUnknown")
+                    : msg;
                 DiagnosticsLog.Warn("ZoneDiscover", $"Scan failed: {msg}");
+                RenderResults();
+                _refreshStep?.Invoke(StepResults);
                 Fire();
-            };
+                GoToResults();
+            });
 
             _scanEvent.Raise();
+        }
+
+        /// <summary>
+        /// Marshals onto the tool window's dispatcher, non-blocking and shutdown-guarded.
+        /// Blocking Invoke could deadlock against Revit's main thread, and a BeginInvoke onto a
+        /// dispatcher that has already shut down throws on the CALLING thread — which here is
+        /// Revit's, so it would take Revit with it.
+        /// </summary>
+        private void OnUiThread(Action action)
+        {
+            var d = _wpfDispatcher;
+            if (d == null)
+            {
+                // No window thread to marshal to (the step content was never built). Running
+                // inline is safe in that case and better than dropping the result silently.
+                try { action(); }
+                catch (Exception ex) { DiagnosticsLog.Error("ZoneDiscover: scan callback", ex); }
+                return;
+            }
+            if (d.HasShutdownStarted || d.HasShutdownFinished) return;
+
+            try
+            {
+                d.BeginInvoke(DispatcherPriority.Normal, new Action(() =>
+                {
+                    try { action(); }
+                    catch (Exception ex) { DiagnosticsLog.Error("ZoneDiscover: scan callback", ex); }
+                }));
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Swallowed("ZoneDiscover: marshal scan callback", ex);
+            }
+        }
+
+        /// <summary>Moves the accordion to the Results step, so Scan visibly leads somewhere.</summary>
+        private void GoToResults()
+        {
+            int idx = Array.FindIndex(Steps, s => s.Id == StepResults);
+            if (idx >= 0) NavigateRequested?.Invoke(this, idx);
         }
 
         // ── Contract ──────────────────────────────────────────────────────────
@@ -316,9 +568,10 @@ namespace LemoineTools.Tools.Zones
         {
             switch (stepId)
             {
-                case "S1": return _selectedDocs.Count > 0;
-                case "S2": return _discoverLevels || _discoverBuildings || _areasFromScopeBoxes || _areasFromRooms;
-                default:   return true;
+                case StepSource: return _selectedDocs.Count > 0;
+                case StepWhat:   return _discoverLevels || _discoverBuildings ||
+                                        _areasFromScopeBoxes || _areasFromRooms;
+                default:         return true;
             }
         }
 
@@ -326,9 +579,9 @@ namespace LemoineTools.Tools.Zones
         {
             switch (stepId)
             {
-                case "S1":
+                case StepSource:
                     return AppStrings.T("zones.discover.summary.sources", _selectedDocs.Count);
-                case "S2":
+                case StepWhat:
                 {
                     var parts = new List<string>();
                     if (_discoverLevels)      parts.Add(AppStrings.T("zones.discover.opt.levels"));
@@ -338,6 +591,7 @@ namespace LemoineTools.Tools.Zones
                     return string.Join(", ", parts);
                 }
                 default:
+                    if (_scanError != null) return AppStrings.T("zones.discover.scanFailed", _scanError);
                     return _result == null
                         ? AppStrings.T("zones.discover.notScanned")
                         : AppStrings.T("zones.discover.summary.review",
@@ -350,14 +604,14 @@ namespace LemoineTools.Tools.Zones
         {
             ("sources", AppStrings.T("zones.discover.steps.S1")),
             ("what",    AppStrings.T("zones.discover.steps.S2")),
-            ("review",  AppStrings.T("zones.discover.steps.S3")),
+            ("results", AppStrings.T("zones.discover.steps.S3")),
         };
 
         public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
         {
             ["sources"] = AppStrings.T("zones.discover.summary.sources", _selectedDocs.Count),
-            ["what"]    = SummaryFor("S2"),
-            ["review"]  = SummaryFor("S3"),
+            ["what"]    = SummaryFor(StepWhat),
+            ["results"] = SummaryFor(StepResults),
         };
 
         public IList<string>? ReviewChips => null;
@@ -428,6 +682,26 @@ namespace LemoineTools.Tools.Zones
             t.SetResourceReference(TextBlock.ForegroundProperty, "LemoineRed");
             t.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             return t;
+        }
+
+        private static Border Chip(string text)
+        {
+            var b = new Border
+            {
+                CornerRadius = new CornerRadius(3),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(7, 1, 7, 1),
+                Margin = new Thickness(8, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+                Background = Brushes.Transparent,
+            };
+            b.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+
+            var t = new TextBlock { Text = text, Background = Brushes.Transparent };
+            t.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            t.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            b.Child = t;
+            return b;
         }
 
         private static CheckBox Toggle(string label, bool value, Action<bool> onChange)

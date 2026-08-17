@@ -29,9 +29,11 @@ namespace LemoineTools.Tools.Zones
     //
     // THE COMPOSITION, which is what keeps this simple:
     //
-    //   outline   → slab edges as unjoined DETAIL LINES. It only has to read
-    //               correctly, so no closed loop is needed and no curve-joining
-    //               problem arises.
+    //   outline   → ONE continuous building boundary per connected mass, from
+    //               ZoneSlabOutline's boolean union of the slab footprints —
+    //               holes filled, shared edges between abutting slabs gone, and
+    //               a sloped slab's extra faces merged. Drawn as DETAIL LINES,
+    //               so no closed-loop element and no curve-joining is needed.
     //   highlight → a FilledRegion from the area's own extents rectangle, which
     //               is already closed and already known exactly.
     //
@@ -117,8 +119,9 @@ namespace LemoineTools.Tools.Zones
                 }
                 else
                 {
-                    Log($"Outline read from {outline.From} — {outline.Rings.Count} ring(s), " +
-                        $"{outline.WidthFt:0.#}' × {outline.DepthFt:0.#}'.", "info");
+                    Log($"Outline read from {outline.From} — {outline.Rings.Count} continuous " +
+                        $"boundary(ies), {outline.WidthFt:0.#}' × {outline.DepthFt:0.#}'. " +
+                        "Openings are filled and internal slab edges removed.", "info");
                 }
 
                 // Centre of the drawing: the outline when there is one, else every area's union.

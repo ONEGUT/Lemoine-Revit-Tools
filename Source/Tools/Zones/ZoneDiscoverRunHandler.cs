@@ -108,7 +108,7 @@ namespace LemoineTools.Tools.Zones
                     }
                     else
                     {
-                        lib.Levels.Add(new ZoneLevel
+                        var level = new ZoneLevel
                         {
                             Id              = ZoneId.New(),
                             Name            = p.Name,
@@ -118,7 +118,23 @@ namespace LemoineTools.Tools.Zones
                             SourceLinkKey   = p.SourceDoc,
                             BuildingId      = BuildingIdFor(p.BuildingName),
                             SortIndex       = lib.Levels.Count,
+                        };
+
+                        // Seed a floor plan on every discovered level. Views are defined on the
+                        // level and inherited by each of its areas, so a level with an empty set
+                        // means every area under it produces nothing — a discovered library that
+                        // generates no views would look broken rather than empty. The user
+                        // renames, retypes or deletes it in the Zone Manager.
+                        level.ViewDefs.Add(new ZoneViewDef
+                        {
+                            Id        = ZoneId.New(),
+                            Name      = AppStrings.T("zones.discover.defaultViewName"),
+                            Kind      = ZoneViewKind.FloorPlan,
+                            ViewRange = ZoneViewRange.FloorPlanDefault(),
+                            SortIndex = 0,
                         });
+
+                        lib.Levels.Add(level);
                         added++;
                         Log(p.MatchedByElevation
                                 ? $"Added level '{p.HostLevelName}' (matched to the host by elevation, not name)."

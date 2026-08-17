@@ -141,7 +141,7 @@ namespace LemoineTools.Framework.Zones
         /// the caller's responsibility — passing a sheet whose viewports were just created
         /// without regenerating will read stale geometry.
         /// </summary>
-        public static DrawingAreaResult Resolve(Document? doc, ZoneSheetLayout layout,
+        public static DrawingAreaResult Resolve(Document? doc, ZoneSheetSet layout,
                                                 ViewSheet? sheet = null,
                                                 Action<string, string>? log = null)
         {
@@ -215,7 +215,7 @@ namespace LemoineTools.Framework.Zones
         /// Warns when a layout's recorded sheet size no longer matches the type it names — a
         /// title block edited after placements were stored silently invalidates them.
         /// </summary>
-        public static bool CheckRecordedSize(ZoneSheetLayout layout, double actualW, double actualH,
+        public static bool CheckRecordedSize(ZoneSheetSet layout, double actualW, double actualH,
                                              Action<string, string>? log = null)
         {
             if (layout == null) return true;
