@@ -32,7 +32,6 @@ namespace LemoineTools.Tools.Setup
         {
             new StepDefinition("links",    AppStrings.T("replaceLink.steps.links"),    required: true),
             new StepDefinition("dest",     AppStrings.T("replaceLink.steps.dest"),     required: true),
-            new StepDefinition("position", AppStrings.T("replaceLink.steps.position"), required: true),
             new StepDefinition("run",      AppStrings.T("replaceLink.steps.run"),      required: false),
         };
 
@@ -46,11 +45,9 @@ namespace LemoineTools.Tools.Setup
         // ── State ──────────────────────────────────────────────────────────────
         private readonly List<ReplaceRow> _rows = new List<ReplaceRow>();
         private ReplaceDestination _dest     = ReplaceLinkSettings.Instance.Destination;
-        private ReplacePosition    _position = ReplaceLinkSettings.Instance.Position;
         private string _selectedFolder       = ReplaceLinkSettings.Instance.LastSelectedFolder;
         private bool   _backup   = ReplaceLinkSettings.Instance.BackupOriginal;
         private bool   _audit    = ReplaceLinkSettings.Instance.AuditOnOpen;
-        private bool   _movement = ReplaceLinkSettings.Instance.ReportMovement;
         private bool   _scanning;
         private string? _scanError;
 
@@ -62,7 +59,7 @@ namespace LemoineTools.Tools.Setup
         private bool   _buildingRows;
 
         // Live UI handles
-        private StackPanel? _linksContainer, _destContainer, _posContainer;
+        private StackPanel? _linksContainer, _destContainer;
         private Dispatcher? _disp;
         private Action<string>? _refreshStep;
 
@@ -92,7 +89,6 @@ namespace LemoineTools.Tools.Setup
             {
                 case "links":    return BuildLinksStep();
                 case "dest":     return BuildDestStep();
-                case "position": return BuildPositionStep();
                 default:         return null;   // "run" rendered by the framework (IReviewableTool)
             }
         }
@@ -559,62 +555,6 @@ namespace LemoineTools.Tools.Setup
             return panel;
         }
 
-        // ══════════════════════ Step 3: Position ═══════════════════════════════
-        private FrameworkElement BuildPositionStep()
-        {
-            var outer = new StackPanel();
-            outer.Children.Add(Label(AppStrings.T("replaceLink.labels.posQuestion")));
-            outer.Children.Add(Dim(AppStrings.T("replaceLink.labels.posHint")));
-            _posContainer = new StackPanel { Margin = new Thickness(0, 6, 0, 0) };
-            outer.Children.Add(_posContainer);
-            RebuildPositionCards();
-            return outer;
-        }
-
-        private void RebuildPositionCards()
-        {
-            if (_posContainer == null) return;
-            _posContainer.Children.Clear();
-
-            _posContainer.Children.Add(BuildCard(
-                selected: _position == ReplacePosition.KeepPlacement,
-                title: AppStrings.T("replaceLink.labels.optKeepTitle"),
-                desc:  AppStrings.T("replaceLink.labels.optKeepDesc"),
-                onClick: () => { _position = ReplacePosition.KeepPlacement; RebuildPositionCards(); Changed(); },
-                extra: null));
-
-            _posContainer.Children.Add(BuildCard(
-                selected: _position == ReplacePosition.ProjectBasePoint,
-                title: AppStrings.T("replaceLink.labels.optPbpTitle"),
-                desc:  AppStrings.T("replaceLink.labels.optPbpDesc"),
-                onClick: () => { _position = ReplacePosition.ProjectBasePoint; RebuildPositionCards(); Changed(); },
-                extra: null));
-
-            _posContainer.Children.Add(BuildCard(
-                selected: _position == ReplacePosition.SurveyPoint,
-                title: AppStrings.T("replaceLink.labels.optSurveyTitle"),
-                desc:  AppStrings.T("replaceLink.labels.optSurveyDesc"),
-                onClick: () => { _position = ReplacePosition.SurveyPoint; RebuildPositionCards(); Changed(); },
-                extra: null));
-
-            if (_position != ReplacePosition.KeepPlacement)
-                _posContainer.Children.Add(Dim(AppStrings.T("replaceLink.labels.posNote")));
-
-            var toggles = new ToggleSwitches { Margin = new Thickness(0, 12, 0, 0) };
-            toggles.SetItems(new List<ToggleItem>
-            {
-                new ToggleItem
-                {
-                    Id = "movement",
-                    Label = AppStrings.T("replaceLink.labels.movementLabel"),
-                    Desc  = AppStrings.T("replaceLink.labels.movementDesc"),
-                    DefaultOn = _movement,
-                },
-            });
-            toggles.StateChanged += st => { if (st.TryGetValue("movement", out var m)) { _movement = m; Changed(); } };
-            _posContainer.Children.Add(toggles);
-        }
-
         // ── Shared card ────────────────────────────────────────────────────────
         private FrameworkElement BuildCard(bool selected, string title, string desc, Action onClick, FrameworkElement? extra)
         {
@@ -657,7 +597,6 @@ namespace LemoineTools.Tools.Setup
         {
             ("links",    AppStrings.T("replaceLink.review.itemLinks")),
             ("dest",     AppStrings.T("replaceLink.review.itemDest")),
-            ("position", AppStrings.T("replaceLink.review.itemPosition")),
         };
 
         public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
@@ -666,17 +605,17 @@ namespace LemoineTools.Tools.Setup
                 ? AppStrings.T("replaceLink.review.linksNone")
                 : AppStrings.T("replaceLink.review.linksValue", RunnableCount(), UpgradeCount()),
             ["dest"]     = DestSummary(),
-            ["position"] = PositionLabel(_position),
         };
 
         public IList<string>? ReviewChips => new List<string>
         {
             AppStrings.T("replaceLink.review.chipBackup")   + (_backup   ? " ✓" : " ✗"),
             AppStrings.T("replaceLink.review.chipAudit")    + (_audit    ? " ✓" : " ✗"),
-            AppStrings.T("replaceLink.review.chipMovement") + (_movement ? " ✓" : " ✗"),
         };
 
-        public string? ReviewNote => null;
+        // Positioning is fixed behaviour, not a setting, so the review states it rather than
+        // showing it as a choice the user made.
+        public string? ReviewNote => AppStrings.T("replaceLink.review.positionNote");
 
         public string? ReviewWarning
         {
@@ -712,7 +651,6 @@ namespace LemoineTools.Tools.Setup
                 // readable, so running early could include a file the scan would have flagged.
                 case "links":    return !_scanning && RunnableCount() > 0;
                 case "dest":     return _dest != ReplaceDestination.SelectedFolder || !string.IsNullOrWhiteSpace(_selectedFolder);
-                case "position": return true;
                 default:         return true;
             }
         }
@@ -726,7 +664,6 @@ namespace LemoineTools.Tools.Setup
                         ? AppStrings.T("replaceLink.summaries.linksEmpty")
                         : AppStrings.T("replaceLink.summaries.links", RunnableCount());
                 case "dest":     return DestSummary();
-                case "position": return PositionLabel(_position);
                 case "run":      return AppStrings.T("replaceLink.summaries.run");
                 default:         return "—";
             }
@@ -772,11 +709,9 @@ namespace LemoineTools.Tools.Setup
                     SaveAsName  = r.SaveAsName,
                 }).ToList(),
                 Destination    = _dest,
-                Position       = _position,
                 SelectedFolder = _selectedFolder,
                 BackupOriginal = _backup,
                 AuditOnOpen    = _audit,
-                ReportMovement = _movement,
             };
             _runHandler.PushLog    = pushLog;
             _runHandler.OnProgress = onProgress;
@@ -790,48 +725,9 @@ namespace LemoineTools.Tools.Setup
         {
             var s = ReplaceLinkSettings.Instance;
             s.Destination    = _dest;
-            s.Position       = _position;
             s.BackupOriginal = _backup;
             s.AuditOnOpen    = _audit;
-            s.ReportMovement = _movement;
             s.Save();
-        }
-
-        // ── Position label ↔ enum ──────────────────────────────────────────────
-        // internal (not private): reused by GlobalSettingsWindow's Setup tab for the persisted default.
-        internal static readonly ReplacePosition[] PositionOrder =
-        {
-            ReplacePosition.KeepPlacement, ReplacePosition.ProjectBasePoint, ReplacePosition.SurveyPoint,
-        };
-
-        private static string PositionKey(ReplacePosition p)
-        {
-            switch (p)
-            {
-                case ReplacePosition.ProjectBasePoint: return "optPbpTitle";
-                case ReplacePosition.SurveyPoint:      return "optSurveyTitle";
-                default:                               return "optKeepTitle";
-            }
-        }
-
-        internal static string PositionLabel(ReplacePosition p) => AppStrings.T("replaceLink.labels." + PositionKey(p));
-        internal static List<string> PositionLabels() => PositionOrder.Select(PositionLabel).ToList();
-
-        // Resolved per call (never a cached static dictionary): a static map keyed by display
-        // labels freezes the first-touched language, so after a language switch every pick in a
-        // newly opened window would silently miss the lookup.
-        internal static bool TryLabelToPosition(string? label, out ReplacePosition position)
-        {
-            foreach (var p in PositionOrder)
-            {
-                if (string.Equals(PositionLabel(p), label, StringComparison.Ordinal))
-                {
-                    position = p;
-                    return true;
-                }
-            }
-            position = ReplacePosition.KeepPlacement;
-            return false;
         }
 
         // ── Small WPF helpers (theme via resource refs only) ────────────────────

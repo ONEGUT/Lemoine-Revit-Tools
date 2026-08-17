@@ -148,35 +148,20 @@ namespace LemoineTools.Framework
             var rl = ReplaceLinkSettings.Instance;
             panel.Children.Add(ToolSection.Build(AppStrings.T("globalSettings.groups.replaceLinkSub"), body =>
             {
-                var positionPicker = new SingleSelect
-                {
-                    Label        = AppStrings.T("globalSettings.groups.defaultPosition"),
-                    Items        = ReplaceLinkViewModel.PositionLabels(),
-                    SelectedItem = ReplaceLinkViewModel.PositionLabel(rl.Position),
-                };
-                positionPicker.SelectionChanged += sel =>
-                {
-                    if (ReplaceLinkViewModel.TryLabelToPosition(sel, out var p))
-                    {
-                        rl.Position = p;
-                        rl.Save();
-                    }
-                };
-                body.Children.Add(positionPicker);
-                body.Children.Add(new FrameworkElement { Height = 8 });
+                // No position default: Replace Link always re-seats the new model onto the
+                // old link's captured Survey Point / Project Base Point. It is the tool's
+                // defining behaviour, not a preference.
+                AddGroupNote(body, AppStrings.T("globalSettings.groups.replaceLinkPositionNote"));
 
                 var rlToggles = new ToggleSwitches();
                 rlToggles.SetItems(new List<ToggleItem>
                 {
                     new ToggleItem { Id = "backup", Label = AppStrings.T("globalSettings.groups.backupOriginal"),
                                      Desc = AppStrings.T("globalSettings.groups.backupOriginalDesc"), DefaultOn = rl.BackupOriginal },
-                    new ToggleItem { Id = "movement", Label = AppStrings.T("globalSettings.groups.reportMovement"),
-                                     Desc = AppStrings.T("globalSettings.groups.reportMovementDesc"), DefaultOn = rl.ReportMovement },
                 });
                 rlToggles.StateChanged += state =>
                 {
-                    if (state.TryGetValue("backup",   out var b)) rl.BackupOriginal = b;
-                    if (state.TryGetValue("movement", out var m)) rl.ReportMovement = m;
+                    if (state.TryGetValue("backup", out var b)) rl.BackupOriginal = b;
                     rl.Save();
                 };
                 body.Children.Add(rlToggles);

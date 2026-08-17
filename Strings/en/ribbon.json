@@ -25,7 +25,7 @@
     },
     "replaceLink": {
       "label": "Replace\nLink",
-      "tip":   "Swap a linked model for a new file, in place: point at the replacement, say which link it replaces, and it upgrades the file to this Revit version, writes it over the linked file's own path (or beside it under a new name), and re-points the SAME link at it — so the link's instances, view overrides, filters and phase mapping all survive. Measures and reports how far the model actually moved, and can re-seat it on the old link's Project Base Point or Survey Point."
+      "tip":   "Swap a linked model for a new file, in place: point at the replacement, say which link it replaces, and it upgrades the file to this Revit version, writes it over the linked file's own path (or beside it under a new name), and re-points the SAME link at it — so the link's instances, view overrides, filters and phase mapping all survive. The new model is always re-seated onto the Survey Point and Project Base Point read from the link it replaces, and the result is measured and reported."
     },
     "linkAudit": {
       "label": "Link\nAudit",

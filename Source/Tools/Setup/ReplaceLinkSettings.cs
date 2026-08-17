@@ -19,12 +19,10 @@ namespace LemoineTools.Tools.Setup
         public ReplaceLinkSettings() { }
 
         public ReplaceDestination Destination    { get; set; } = ReplaceDestination.OverwriteLinkedFile;
-        public ReplacePosition    Position       { get; set; } = ReplacePosition.KeepPlacement;
         /// <summary>Defaults ON — overwriting the file a live link points at is otherwise
         /// irreversible.</summary>
         public bool               BackupOriginal { get; set; } = true;
         public bool               AuditOnOpen    { get; set; } = false;
-        public bool               ReportMovement { get; set; } = true;
         public string             LastSelectedFolder { get; set; } = "";
 
         private static string FilePath

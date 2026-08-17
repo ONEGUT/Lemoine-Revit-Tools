@@ -35,6 +35,14 @@ namespace LemoineTools.Tools.Setup
         public Action<int, int, int, int>? OnProgress { get; set; }
         public Action<int, int, int>?      OnComplete { get; set; }
 
+        /// <summary>Below this, the instance is already where it was — moving it would be
+        /// floating-point noise, not a correction.</summary>
+        private const double MoveEpsilonFt = 1e-9;
+
+        /// <summary>Cross-check tolerance for the second base point (~1/64"). Only gates a
+        /// warning; the distance reported is always the real measured value.</summary>
+        private const double PointMatchToleranceFt = 1.0 / 768.0;
+
         public string GetName() => "LemoineTools.Tools.Setup.ReplaceLinkRunHandler";
 
         private void Log(string t, string s) => PushLog?.Invoke(t, s);
@@ -50,7 +58,6 @@ namespace LemoineTools.Tools.Setup
             public ElementId Id      = ElementId.InvalidElementId;
             public XYZ?      Pbp;        // link's Project Base Point, through the instance transform
             public XYZ?      Survey;     // link's Survey Point, likewise
-            public XYZ?      BoxCenter;  // instance bounding-box centre (fallback metric)
         }
 
         public void Execute(UIApplication app)
@@ -328,16 +335,10 @@ namespace LemoineTools.Tools.Setup
                     catch (Exception ex)
                     { DiagnosticsLog.Swallowed($"ReplaceLink: capture base points for '{label}'", ex); }
 
-                    try
-                    {
-                        var bb = inst.get_BoundingBox(null);
-                        if (bb != null) a.BoxCenter = (bb.Min + bb.Max) * 0.5;
-                    }
-                    catch (Exception ex)
-                    { DiagnosticsLog.Swallowed($"ReplaceLink: capture bounding box for '{label}'", ex); }
-
-                    // An anchor with nothing readable measures nothing — don't keep it.
-                    if (a.Pbp != null || a.Survey != null || a.BoxCenter != null) anchors.Add(a);
+                    // Base points are the only anchor the re-seat can use, so an instance with
+                    // neither read is not worth carrying — the caller reports the whole link as
+                    // un-seatable instead.
+                    if (a.Pbp != null || a.Survey != null) anchors.Add(a);
                 }
             }
             catch (Exception ex)
@@ -345,22 +346,42 @@ namespace LemoineTools.Tools.Setup
             return anchors;
         }
 
-        /// <summary>Reports how far each instance moved and, when a re-seat mode is chosen,
-        /// translates it back onto the captured point. Runs in its own transaction — everything
-        /// before it (unload / reload / load-from) had to be transaction-free.</summary>
+        /// <summary>
+        /// Re-seats every instance of the replaced link onto the Survey Point / Project Base
+        /// Point positions captured from the OLD link, then reports the result. This is not
+        /// optional: reloading preserves the instance transform, which only lands the geometry
+        /// correctly when the new file shares the old file's internal origin. Measuring against
+        /// the captured points and correcting is what makes "the same place" true for any file.
+        ///
+        /// <para>The Survey Point is the primary anchor (it is what shared coordinates are hung
+        /// off); the Project Base Point is the fallback when the survey point can't be read, and
+        /// otherwise a cross-check. If correcting on one point leaves the other off its captured
+        /// position, the two files disagree about their own internal PBP-to-SP relationship — no
+        /// single translation can satisfy both, so the residual is reported rather than hidden.</para>
+        ///
+        /// <para>Runs in its own transaction: everything before it (unload / reload / load-from)
+        /// had to be transaction-free.</para>
+        /// </summary>
         private void ReconcilePosition(Document hostDoc, ElementId typeId, List<InstanceAnchor> anchors, string label)
         {
-            if (anchors.Count == 0) return;
+            if (anchors.Count == 0)
+            {
+                // Nothing was captured (link wasn't loaded) — say so, and count it as unverified.
+                Log(AppStrings.T("replaceLink.log.noRealign", label), "fail");
+                _unverified++;
+                return;
+            }
 
             try
             {
-                using (var tx = new Transaction(hostDoc, "Reconcile Replaced Link"))
+                using (var tx = new Transaction(hostDoc, "Re-seat Replaced Link"))
                 {
                     tx.Start();
                     ConfigureFailures(tx);
 
-                    // The link was just re-pointed — regenerate so bounding boxes read true.
-                    // Regenerate requires an open transaction, which is why it lives here.
+                    // The link was just re-pointed — regenerate so the new document's base points
+                    // and bounding boxes read true. Regenerate requires an open transaction,
+                    // which is why it lives here.
                     try { hostDoc.Regenerate(); }
                     catch (Exception ex) { DiagnosticsLog.Swallowed($"ReplaceLink: regenerate for '{label}'", ex); }
 
@@ -370,25 +391,14 @@ namespace LemoineTools.Tools.Setup
                     foreach (var inst in InstancesOf(hostDoc, typeId))
                     {
                         if (!byId.TryGetValue(inst.Id.Value, out var before)) continue;
-
-                        if (Spec.Position != ReplacePosition.KeepPlacement)
-                        {
-                            var delta = ReseatDelta(inst, before, label);
-                            if (delta != null && delta.GetLength() > 1e-9)
-                            {
-                                MoveInstance(hostDoc, inst, delta);
-                                moved = true;
-                            }
-                            else if (delta == null)
-                            {
-                                Log(AppStrings.T("replaceLink.log.reseatFallback", label), "warn");
-                            }
-                        }
-
-                        if (Spec.ReportMovement) ReportMovement(hostDoc, inst, before, label);
+                        if (RealignInstance(hostDoc, inst, before, label)) moved = true;
                     }
 
-                    if (moved) { try { hostDoc.Regenerate(); } catch (Exception ex) { DiagnosticsLog.Swallowed($"ReplaceLink: regenerate after re-seat for '{label}'", ex); } }
+                    if (moved)
+                    {
+                        try { hostDoc.Regenerate(); }
+                        catch (Exception ex) { DiagnosticsLog.Swallowed($"ReplaceLink: regenerate after re-seat for '{label}'", ex); }
+                    }
                     tx.Commit();
                 }
             }
@@ -404,79 +414,91 @@ namespace LemoineTools.Tools.Setup
             }
         }
 
-        /// <summary>Translation that puts the new model's chosen base point back where the old
-        /// link's same base point sat. Null when the point can't be read at either end.</summary>
-        private XYZ? ReseatDelta(RevitLinkInstance inst, InstanceAnchor before, string label)
+        /// <summary>Moves one instance so its base points return to the captured positions.
+        /// Returns true when the instance was actually moved.</summary>
+        private bool RealignInstance(Document hostDoc, RevitLinkInstance inst, InstanceAnchor before, string label)
         {
-            try
+            var linkDoc = inst.GetLinkDocument();
+            var t       = inst.GetTotalTransform();
+            if (linkDoc == null || t == null)
             {
-                bool survey = Spec.Position == ReplacePosition.SurveyPoint;
-                XYZ? target = survey ? before.Survey : before.Pbp;
-                if (target == null) return null;
-
-                var linkDoc = inst.GetLinkDocument();
-                var t       = inst.GetTotalTransform();
-                if (linkDoc == null || t == null) return null;
-
-                var bp = survey ? BasePoint.GetSurveyPoint(linkDoc) : BasePoint.GetProjectBasePoint(linkDoc);
-                if (bp == null) return null;
-
-                return target - t.OfPoint(bp.Position);
+                Log(AppStrings.T("replaceLink.log.noRealign", label), "fail");
+                _unverified++;
+                return false;
             }
-            catch (Exception ex)
+
+            // Where the NEW model's own points sit right now, in host coordinates.
+            XYZ? newSurvey = PointInHost(linkDoc, t, survey: true,  label: label);
+            XYZ? newPbp    = PointInHost(linkDoc, t, survey: false, label: label);
+
+            // Survey Point first, Project Base Point as the fallback.
+            XYZ? from = null, to = null;
+            string anchorName;
+            if (before.Survey != null && newSurvey != null)
             {
-                DiagnosticsLog.Swallowed($"ReplaceLink: compute re-seat delta for '{label}'", ex);
-                return null;
+                from = newSurvey; to = before.Survey;
+                anchorName = AppStrings.T("replaceLink.log.anchorSurvey");
             }
+            else if (before.Pbp != null && newPbp != null)
+            {
+                from = newPbp; to = before.Pbp;
+                anchorName = AppStrings.T("replaceLink.log.anchorPbp");
+            }
+            else
+            {
+                // Neither point is readable on both sides — the transform stands as reloaded and
+                // nothing has been verified. Never silently accept that.
+                Log(AppStrings.T("replaceLink.log.noRealign", label), "fail");
+                _unverified++;
+                return false;
+            }
+
+            XYZ delta = to - from;
+            double dist = delta.GetLength();
+            bool moved = false;
+
+            if (dist > MoveEpsilonFt)
+            {
+                MoveInstance(hostDoc, inst, delta);
+                moved = true;
+                Log(AppStrings.T("replaceLink.log.realigned", label, FormatLength(hostDoc, dist), anchorName), "info");
+            }
+            else
+            {
+                Log(AppStrings.T("replaceLink.log.alreadyAligned", label, anchorName), "pass");
+            }
+
+            // Cross-check the OTHER point: after a pure translation it should also be back on its
+            // captured position. If it isn't, the new file's internal Survey-to-PBP relationship
+            // differs from the old file's and no single move can satisfy both.
+            XYZ? otherNew    = ReferenceEquals(from, newSurvey) ? newPbp : newSurvey;
+            XYZ? otherBefore = ReferenceEquals(from, newSurvey) ? before.Pbp : before.Survey;
+            if (otherNew != null && otherBefore != null)
+            {
+                double residual = ((otherNew + delta) - otherBefore).GetLength();
+                if (residual > PointMatchToleranceFt)
+                {
+                    Log(AppStrings.T("replaceLink.log.pointsDisagree", label,
+                        FormatLength(hostDoc, residual)), "warn");
+                }
+            }
+
+            return moved;
         }
 
-        /// <summary>Logs how far the link's reference point actually moved. A zero here is the
-        /// confirmation the swap landed in place; a large number is the warning that the new file
-        /// does not share the old file's origin.</summary>
-        private void ReportMovement(Document hostDoc, RevitLinkInstance inst, InstanceAnchor before, string label)
+        /// <summary>A link document's Survey Point or Project Base Point, expressed in the host's
+        /// internal coordinates through the instance transform.</summary>
+        private static XYZ? PointInHost(Document linkDoc, Transform t, bool survey, string label)
         {
             try
             {
-                XYZ? after = null, target = null;
-                string metric;
-
-                var linkDoc = inst.GetLinkDocument();
-                var t       = inst.GetTotalTransform();
-                if (linkDoc != null && t != null && before.Pbp != null)
-                {
-                    var pbp = BasePoint.GetProjectBasePoint(linkDoc);
-                    if (pbp != null) { after = t.OfPoint(pbp.Position); target = before.Pbp; }
-                }
-                if (after == null && linkDoc != null && t != null && before.Survey != null)
-                {
-                    var svy = BasePoint.GetSurveyPoint(linkDoc);
-                    if (svy != null) { after = t.OfPoint(svy.Position); target = before.Survey; }
-                }
-                metric = after != null
-                    ? AppStrings.T("replaceLink.log.metricBasePoint")
-                    : AppStrings.T("replaceLink.log.metricExtents");
-
-                if (after == null && before.BoxCenter != null)
-                {
-                    var bb = inst.get_BoundingBox(null);
-                    if (bb != null) { after = (bb.Min + bb.Max) * 0.5; target = before.BoxCenter; }
-                }
-
-                if (after == null || target == null)
-                {
-                    Log(AppStrings.T("replaceLink.log.movementUnknown", label), "warn");
-                    return;
-                }
-
-                double dist = (after - target).GetLength();
-                string shown = FormatLength(hostDoc, dist);
-                if (dist < 1e-6) Log(AppStrings.T("replaceLink.log.movementNone", label, metric), "pass");
-                else             Log(AppStrings.T("replaceLink.log.movement", label, shown, metric), "warn");
+                var bp = survey ? BasePoint.GetSurveyPoint(linkDoc) : BasePoint.GetProjectBasePoint(linkDoc);
+                return bp != null ? t.OfPoint(bp.Position) : null;
             }
             catch (Exception ex)
             {
-                DiagnosticsLog.Swallowed($"ReplaceLink: report movement for '{label}'", ex);
-                Log(AppStrings.T("replaceLink.log.movementUnknown", label), "warn");
+                DiagnosticsLog.Swallowed($"ReplaceLink: read {(survey ? "survey point" : "project base point")} for '{label}'", ex);
+                return null;
             }
         }
 

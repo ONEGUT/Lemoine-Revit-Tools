@@ -2,18 +2,6 @@ using System.Collections.Generic;
 
 namespace LemoineTools.Tools.Setup
 {
-    /// <summary>Where the new model is seated after the link type has been re-pointed at it.
-    /// Enum tokens are persisted/compared, so they are never externalized; only the display
-    /// labels live in <c>replaceLink.json</c>.
-    ///
-    /// <para>Reloading a <see cref="Autodesk.Revit.DB.RevitLinkType"/> keeps every instance's
-    /// transform, so <see cref="KeepPlacement"/> is exact whenever the new file shares the old
-    /// file's internal origin (a re-issue of the same model). When it does not, the transform is
-    /// still preserved but the geometry lands somewhere else — the two re-seat modes translate
-    /// each instance so the new model's own base point returns to where the OLD link's same base
-    /// point sat, measured in host coordinates before the swap.</para></summary>
-    public enum ReplacePosition { KeepPlacement, ProjectBasePoint, SurveyPoint }
-
     /// <summary>Where the upgraded replacement file is written before the link type is
     /// re-pointed at it. Enum tokens are persisted/compared — never externalized.</summary>
     public enum ReplaceDestination
@@ -92,19 +80,19 @@ namespace LemoineTools.Tools.Setup
         public string SaveAsName  { get; set; } = "";
     }
 
-    /// <summary>Everything <see cref="ReplaceLinkRunHandler"/> needs for one run.</summary>
+    /// <summary>Everything <see cref="ReplaceLinkRunHandler"/> needs for one run. There is no
+    /// position option: the run ALWAYS captures the old link's Survey Point and Project Base
+    /// Point in host coordinates and re-seats the new model onto them (see
+    /// <see cref="ReplaceLinkRunHandler"/>), which is the whole point of the tool.</summary>
     public sealed class ReplaceLinkSpec
     {
         public List<ReplaceItem>   Items          { get; set; } = new List<ReplaceItem>();
         public ReplaceDestination  Destination    { get; set; } = ReplaceDestination.OverwriteLinkedFile;
-        public ReplacePosition     Position       { get; set; } = ReplacePosition.KeepPlacement;
         /// <summary>Absolute folder path — <see cref="ReplaceDestination.SelectedFolder"/> only.</summary>
         public string              SelectedFolder { get; set; } = "";
         /// <summary>Copy the file being replaced into a <c>_Superseded</c> sibling folder,
         /// timestamped, before it is overwritten. The only undo there is.</summary>
         public bool                BackupOriginal { get; set; } = true;
         public bool                AuditOnOpen    { get; set; }
-        /// <summary>Measure and log how far each instance's geometry actually moved.</summary>
-        public bool                ReportMovement { get; set; } = true;
     }
 }
