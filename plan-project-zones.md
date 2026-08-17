@@ -537,9 +537,8 @@ Ordered by value:
 | **Print View** | zone → correct sheet size | |
 | **Split by Grid / Split by Cell** | share the grid-defined extents | |
 
-### 9.3 The tool that does not exist yet
-**Build Sheets from Zones** — the end of the chain, and the thing the composite-sheet
-requirement is really asking for:
+### 9.3 Build Sheets from Zones — BUILT
+The end of the chain, and the thing the composite-sheet requirement was really asking for:
 
 > *pick levels → pick layouts (A1, A3, …) → pick recipes → review → build.*
 
@@ -548,10 +547,14 @@ the view for that layout and places it at its stored anchor. A single-area group
 ordinary sheet; a multi-area group gives the composite sheet with both views on it, at one
 shared scale, matchline-exact (§5.5).
 
-Everything it needs is Part A plus §9.2's first two rows. It deserves its own plan once Part A
-is real — but the composite grouping (§3.7), the group-aware solve (§5.5) and the
-one-view-one-sheet handling (§5.6) are specified **now**, because retrofitting any of the three
-would mean changing the stored placement key and re-authoring every placement already made.
+**It performs NO regeneration at all.** Every other bulk sheet tool here is dominated by
+`doc.Regenerate()`, because it must place a viewport and then measure it. Placing from a stored
+anchor removes the measurement: `SetBoxCenter` is absolute and needs no regen, so the whole run
+costs one model recompute at commit. That is the stored-placement design paying for itself.
+
+Views are located **by name** through the same shared resolver the view builder uses
+(`ZoneNamingTokens.ResolveViewName`). If the two ever resolved names differently the builder
+would find nothing and report every sheet as empty, so there is one function, not two.
 
 ---
 

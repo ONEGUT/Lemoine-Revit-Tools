@@ -443,21 +443,13 @@ namespace LemoineTools.Tools.Zones
             return recipe.Scale > 0 ? recipe.Scale : 96;
         }
 
+        /// <summary>
+        /// Delegates to the SHARED resolver. The sheet builder locates these views by name, so
+        /// both must resolve identically or it finds nothing.
+        /// </summary>
         private string ResolveName(ZoneViewRecipe recipe, ZoneBuilding? building, ZoneLevel level,
                                    ZoneArea area, ZoneSheetLayout? layout, ZoneSheetGroup? group)
-        {
-            var ctx = new TokenContext();
-            foreach (var kv in ZoneNamingTokens.ValuesFor(
-                         ZoneSettings.Instance.Library, building, level, area, recipe, layout, group))
-                ctx.Computed[kv.Key] = kv.Value;
-
-            string pattern  = string.IsNullOrWhiteSpace(recipe.NamePattern)
-                ? "{Level} - {Area} - {Recipe}"
-                : recipe.NamePattern;
-
-            string resolved = TokenResolver.Resolve(pattern, ctx, msg => Log(msg, "warn"));
-            string fallback = $"{level.Name} - {area.Name} - {recipe.Name}";
-            return TokenResolver.GuardDegenerate(resolved, ctx, fallback, msg => Log(msg, "warn"));
-        }
+            => ZoneNamingTokens.ResolveViewName(recipe, building, level, area, layout, group,
+                                                msg => Log(msg, "warn"));
     }
 }

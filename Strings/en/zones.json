@@ -229,6 +229,40 @@
     }
   },
 
+  "sheets": {
+    // Build Sheets from Zones — the end of the chain.
+    "title": "Build Sheets from Zones",
+    "runLabel": "Build the sheets →",
+
+    "steps": {
+      "S1": "Levels",
+      "S2": "Sheet sizes",
+      "S3": "View recipes",
+      "S4": "Review"
+    },
+
+    "noLevels": "This project has no zone levels. Use Discover Zones or the Zone Manager first.",
+    "noLayouts": "No sheet sizes are defined. Add a layout in the Zone Manager.",
+    "noRecipes": "No view recipes are defined. Add one in the Zone Manager.",
+    "noHandler": "The sheet run handler is unavailable.",
+
+    // {0} = number of sheets the run intends to create
+    "plannedCount": "{0} sheet(s) will be created.",
+    // {0} = comma-separated layout names
+    "noGroupsWarn": "These sheet sizes have no groups, so they will produce no sheets: {0}.",
+    // {0} = count of area/sheet-size pairs with no stored placement
+    "noPlacementWarn": "{0} area(s) have no stored placement for their sheet size. Their views will be left wherever Revit centres them rather than at the recorded position — solve placements in the Zone Manager first.",
+
+    "reviewNote": "Views are located by name and never created here. Run Create Views from Zones first, or sheets will come out empty.",
+
+    "summary": {
+      "levels":  "{0} level(s)",
+      "layouts": "{0} sheet size(s)",
+      "recipes": "{0} recipe(s)",
+      "planned": "{0} sheet(s) planned"
+    }
+  },
+
   "log": {
     // Run-log lines. Every one is user-facing output, so none are hardcoded.
     // {0} = area name, {1} = box name

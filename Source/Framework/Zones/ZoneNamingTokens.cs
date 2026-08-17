@@ -89,6 +89,57 @@ namespace LemoineTools.Framework.Zones
             return string.Join("-", parts);
         }
 
+        /// <summary>
+        /// The name a view for this (level, area, recipe, layout, group) gets.
+        ///
+        /// SHARED DELIBERATELY. The sheet builder finds the views to place BY NAME, so if it
+        /// resolved names even slightly differently from the view builder it would silently
+        /// find nothing and report every sheet as empty. One function, both callers.
+        /// </summary>
+        public static string ResolveViewName(
+            ZoneViewRecipe recipe, ZoneBuilding? building, ZoneLevel level, ZoneArea area,
+            ZoneSheetLayout? layout, ZoneSheetGroup? group, Action<string>? onWarn = null)
+        {
+            var ctx = new TokenContext();
+            foreach (var kv in ValuesFor(null, building, level, area, recipe, layout, group))
+                ctx.Computed[kv.Key] = kv.Value;
+
+            string pattern = string.IsNullOrWhiteSpace(recipe.NamePattern)
+                ? "{Level} - {Area} - {Recipe}"
+                : recipe.NamePattern;
+
+            string resolved = TokenResolver.Resolve(pattern, ctx, onWarn);
+            string fallback = $"{level.Name} - {area.Name} - {recipe.Name}";
+            return TokenResolver.GuardDegenerate(resolved, ctx, fallback, onWarn);
+        }
+
+        /// <summary>
+        /// Sheet number and name for one (level, layout, group). Same sharing rationale as
+        /// <see cref="ResolveViewName"/>: a sheet number is checked for uniqueness before the
+        /// run starts, so the check and the write must agree exactly.
+        /// </summary>
+        public static void ResolveSheetName(
+            ZoneSheetLayout layout, ZoneBuilding? building, ZoneLevel level, ZoneSheetGroup? group,
+            out string number, out string name, Action<string>? onWarn = null)
+        {
+            var ctx = new TokenContext();
+            foreach (var kv in ValuesFor(null, building, level, null, null, layout, group))
+                ctx.Computed[kv.Key] = kv.Value;
+
+            string numPattern  = string.IsNullOrWhiteSpace(layout.SheetNumberPattern)
+                ? "{ZoneCode}{SheetSuffix}" : layout.SheetNumberPattern;
+            string namePattern = string.IsNullOrWhiteSpace(layout.SheetNamePattern)
+                ? "{Level} - {Area}" : layout.SheetNamePattern;
+
+            number = TokenResolver.GuardDegenerate(
+                TokenResolver.Resolve(numPattern, ctx, onWarn), ctx,
+                $"{level.Name}{group?.Suffix ?? ""}", onWarn);
+
+            name = TokenResolver.GuardDegenerate(
+                TokenResolver.Resolve(namePattern, ctx, onWarn), ctx,
+                level.Name, onWarn);
+        }
+
         /// <summary>One name a run intends to create, and where it came from.</summary>
         public sealed class PlannedName
         {

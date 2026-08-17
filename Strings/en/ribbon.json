@@ -118,6 +118,10 @@
       "label": "Create Views",
       "tip":   "Create views from zones — pick the levels and areas, pick the view recipes, and each view is made with the right family type, template, scale, view range and crop already set."
     },
+    "zoneSheets": {
+      "label": "Build Sheets",
+      "tip":   "Build sheets from zones — one sheet per level per sheet size per group, with every view placed at the exact position recorded for it. Composite groups put several views of one level on one sheet."
+    },
     "zoneManager": {
       "label": "Zone Manager",
       "tip":   "Define and manage project zones — the building's levels and areas, their scope boxes, the view ranges and scales used to draw them, and the exact position each area occupies on each sheet size. Stored in the model, so the whole team shares one library."
