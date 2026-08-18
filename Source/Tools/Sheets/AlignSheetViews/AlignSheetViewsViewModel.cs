@@ -7,11 +7,6 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Framework;
 using LemoineTools.Framework.Controls;
-// This file imports both Autodesk.Revit.DB and the WPF namespaces, so any type name the two
-// could share is aliased rather than left bare.
-using WpfOrientation       = System.Windows.Controls.Orientation;
-using WpfTextAlignment     = System.Windows.TextAlignment;
-using WpfVerticalAlignment = System.Windows.VerticalAlignment;
 
 namespace LemoineTools.Tools.Sheets.AlignSheetViews
 {
@@ -57,18 +52,12 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
 
         // Inheritance toggles
         private bool _inheritGrids          = false;
-        private bool _inheritScopeBox       = false;
         private bool _inheritCropVisibility = false;
         private bool _inheritCropSize       = false;
 
         // Sheet content — not an inheritance toggle: a legend has no crop and no world anchor, so
         // this copies a sheet placement rather than a property of a matched view.
         private bool _placeLegends          = false;
-
-        // A scope box governs the crop rectangle it is assigned to, so a view that inherits one
-        // inherits its crop size with it — there is nothing left for a separate crop-size choice to
-        // decide. The checkbox is replaced by a static "inherited" row while scope box is ticked.
-        private bool CropSizeInherited => _inheritCropSize || _inheritScopeBox;
 
         // ── Revit wiring ──────────────────────────────────────────────────────
         private readonly AlignSheetViewsEventHandler? _handler;
@@ -104,7 +93,6 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
         // from the target picker), so S2 must be rebuilt every time it is activated —
         // step content is built once at window construction and would otherwise keep
         // listing whatever was eligible before the source sheets were picked.
-        // S3 is rebuilt on demand instead: ticking "scope box" changes which options exist.
         private Action<string>? _refreshStep;
         public void SetContentRefreshCallback(Action<string> rebuildStepContent) => _refreshStep = rebuildStepContent;
 
@@ -213,24 +201,16 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
             outer.Children.Add(stepper);
 
             // ── Inherit from source view ──────────────────────────────────────
+            // No scope-box option lives here any more. The alignment registers a shared world
+            // anchor through each view's OWN crop, so it never needed the two views to crop alike —
+            // and writing the reference's scope box onto a target changed the model area that view
+            // shows, permanently, to satisfy a match that did not require it. A scope-box difference
+            // is now reported in the run log instead.
             outer.Children.Add(SectionLabel2(AppStrings.T("testing.alignSheetViews.labels.secInherit")));
 
             outer.Children.Add(OptionCheck(
-                AppStrings.T("testing.alignSheetViews.labels.optScopeBox"), _inheritScopeBox,
-                v =>
-                {
-                    _inheritScopeBox = v;
-                    // Ticking this absorbs the crop-size choice, so the step has to be rebuilt for
-                    // the checkbox to be swapped for the "inherited" row (and back).
-                    _refreshStep?.Invoke("S3");
-                }));
-
-            if (_inheritScopeBox)
-                outer.Children.Add(ImpliedRow(AppStrings.T("testing.alignSheetViews.labels.impliedCropSize")));
-            else
-                outer.Children.Add(OptionCheck(
-                    AppStrings.T("testing.alignSheetViews.labels.optCropSize"), _inheritCropSize,
-                    v => _inheritCropSize = v));
+                AppStrings.T("testing.alignSheetViews.labels.optCropSize"), _inheritCropSize,
+                v => _inheritCropSize = v));
 
             outer.Children.Add(OptionCheck(
                 AppStrings.T("testing.alignSheetViews.labels.optGrids"), _inheritGrids,
@@ -267,43 +247,6 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
             cb.Checked   += (s, e) => { set(true);  OnValidationChanged(); };
             cb.Unchecked += (s, e) => { set(false); OnValidationChanged(); };
             return cb;
-        }
-
-        /// <summary>A read-only row in a checkbox's place, for a setting another option has already
-        /// decided. Not a disabled checkbox: there is nothing here for the user to change.</summary>
-        private static StackPanel ImpliedRow(string text)
-        {
-            var row = new StackPanel
-            {
-                Orientation = WpfOrientation.Horizontal,
-                Margin      = new Thickness(0, 12, 0, 0),
-            };
-
-            var tick = new TextBlock
-            {
-                Text                = char.ConvertFromUtf32(0x2713),   // ✓
-                Width               = 13,
-                TextAlignment       = WpfTextAlignment.Center,
-                VerticalAlignment   = WpfVerticalAlignment.Center,
-            };
-            tick.SetResourceReference(TextBlock.ForegroundProperty, "LemoineAccent");
-            tick.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            tick.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
-            row.Children.Add(tick);
-
-            var label = new TextBlock
-            {
-                Text              = text,
-                Margin            = new Thickness(8, 0, 0, 0),
-                TextWrapping      = TextWrapping.Wrap,
-                VerticalAlignment = WpfVerticalAlignment.Center,
-            };
-            label.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            label.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            label.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
-            row.Children.Add(label);
-
-            return row;
         }
 
         // ── IReviewableTool ────────────────────────────────────────────────
@@ -369,8 +312,7 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
             get
             {
                 var parts = new List<string>();
-                if (_inheritScopeBox)       parts.Add(AppStrings.T("testing.alignSheetViews.inherit.scopeBox"));
-                if (CropSizeInherited)      parts.Add(AppStrings.T("testing.alignSheetViews.inherit.cropSize"));
+                if (_inheritCropSize)       parts.Add(AppStrings.T("testing.alignSheetViews.inherit.cropSize"));
                 if (_inheritGrids)          parts.Add(AppStrings.T("testing.alignSheetViews.inherit.gridExtents"));
                 if (_inheritCropVisibility) parts.Add(AppStrings.T("testing.alignSheetViews.inherit.cropVisibility"));
                 return parts.Count == 0 ? AppStrings.T("testing.alignSheetViews.inherit.nothing") : string.Join(", ", parts);
@@ -432,10 +374,9 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
             _handler.SourceSheetIds        = _sourceSheetIds.ToList();
             _handler.TargetSheetIds        = _targetSheetIds.Where(id => !srcKeys.Contains(id.Value)).ToList();
             _handler.OverlapThreshold      = _overlapPercent / 100.0;
-            _handler.InheritScopeBox       = _inheritScopeBox;
             _handler.InheritGridExtents    = _inheritGrids;
             _handler.InheritCropVisibility = _inheritCropVisibility;
-            _handler.InheritCropSize       = CropSizeInherited;
+            _handler.InheritCropSize       = _inheritCropSize;
             _handler.PlaceLegends          = _placeLegends;
             _handler.PushLog               = pushLog;
             _handler.OnProgress            = onProgress;

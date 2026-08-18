@@ -48,16 +48,12 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
         /// <summary>Trim each target grid's 2D (view-specific) extents to the source grid's endpoints.</summary>
         public bool InheritGridExtents { get; set; } = false;
 
-        /// <summary>Assign the source view's scope box to the target view (applied before alignment).</summary>
-        public bool InheritScopeBox { get; set; } = false;
-
         /// <summary>Match the target view's crop-region visibility (CropBoxVisible) to the source.</summary>
         public bool InheritCropVisibility { get; set; } = false;
 
         /// <summary>Match the target view's crop size + annotation-crop offsets to the source.
-        /// The view model also sets this whenever <see cref="InheritScopeBox"/> is on: a scope box
-        /// governs the crop rectangle, so those views take their crop size from it and only the
-        /// annotation-crop margins are copied.</summary>
+        /// Independent of everything else — the alignment itself never needs it, because it
+        /// registers a shared world anchor through whatever crop each view actually has.</summary>
         public bool InheritCropSize { get; set; } = false;
 
         // ── Sheet content ─────────────────────────────────────────────────────
@@ -317,11 +313,11 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                 // references are non-null inside the block — the condition is the same one.
                 if (bestMatch != null && bestSource != null && bestMatch.Pairs.Count > 0)
                 {
-                    // Report the gaps for the chosen source.
+                    // Report the gaps for the chosen source, each with the reason it is a gap.
                     foreach (var miss in bestMatch.Missing)
                     {
-                        Log(AppStrings.T("testing.alignSheetViews.log.missing", label, miss.ViewName), "fail");
-                        DiagnosticsLog.Warn("AlignSheetViews", $"No counterpart for '{miss.ViewName}' on sheet {sheet.Id.Value}.");
+                        Log(DescribeMiss(label, miss), "fail");
+                        DiagnosticsLog.Warn("AlignSheetViews", $"No counterpart for '{miss.Source.ViewName}' on sheet {sheet.Id.Value}.");
                         f++;
                     }
                     foreach (var amb in bestMatch.Ambiguous)
@@ -346,17 +342,31 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                             Log(AppStrings.T("testing.alignSheetViews.log.orientationDiffers", label, pr.Target.ViewName), "warn");
                         if (pr.Target.Rotation != ViewportRotation.None)
                             Log(AppStrings.T("testing.alignSheetViews.log.rotated", label, pr.Target.ViewName, pr.Target.Rotation), "warn");
+
+                        // The pair aligned, but on measurements worth seeing: a scope box only one
+                        // side carries, crop rectangles that cover noticeably different model area,
+                        // or a counterpart found only because depth stopped being a veto. None of
+                        // these stop the alignment — all three used to be invisible.
+                        if (pr.ScopeBoxMismatch)
+                            Log(AppStrings.T("testing.alignSheetViews.log.scopeBoxMismatch", label, pr.Target.ViewName,
+                                             ScopeBoxLabel(doc, pr.Source.ScopeBoxId), ScopeBoxLabel(doc, pr.Target.ScopeBoxId),
+                                             Pct01(pr.AreaMatch)), "warn");
+                        if (pr.AreaMatch > 0 && pr.AreaMatch < OverlapThreshold)
+                            Log(AppStrings.T("testing.alignSheetViews.log.areaMismatch", label, pr.Target.ViewName,
+                                             Pct01(pr.AreaMatch), CropSizeLabel(pr.Source), CropSizeLabel(pr.Target)), "warn");
+                        if (!pr.DepthOverlaps)
+                            Log(AppStrings.T("testing.alignSheetViews.log.matchedDifferentDepth", label, pr.Target.ViewName), "warn");
                     }
 
                     // ── Phase A — every write whose result the alignment can predict ──
-                    if (InheritScopeBox)
-                    {
-                        foreach (var pr in bestMatch.Pairs)
-                        {
-                            if (pr.Source.ScopeBoxId == ElementId.InvalidElementId) continue;
-                            if (AssignScopeBox(doc, pr, label)) pr.GotScopeBox = true;
-                        }
-                    }
+                    // No scope box is ever written to a target view. A scope box difference is a
+                    // fact to REPORT (above), not a difference to erase: the alignment registers a
+                    // shared world anchor through each view's OWN crop geometry, so a grid line
+                    // lands at the identical paper coordinate whether or not the two views crop the
+                    // same way. Forcing the source's scope box onto the target would change the
+                    // model area that view shows — a permanent edit, made to satisfy a matching
+                    // heuristic that does not need it — and when the box's vertical extent does not
+                    // reach the target's level it fails outright and takes the alignment with it.
                     if (InheritCropSize)
                         foreach (var pr in bestMatch.Pairs) InheritCropGeometry(doc, pr, label);
                     if (InheritCropVisibility)
@@ -471,52 +481,68 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
             return (p, f, s);
         }
 
-        // ── Inheritance: scope box (applied before alignment) ─────────────────
-        private bool AssignScopeBox(Document doc, MatchedPair pr, string label)
+        // ── Match diagnostics ─────────────────────────────────────────────────
+        /// <summary>
+        /// The run-log line for one reference view that found no counterpart, naming the cause.
+        ///
+        /// "[FAIL] no counterpart for 'X'" was true but useless: the two commonest causes need
+        /// opposite fixes, and both looked the same. A target sheet that holds nothing of that view
+        /// type is a selection mistake; a candidate whose crop covers a different amount of model
+        /// is a threshold decision the user can act on — but only if the measured overlap and the
+        /// two crop sizes are actually printed.
+        /// </summary>
+        private string DescribeMiss(string label, MissInfo miss)
         {
+            string view = miss.Source.ViewName;
+
+            if (!miss.AnyEligible)
+                return AppStrings.T("testing.alignSheetViews.log.missNoEligible",
+                                    label, view, miss.Source.Type.ToString());
+
+            if (miss.Best == null || miss.BestScore <= 0)
+                return AppStrings.T("testing.alignSheetViews.log.missNoOverlap",
+                                    label, view, CropSizeLabel(miss.Source));
+
+            if (miss.BestTaken)
+                return AppStrings.T("testing.alignSheetViews.log.missTargetTaken",
+                                    label, view, miss.Best.ViewName, Pct01(miss.BestScore));
+
+            // The size-mismatch case the user hit: a real candidate, real overlap, but the crops
+            // cover different model areas so the fraction falls under the threshold. Both sizes and
+            // both numbers are printed so the choice — re-crop, or lower the threshold — is informed.
+            return AppStrings.T("testing.alignSheetViews.log.missLowOverlap",
+                                label, view, miss.Best.ViewName,
+                                Pct01(miss.BestScore), Pct01(OverlapThreshold),
+                                CropSizeLabel(miss.Source), CropSizeLabel(miss.Best));
+        }
+
+        /// <summary>A view's crop rectangle as a readable model size plus its scale, e.g. <c>212' × 148' @ 1:96</c>.
+        /// This is the number that explains a low overlap, so it is printed rather than described.</summary>
+        private static string CropSizeLabel(VpEntry e)
+        {
+            double w = Math.Abs(e.CropMax.X - e.CropMin.X);
+            double h = Math.Abs(e.CropMax.Y - e.CropMin.Y);
+            return AppStrings.T("testing.alignSheetViews.log.cropSize", w.ToString("0.#"), h.ToString("0.#"), e.Scale);
+        }
+
+        /// <summary>A scope box's name for the log, or the "(none)" placeholder for an unset one.</summary>
+        private static string ScopeBoxLabel(Document doc, ElementId id)
+        {
+            if (id == null || id == ElementId.InvalidElementId)
+                return AppStrings.T("testing.alignSheetViews.log.scopeBoxNone");
             try
             {
-                if (!(doc.GetElement(pr.Target.ViewId) is View tv)) return false;
-                var prm = tv.get_Parameter(BuiltInParameter.VIEWER_VOLUME_OF_INTEREST_CROP);
-                if (prm == null || prm.IsReadOnly) return false;
-                if (prm.AsElementId() == pr.Source.ScopeBoxId) return false; // already correct
-                tv.CropBoxActive = true;          // a scope box governs the crop
-                if (!prm.Set(pr.Source.ScopeBoxId)) return false;
-                PredictScopeBoxCrop(pr);
-                return true;
+                var el = doc.GetElement(id);
+                if (el != null && !string.IsNullOrEmpty(el.Name)) return el.Name;
             }
             catch (Exception ex)
             {
-                Log(AppStrings.T("testing.alignSheetViews.log.couldNotAssignScope", label, pr.Target.ViewName), "warn");
-                DiagnosticsLog.Swallowed($"AlignSheetViews: scope box on view {pr.Target.ViewId.Value}", ex);
-                return false;
+                DiagnosticsLog.Swallowed($"AlignSheetViews: read scope box name {id.Value}", ex);
             }
+            return id.Value.ToString();
         }
 
-        /// <summary>
-        /// Derives the crop the target view now carries, without regenerating to read it.
-        ///
-        /// The target has just been given the scope box the SOURCE view already carries, so both
-        /// crops cover the same world footprint — and a footprint has exactly one centre. The source
-        /// view's crop-centre anchor therefore lands precisely on the target's new crop centre,
-        /// which is the only property <see cref="FootprintCentre"/> takes from the rectangle. (The
-        /// width and height are recorded for completeness; because only the centre is ever used,
-        /// the prediction stays correct even when the two views' in-plane axes are rotated relative
-        /// to one another and the rectangles are not the same shape in local coordinates.)
-        /// </summary>
-        private static void PredictScopeBoxCrop(MatchedPair pr)
-        {
-            VpEntry src = pr.Source;
-            CropState cs = pr.Predicted;
-
-            XYZ local = cs.Transform.Inverse.OfPoint(AnchorWorld(src));
-            double hw = (src.CropMax.X - src.CropMin.X) / 2.0;
-            double hh = (src.CropMax.Y - src.CropMin.Y) / 2.0;
-
-            // Depth stays the target's own — it is a different level, which is the whole point.
-            cs.Min = new XYZ(local.X - hw, local.Y - hh, cs.Min.Z);
-            cs.Max = new XYZ(local.X + hw, local.Y + hh, cs.Max.Z);
-        }
+        private static int Pct01(double fraction) => (int)Math.Round(Math.Max(0, Math.Min(1, fraction)) * 100);
 
         // ── Inheritance: crop size + annotation crop ──────────────────────────
         private void InheritCropGeometry(Document doc, MatchedPair pr, string label)
@@ -527,17 +553,12 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
 
                 // Crop size — resize the target crop to the source crop's dimensions, keeping the
                 // target's own crop centre (alignment then centres it on the shared anchor).
-                // Skipped whenever a scope box governs the crop region: one the view inherited this
-                // run, OR one it ALREADY carried. The second case used to slip through, and writing
-                // CropBox underneath a scope box fights it and yields an unpredictable crop.
-                bool scopeGoverned = pr.GotScopeBox;
-                if (!scopeGoverned)
-                {
-                    var tsb = tv.get_Parameter(BuiltInParameter.VIEWER_VOLUME_OF_INTEREST_CROP);
-                    scopeGoverned = tsb != null
-                                 && tsb.StorageType == StorageType.ElementId
-                                 && tsb.AsElementId() != ElementId.InvalidElementId;
-                }
+                // Skipped whenever a scope box governs the target's crop region: writing CropBox
+                // underneath a scope box fights it and yields an unpredictable crop.
+                var tsb = tv.get_Parameter(BuiltInParameter.VIEWER_VOLUME_OF_INTEREST_CROP);
+                bool scopeGoverned = tsb != null
+                                  && tsb.StorageType == StorageType.ElementId
+                                  && tsb.AsElementId() != ElementId.InvalidElementId;
 
                 if (pr.Source.Scale != pr.Target.Scale)
                     Log(AppStrings.T("testing.alignSheetViews.log.annoScaleDiffers", label, pr.Target.ViewName), "warn");
@@ -2096,6 +2117,14 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
         /// <b>globally best-first</b> rather than in source order - previously the first source
         /// processed took its best free target, so it could steal a target that was a decisively
         /// better match for a later source, and a single stolen target mis-pairs two views.
+        ///
+        /// Candidates are ranked by (depth overlap, in-plane overlap) so a counterpart at the same
+        /// cut depth still wins whenever one exists, while a source whose only candidates sit at a
+        /// different depth is matched rather than failed.
+        ///
+        /// Every source that ends up unmatched carries a <see cref="MissInfo"/> recording the best
+        /// candidate it saw and why that candidate was rejected, so the run log can say WHY two
+        /// sheets did not pair instead of only that they did not.
         /// </summary>
         private SheetMatch MatchSheet(List<VpEntry> srcEntries, List<VpEntry> tgtEntries)
         {
@@ -2116,7 +2145,7 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                 {
                     used.Add(byScope[0].ViewportId);
                     settled.Add(src.ViewportId);
-                    res.Pairs.Add(new MatchedPair(src, byScope[0]));
+                    res.Pairs.Add(NewPair(src, byScope[0]));
                 }
                 else if (byScope.Count > 1)
                 {
@@ -2124,42 +2153,63 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                 }
             }
 
-            // Pass 2 - overlap fallback, every qualifying pair scored up front.
-            var cands = new List<(VpEntry S, VpEntry T, double Score)>();
+            // Pass 2 - overlap fallback, every qualifying pair scored up front. Sub-threshold and
+            // ineligible candidates are not discarded outright: the best of them is remembered per
+            // source so an unmatched source can explain itself.
+            var cands = new List<(VpEntry S, VpEntry T, double Score, bool DepthOk)>();
+            var misses = new Dictionary<ElementId, MissInfo>();
             foreach (var src in srcEntries)
             {
                 if (settled.Contains(src.ViewportId)) continue;
+                var miss = new MissInfo(src);
+                misses[src.ViewportId] = miss;
                 restrictTo.TryGetValue(src.ViewportId, out var allowed);
                 foreach (var t in tgtEntries)
                 {
-                    if (used.Contains(t.ViewportId)) continue;
                     if (allowed != null && !allowed.Contains(t.ViewportId)) continue;
                     if (!Eligible(src, t)) continue;
-                    double sc = OverlapInSourcePlane(src, t);
+                    miss.AnyEligible = true;
+                    double sc = OverlapInSourcePlane(src, t, out bool depthOk);
+                    if (sc > miss.BestScore)
+                    {
+                        miss.Best        = t;
+                        miss.BestScore   = sc;
+                        miss.BestDepthOk = depthOk;
+                        miss.BestTaken   = used.Contains(t.ViewportId);
+                    }
+                    if (used.Contains(t.ViewportId)) continue;
                     if (sc < OverlapThreshold) continue;
-                    cands.Add((src, t, sc));
+                    cands.Add((src, t, sc, depthOk));
                 }
             }
 
-            foreach (var c in cands.OrderByDescending(x => x.Score).ToList())
+            // Depth first, then in-plane overlap — a same-depth counterpart is always preferred, and
+            // a depth mismatch only decides anything when nothing at the same depth is available.
+            foreach (var c in cands.OrderByDescending(x => x.DepthOk).ThenByDescending(x => x.Score).ToList())
             {
                 if (settled.Contains(c.S.ViewportId)) continue;
                 if (used.Contains(c.T.ViewportId))    continue;
 
-                // Ambiguous when another still-free target scores nearly as well for this source.
+                // Ambiguous when another still-free target in the SAME depth tier scores nearly as
+                // well for this source. A rival across the tier boundary is not a real rival — the
+                // tier already decided between them.
                 var rival = cands.FirstOrDefault(o => o.S.ViewportId == c.S.ViewportId
                                                    && o.T.ViewportId != c.T.ViewportId
+                                                   && o.DepthOk == c.DepthOk
                                                    && !used.Contains(o.T.ViewportId)
                                                    && o.Score >= 0.8 * c.Score);
                 settled.Add(c.S.ViewportId);
                 if (rival.T != null) { res.Ambiguous.Add((c.S, c.T, rival.T)); continue; }
 
                 used.Add(c.T.ViewportId);
-                res.Pairs.Add(new MatchedPair(c.S, c.T));
+                var pair = NewPair(c.S, c.T);
+                pair.AreaMatch     = c.Score;
+                pair.DepthOverlaps = c.DepthOk;
+                res.Pairs.Add(pair);
             }
 
             foreach (var src in srcEntries.Where(se => !settled.Contains(se.ViewportId)))
-                res.Missing.Add(src);
+                res.Missing.Add(misses.TryGetValue(src.ViewportId, out var mi) ? mi : new MissInfo(src));
             foreach (var t in tgtEntries.Where(te => !used.Contains(te.ViewportId)))
                 res.Extra.Add(t);
 
@@ -2171,6 +2221,24 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
             return res;
         }
 
+        /// <summary>
+        /// Builds a pair and records the two facts every later phase and log line needs: how much
+        /// model area the two views actually share, and whether they disagree about scope boxes.
+        /// The area is measured here for scope-box pairs (which never went through the overlap
+        /// scoring); the overlap pass overwrites it with the score it already computed.
+        /// </summary>
+        private MatchedPair NewPair(VpEntry src, VpEntry tgt)
+        {
+            var pair = new MatchedPair(src, tgt)
+            {
+                ScopeBoxMismatch = src.ScopeBoxId != ElementId.InvalidElementId
+                                && tgt.ScopeBoxId != src.ScopeBoxId,
+            };
+            pair.AreaMatch     = OverlapInSourcePlane(src, tgt, out bool depthOk);
+            pair.DepthOverlaps = depthOk;
+            return pair;
+        }
+
         /// <summary>A candidate must be the same view type and look the same way to be pairable.</summary>
         private static bool Eligible(VpEntry src, VpEntry cand)
             => cand.Type == src.Type
@@ -2179,10 +2247,20 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
         /// <summary>
         /// In-plane overlap fraction (intersection / smaller crop area) of a candidate view's
         /// crop rectangle against the source's, both projected into the source crop frame.
-        /// Returns 0 when the views' cut-depth ranges don't intersect (different level / depth).
+        ///
+        /// <paramref name="depthOverlaps"/> reports whether the two views' cut-depth ranges also
+        /// intersect. This used to be a hard veto — a depth miss returned 0 and the candidate was
+        /// disqualified before its footprint was ever measured. That is wrong for exactly the case
+        /// this tool exists for: a view governed by a SCOPE BOX takes its crop from the box, and a
+        /// scope box has a finite vertical extent, so a scoped reference view and an unscoped
+        /// target on another level can have disjoint depth ranges while covering the same plan
+        /// area. The sheet then reported "no counterpart" and nothing aligned. Depth is now a
+        /// ranking tier in <see cref="MatchSheet"/>: a same-depth candidate still wins whenever one
+        /// exists, but its absence never fails the sheet.
         /// </summary>
-        private static double OverlapInSourcePlane(VpEntry src, VpEntry cand)
+        private static double OverlapInSourcePlane(VpEntry src, VpEntry cand, out bool depthOverlaps)
         {
+            depthOverlaps = false;
             Transform f = src.Transform;
             XYZ o  = f.Origin;
             XYZ bx = f.BasisX, by = f.BasisY, bn = f.BasisZ;
@@ -2209,8 +2287,8 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                         if (n < nMin) nMin = n; if (n > nMax) nMax = n;
                     }
 
-            // Depth veto: two levels' plan-view cut ranges do not necessarily overlap.
-            if (Overlap1D(sNmin, sNmax, nMin, nMax) <= 0) return 0;
+            // Depth is reported, never vetoed — see the summary above.
+            depthOverlaps = Overlap1D(sNmin, sNmax, nMin, nMax) > 0;
 
             double ov = Overlap1D(sUmin, sUmax, uMin, uMax) * Overlap1D(sVmin, sVmax, vMin, vMax);
             if (ov <= 0) return 0;
@@ -2538,10 +2616,39 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
         private sealed class SheetMatch
         {
             public List<MatchedPair> Pairs     { get; } = new List<MatchedPair>();
-            public List<VpEntry>     Missing   { get; } = new List<VpEntry>();
+            public List<MissInfo>    Missing   { get; } = new List<MissInfo>();
             public List<VpEntry>     Extra     { get; } = new List<VpEntry>();
             public List<(VpEntry src, VpEntry a, VpEntry b)> Ambiguous { get; } = new List<(VpEntry, VpEntry, VpEntry)>();
             public double            Score     { get; set; }
+        }
+
+        /// <summary>
+        /// Why one reference view found no counterpart. "No counterpart" on its own is not a
+        /// diagnosis — the two commonest causes (the target sheet holds nothing of that view type,
+        /// and the closest candidate's crop is a different size or position so the overlap falls
+        /// under the threshold) look identical in the log and need opposite fixes. This carries
+        /// enough to name the cause and quote the numbers behind it.
+        /// </summary>
+        private sealed class MissInfo
+        {
+            public MissInfo(VpEntry source) { Source = source; }
+
+            public VpEntry  Source { get; }
+
+            /// <summary>Was there any same-type, same-orientation view on the target sheet at all?</summary>
+            public bool     AnyEligible { get; set; }
+
+            /// <summary>The closest eligible candidate seen, whatever its score.</summary>
+            public VpEntry? Best        { get; set; }
+
+            /// <summary>That candidate's in-plane overlap fraction (0..1).</summary>
+            public double   BestScore   { get; set; }
+
+            /// <summary>Whether that candidate's cut-depth range met the source's.</summary>
+            public bool     BestDepthOk { get; set; }
+
+            /// <summary>Whether that candidate had already been claimed by another reference view.</summary>
+            public bool     BestTaken   { get; set; }
         }
 
         /// <summary>
@@ -2582,8 +2689,20 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
             public VpEntry   Target { get; }
             public string    Label  { get; set; } = "";
 
-            /// <summary>True once this run has assigned the source's scope box to the target view.</summary>
-            public bool      GotScopeBox { get; set; }
+            /// <summary>
+            /// The source carries a scope box the target does not share (none, or a different one).
+            /// The alignment does not care — it registers a shared world point using each view's own
+            /// crop — but it is the single most useful thing to say in the log when a run looks wrong,
+            /// and it is what keeps the tool from silently writing a scope box the user never asked for.
+            /// </summary>
+            public bool      ScopeBoxMismatch { get; set; }
+
+            /// <summary>Fraction of model area the two views share (0..1), as measured at match time.</summary>
+            public double    AreaMatch { get; set; }
+
+            /// <summary>Whether the two views' cut-depth ranges met. False is normal for a scoped
+            /// reference aligned to an unscoped target on another level.</summary>
+            public bool      DepthOverlaps { get; set; }
 
             /// <summary>The target's crop geometry as this run's writes will have left it.</summary>
             public CropState Predicted { get; }
