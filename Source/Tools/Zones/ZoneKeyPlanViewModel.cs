@@ -6,10 +6,12 @@ using System.Windows.Controls;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Framework;
+using LemoineTools.Framework.Controls;
 using LemoineTools.Framework.Zones;
 
 // Autodesk.Revit.UI also defines ComboBox, so the WPF one is aliased (CLAUDE.md).
 using WpfComboBox = System.Windows.Controls.ComboBox;
+using WpfGrid     = System.Windows.Controls.Grid;
 
 namespace LemoineTools.Tools.Zones
 {
@@ -32,7 +34,8 @@ namespace LemoineTools.Tools.Zones
         {
             new StepDefinition("S1", AppStrings.T("zones.keyplan.steps.S1"), required: true),
             new StepDefinition("S2", AppStrings.T("zones.keyplan.steps.S2"), required: true),
-            new StepDefinition("S3", AppStrings.T("zones.keyplan.steps.S3"), required: false),
+            new StepDefinition("S3", AppStrings.T("zones.keyplan.steps.S3"), required: true),
+            new StepDefinition("S4", AppStrings.T("zones.keyplan.steps.S4"), required: false),
         };
 
         public sealed class NamedId
@@ -45,11 +48,24 @@ namespace LemoineTools.Tools.Zones
         private readonly ExternalEvent?         _event;
         private readonly List<NamedId> _legends;
         private readonly List<NamedId> _links;
+        private readonly List<string>  _fillPatterns;
 
         private ElementId _seedId  = ElementId.InvalidElementId;
         private ElementId _linkId  = ElementId.InvalidElementId;
         private string    _levelId = "";
         private readonly HashSet<string> _areaIds = new HashSet<string>(StringComparer.Ordinal);
+
+        // ── Graphics, one override for the whole run ─────────────────────────
+        /// <summary>Empty means the solid fill, which is the default.</summary>
+        private string _fillPattern = "";
+        private string _fillHex     = ZoneKeyPlanRunHandler.DefaultFillHex;
+        private int    _scale       = 96;
+
+        private bool _trimToOutline    = true;
+        private bool _useMatchlines;
+        private ElementId _matchlineLinkId = ElementId.InvalidElementId;
+        private bool _showMatchlines   = true;
+        private bool _trimToMatchlines = true;
 
         private Action<string>? _refreshStep;
 
@@ -59,17 +75,24 @@ namespace LemoineTools.Tools.Zones
         private ZoneLibrary Lib => ZoneSettings.Instance.Library;
 
         public ZoneKeyPlanViewModel(ZoneKeyPlanRunHandler? handler, ExternalEvent? externalEvent,
-                                    List<NamedId>? legends, List<NamedId>? links)
+                                    List<NamedId>? legends, List<NamedId>? links,
+                                    List<string>? fillPatterns = null)
         {
-            _handler = handler;
-            _event   = externalEvent;
-            _legends = legends ?? new List<NamedId>();
-            _links   = links   ?? new List<NamedId>();
+            _handler      = handler;
+            _event        = externalEvent;
+            _legends      = legends      ?? new List<NamedId>();
+            _links        = links        ?? new List<NamedId>();
+            _fillPatterns = fillPatterns ?? new List<string>();
             if (_legends.Count == 1) _seedId = _legends[0].Id;
         }
 
         public void SetContentRefreshCallback(Action<string> refresh) => _refreshStep = refresh;
-        public void OnStepActivated(string stepId) { if (stepId == "S3") _refreshStep?.Invoke("S3"); }
+        public void OnStepActivated(string stepId)
+        {
+            // S4 summarises every earlier step, and S2's matchline rows depend on the source
+            // picked in S1 — step content is built eagerly, so both must rebuild here.
+            if (stepId == "S2" || stepId == "S4") _refreshStep?.Invoke(stepId);
+        }
 
         public void OnWindowClosed()
         {
@@ -84,8 +107,9 @@ namespace LemoineTools.Tools.Zones
             switch (stepId)
             {
                 case "S1": return BuildSourceStep();
-                case "S2": return BuildAreaStep();
-                case "S3": return BuildReviewStep();
+                case "S2": return BuildGraphicsStep();
+                case "S3": return BuildAreaStep();
+                case "S4": return BuildReviewStep();
                 default:   return null;
             }
         }
@@ -128,6 +152,88 @@ namespace LemoineTools.Tools.Zones
                 panel.Children.Add(Combo(levels.Select(l => l.Name).ToList(),
                                          levels.First(l => l.Id == _levelId).Name,
                                          v => { _levelId = levels.FirstOrDefault(l => l.Name == v)?.Id ?? ""; Fire(); }));
+            }
+
+            // The scale is what decides whether the key plan fits the corner of the sheet it
+            // is for, so it is a choice here rather than whatever the seed legend happened to be.
+            panel.Children.Add(Note(AppStrings.T("zones.keyplan.scaleHint")));
+            var scaleLabels = ZoneScaleFit.DefaultLadder.Select(ZoneScaleFit.Label).ToList();
+            panel.Children.Add(Combo(scaleLabels, ZoneScaleFit.Label(_scale), v =>
+            {
+                int match = ZoneScaleFit.DefaultLadder.FirstOrDefault(d => ZoneScaleFit.Label(d) == v);
+                if (match > 0) _scale = match;
+                Fire();
+            }));
+
+            return panel;
+        }
+
+        // ── S2 — Graphics ─────────────────────────────────────────────────────
+
+        /// <summary>
+        /// The fill pattern, colour and trimming. ONE setting for the whole run, written onto a
+        /// filled region type the tool owns, so every key plan it makes looks the same and no
+        /// project type is restyled behind the user's back.
+        /// </summary>
+        private FrameworkElement BuildGraphicsStep()
+        {
+            var panel = new StackPanel();
+
+            panel.Children.Add(Note(AppStrings.T("zones.keyplan.fillHint")));
+
+            // Pattern. The blank entry IS the solid fill, which is the default and the common
+            // answer — it is named rather than left as an empty row.
+            var patternLabels = new List<string> { AppStrings.T("zones.keyplan.fillSolid") };
+            patternLabels.AddRange(_fillPatterns);
+            string currentPattern = string.IsNullOrEmpty(_fillPattern)
+                ? patternLabels[0]
+                : (_fillPatterns.Contains(_fillPattern) ? _fillPattern : patternLabels[0]);
+
+            panel.Children.Add(LabelledRow(
+                AppStrings.T("zones.keyplan.fillPattern"),
+                Combo(patternLabels, currentPattern, v =>
+                {
+                    _fillPattern = string.Equals(v, patternLabels[0], StringComparison.Ordinal) ? "" : v;
+                    Fire();
+                })));
+
+            // Colour, via the house swatch picker.
+            panel.Children.Add(LabelledRow(
+                AppStrings.T("zones.keyplan.fillColour"),
+                ColorPickerWindow.BuildColorPickerSwatch(
+                    getHex: () => _fillHex,
+                    setHex: h => { _fillHex = h; Fire(); })));
+
+            if (_fillPatterns.Count == 0)
+                panel.Children.Add(Note(AppStrings.T("zones.keyplan.noPatterns")));
+
+            // ── Trimming ─────────────────────────────────────────────────────
+            panel.Children.Add(Note(AppStrings.T("zones.keyplan.trimHint")));
+            panel.Children.Add(Toggle(AppStrings.T("zones.keyplan.trimToOutline"), _trimToOutline,
+                v => { _trimToOutline = v; Fire(); }));
+
+            panel.Children.Add(Toggle(AppStrings.T("zones.keyplan.useMatchlines"), _useMatchlines,
+                v => { _useMatchlines = v; Fire(); _refreshStep?.Invoke("S2"); }));
+
+            if (_useMatchlines)
+            {
+                var mlNames = new List<string> { AppStrings.T("zones.keyplan.hostDoc") };
+                mlNames.AddRange(_links.Select(l => l.Name));
+                string currentMl = _links.FirstOrDefault(l => l.Id == _matchlineLinkId)?.Name ?? mlNames[0];
+
+                panel.Children.Add(LabelledRow(
+                    AppStrings.T("zones.keyplan.matchlineSource"),
+                    Combo(mlNames, currentMl, v =>
+                    {
+                        _matchlineLinkId = _links.FirstOrDefault(l => l.Name == v)?.Id ?? ElementId.InvalidElementId;
+                        Fire();
+                    })));
+
+                panel.Children.Add(Toggle(AppStrings.T("zones.keyplan.showMatchlines"), _showMatchlines,
+                    v => { _showMatchlines = v; Fire(); }));
+                panel.Children.Add(Toggle(AppStrings.T("zones.keyplan.trimToMatchlines"), _trimToMatchlines,
+                    v => { _trimToMatchlines = v; Fire(); }));
+                panel.Children.Add(Note(AppStrings.T("zones.keyplan.matchlineLimit")));
             }
 
             return panel;
@@ -179,7 +285,9 @@ namespace LemoineTools.Tools.Zones
             switch (stepId)
             {
                 case "S1": return _seedId != ElementId.InvalidElementId && !string.IsNullOrEmpty(_levelId);
-                case "S2": return _areaIds.Count > 0;
+                // Graphics always has an answer — solid grey at the seed's scale is a valid run.
+                case "S2": return true;
+                case "S3": return _areaIds.Count > 0;
                 default:   return true;
             }
         }
@@ -193,22 +301,35 @@ namespace LemoineTools.Tools.Zones
                         ? AppStrings.T("zones.keyplan.noSeedPicked")
                         : AppStrings.T("zones.keyplan.summary.source",
                                        _legends.FirstOrDefault(l => l.Id == _seedId)?.Name ?? "",
-                                       Lib.Level(_levelId)?.Name ?? "");
-                case "S2": return AppStrings.T("zones.keyplan.summary.areas", _areaIds.Count);
+                                       Lib.Level(_levelId)?.Name ?? "",
+                                       ZoneScaleFit.Label(_scale));
+                case "S2":
+                {
+                    string pattern = string.IsNullOrEmpty(_fillPattern)
+                        ? AppStrings.T("zones.keyplan.fillSolid")
+                        : _fillPattern;
+                    var parts = new List<string> { $"{pattern} {_fillHex}" };
+                    if (_trimToOutline)   parts.Add(AppStrings.T("zones.keyplan.summary.trimOutline"));
+                    if (_useMatchlines)   parts.Add(AppStrings.T("zones.keyplan.summary.matchlines"));
+                    return string.Join(" · ", parts);
+                }
+                case "S3": return AppStrings.T("zones.keyplan.summary.areas", _areaIds.Count);
                 default:   return AppStrings.T("zones.keyplan.plannedCount", _areaIds.Count);
             }
         }
 
         public IList<(string id, string label)> ReviewItems => new List<(string, string)>
         {
-            ("source", AppStrings.T("zones.keyplan.steps.S1")),
-            ("areas",  AppStrings.T("zones.keyplan.steps.S2")),
+            ("source",   AppStrings.T("zones.keyplan.steps.S1")),
+            ("graphics", AppStrings.T("zones.keyplan.steps.S2")),
+            ("areas",    AppStrings.T("zones.keyplan.steps.S3")),
         };
 
         public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
         {
-            ["source"] = SummaryFor("S1"),
-            ["areas"]  = SummaryFor("S2"),
+            ["source"]   = SummaryFor("S1"),
+            ["graphics"] = SummaryFor("S2"),
+            ["areas"]    = SummaryFor("S3"),
         };
 
         public IList<string>? ReviewChips => null;
@@ -243,6 +364,16 @@ namespace LemoineTools.Tools.Zones
             _handler.SourceLinkId   = _linkId;
             _handler.OutlineLevelId = _levelId;
             _handler.AreaIds        = _areaIds.ToList();
+
+            _handler.FillPatternName  = _fillPattern;
+            _handler.FillColorHex     = _fillHex;
+            _handler.LegendScale      = _scale;
+            _handler.TrimToOutline    = _trimToOutline;
+            _handler.UseMatchlines    = _useMatchlines;
+            _handler.MatchlineLinkId  = _matchlineLinkId;
+            _handler.ShowMatchlines   = _showMatchlines;
+            _handler.TrimToMatchlines = _trimToMatchlines;
+
             _handler.PushLog        = pushLog;
             _handler.OnProgress     = onProgress;
             _handler.OnComplete     = onComplete;
@@ -267,6 +398,44 @@ namespace LemoineTools.Tools.Zones
                 catch (Exception ex) { DiagnosticsLog.Error("ZoneKeyPlan: choice change", ex); }
             };
             return c;
+        }
+
+        /// <summary>A fixed-width label beside a control, so the graphics rows line up.</summary>
+        private static FrameworkElement LabelledRow(string label, FrameworkElement control)
+        {
+            var g = new WpfGrid { Margin = new Thickness(0, 2, 0, 6) };
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(120) });
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+            var t = new TextBlock
+            {
+                Text = label,
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Left,
+            };
+            t.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextSub");
+            t.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            WpfGrid.SetColumn(t, 0);
+            g.Children.Add(t);
+
+            control.HorizontalAlignment = HorizontalAlignment.Left;
+            control.VerticalAlignment   = VerticalAlignment.Center;
+            control.Margin              = new Thickness(0);
+            WpfGrid.SetColumn(control, 1);
+            g.Children.Add(control);
+            return g;
+        }
+
+        private static CheckBox Toggle(string label, bool value, Action<bool> onChange)
+        {
+            var cb = new CheckBox { Content = label, IsChecked = value, Margin = new Thickness(0, 3, 0, 3) };
+            cb.SetResourceReference(CheckBox.FontSizeProperty, "LemoineFS_SM");
+            cb.Click += (s, e) =>
+            {
+                try { onChange(cb.IsChecked == true); }
+                catch (Exception ex) { DiagnosticsLog.Error("ZoneKeyPlan: toggle", ex); }
+            };
+            return cb;
         }
 
         private static TextBlock Note(string text)

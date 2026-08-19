@@ -331,9 +331,10 @@
     "runLabel": "Create the key plans →",
 
     "steps": {
-      "S1": "Source",
-      "S2": "Areas",
-      "S3": "Review"
+      "S1": "Source & scale",
+      "S2": "Graphics",
+      "S3": "Areas",
+      "S4": "Review"
     },
 
     "seedHint": "Pick a legend to duplicate. Revit has no API to create a legend, so each key plan starts as a copy of one that already exists — the same reason the Scope Box Creator needs a seed box.",
@@ -346,6 +347,25 @@
     "noAreas": "This project has no zone areas yet.",
     "noHandler": "The key plan run handler is unavailable.",
 
+    // ── Scale ──
+    "scaleHint": "The scale every key plan legend is created at — this is what decides whether it fits the corner of the sheet you are putting it on.",
+
+    // ── Fill graphics: ONE override for the whole run ──
+    "fillHint": "The highlight's pattern and colour. One setting for every key plan this run creates — it is written onto a filled region type this tool owns, so no existing project type is restyled.",
+    "fillPattern": "Fill pattern",
+    "fillColour": "Fill colour",
+    "fillSolid": "Solid fill",
+    "noPatterns": "This project has no drafting fill patterns, so only the solid fill is available.",
+
+    // ── Trimming ──
+    "trimHint": "What the highlight is cut back to. Trimming can split it into several pieces — an area spanning a courtyard comes back as two — and each piece is drawn as its own filled region.",
+    "trimToOutline": "Trim the highlight to the building outline",
+    "useMatchlines": "Read matchlines from a model",
+    "matchlineSource": "Matchlines from",
+    "showMatchlines": "Draw the matchlines on the key plan",
+    "trimToMatchlines": "Trim the highlight at the matchlines",
+    "matchlineLimit": "Matchlines are matched to the level by name and read from the plan views they were drawn in. A straight or L-shaped matchline trims exactly; an L whose corner faces away from the area is cut back further than it should be.",
+
     // {0} = number of key plans
     "plannedCount": "{0} key plan(s) will be created.",
     // {0} = comma-separated area names
@@ -354,10 +374,12 @@
     "reviewNote": "Each key plan is a legend, so one per area can be placed on every sheet that documents that area.",
 
     "summary": {
-      // {0} = seed legend name, {1} = level name
-      "source": "from '{0}', outline on {1}",
+      // {0} = seed legend name, {1} = level name, {2} = scale label
+      "source": "from '{0}', outline on {1}, at {2}",
       // {0} = area count
-      "areas": "{0} area(s)"
+      "areas": "{0} area(s)",
+      "trimOutline": "trimmed to the building",
+      "matchlines": "matchlines"
     }
   },
 

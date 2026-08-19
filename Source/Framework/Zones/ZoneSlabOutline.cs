@@ -65,19 +65,6 @@ namespace LemoineTools.Framework.Zones
     // =========================================================================
     public static class ZoneSlabOutline
     {
-        /// <summary>
-        /// How far apart two tessellated points must be to count as distinct, in feet.
-        /// Revit rejects a zero-length curve, so a raw tessellation cannot be rebuilt into a
-        /// CurveLoop without this weld.
-        /// </summary>
-        public const double WeldToleranceFt = 1e-4;
-
-        /// <summary>
-        /// Depth of the throwaway prism each slab profile is extruded into, in feet. Its only
-        /// job is to give the boolean union something with volume to work on; nothing reads it.
-        /// </summary>
-        public const double ExtrusionDepthFt = 1.0;
-
         /// <summary>Where an outline came from. Always reported — never a silent downgrade.</summary>
         public enum Source { SlabEdges, Roofs, ZoneExtents, None }
 
@@ -236,12 +223,12 @@ namespace LemoineTools.Framework.Zones
                     double best = -1;
                     foreach (var l in loops)
                     {
-                        double a = LoopAreaFt2(l);
+                        double a = ZonePolygonOps.AreaFt2(ZonePolygonOps.FlattenLoop(l, tf));
                         if (a > best) { best = a; outer = l; }
                     }
                     if (outer == null) continue;
 
-                    var pts = FlattenLoop(outer, tf);
+                    var pts = ZonePolygonOps.FlattenLoop(outer, tf);
                     if (pts.Count >= 3) profiles.Add(pts);
                 }
             }
@@ -249,7 +236,7 @@ namespace LemoineTools.Framework.Zones
             if (profiles.Count == 0) return false;
 
             // ── Union them ───────────────────────────────────────────────────
-            var rings = UnionOutline(profiles, say);
+            var rings = ZonePolygonOps.Union(profiles.Cast<IReadOnlyList<XYZ>>(), say);
             if (rings.Count == 0)
             {
                 // The union failed outright. Falling back to the raw profiles still draws a
@@ -262,154 +249,6 @@ namespace LemoineTools.Framework.Zones
             int before = result.Rings.Count;
             foreach (var ring in rings) AddRing(result, ring);
             return result.Rings.Count > before;
-        }
-
-        /// <summary>
-        /// A curve loop as world XY points at z=0. Tessellated, so an arc or spline profile
-        /// becomes something that can be rebuilt as a planar, extrudable loop of straight lines.
-        /// </summary>
-        private static List<XYZ> FlattenLoop(CurveLoop loop, Transform tf)
-        {
-            var pts = new List<XYZ>();
-            try
-            {
-                foreach (var c in loop)
-                {
-                    var t = c.Tessellate();
-                    if (t == null) continue;
-                    // Skip the last point of each curve — it repeats the next curve's first.
-                    for (int i = 0; i < t.Count - 1; i++)
-                    {
-                        XYZ w = tf.OfPoint(t[i]);
-                        pts.Add(new XYZ(w.X, w.Y, 0));
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                DiagnosticsLog.Swallowed("ZoneSlabOutline: tessellate loop", ex);
-                return new List<XYZ>();
-            }
-            return Dedupe(pts);
-        }
-
-        /// <summary>
-        /// Drops points closer together than <see cref="WeldToleranceFt"/>, including a first
-        /// point that coincides with the last. Revit rejects a zero-length curve, so an
-        /// undeduplicated tessellation cannot be turned into a CurveLoop at all.
-        /// </summary>
-        private static List<XYZ> Dedupe(List<XYZ> pts)
-        {
-            var outPts = new List<XYZ>();
-            foreach (var p in pts)
-            {
-                if (outPts.Count > 0 && outPts[outPts.Count - 1].DistanceTo(p) < WeldToleranceFt) continue;
-                outPts.Add(p);
-            }
-            while (outPts.Count >= 2 &&
-                   outPts[0].DistanceTo(outPts[outPts.Count - 1]) < WeldToleranceFt)
-                outPts.RemoveAt(outPts.Count - 1);
-            return outPts;
-        }
-
-        /// <summary>
-        /// Extrudes each flattened profile into a prism, unions them all, and returns the
-        /// outermost loop of every upward-facing face of the result — one continuous ring per
-        /// connected mass, holes already filled because the inner loops never went in.
-        ///
-        /// Returns an empty list when nothing could be unioned; the caller reports that.
-        /// </summary>
-        private static List<List<XYZ>> UnionOutline(List<List<XYZ>> profiles, Action<string, string> say)
-        {
-            var rings = new List<List<XYZ>>();
-
-            Solid? merged = null;
-            int built = 0, failedExtrude = 0, failedUnion = 0;
-
-            foreach (var profile in profiles)
-            {
-                Solid? prism = null;
-                try
-                {
-                    var loop = new CurveLoop();
-                    for (int i = 0; i < profile.Count; i++)
-                    {
-                        var a = profile[i];
-                        var b = profile[(i + 1) % profile.Count];
-                        if (a.DistanceTo(b) < WeldToleranceFt) continue;
-                        loop.Append(Line.CreateBound(a, b));
-                    }
-
-                    prism = GeometryCreationUtilities.CreateExtrusionGeometry(
-                        new List<CurveLoop> { loop }, XYZ.BasisZ, ExtrusionDepthFt);
-                }
-                catch (Exception ex)
-                {
-                    // A self-intersecting or degenerate slab profile is a real condition, not a
-                    // reason to lose every other slab.
-                    failedExtrude++;
-                    DiagnosticsLog.Swallowed("ZoneSlabOutline: extrude slab profile", ex);
-                    continue;
-                }
-                if (prism == null) { failedExtrude++; continue; }
-
-                if (merged == null) { merged = prism; built++; continue; }
-
-                try
-                {
-                    merged = BooleanOperationsUtils.ExecuteBooleanOperation(
-                        merged, prism, BooleanOperationsType.Union);
-                    built++;
-                }
-                catch (Exception ex)
-                {
-                    // Keep what has merged so far — one refusing solid must not discard the rest.
-                    failedUnion++;
-                    DiagnosticsLog.Swallowed("ZoneSlabOutline: union slab prisms", ex);
-                }
-            }
-
-            if (failedExtrude > 0 || failedUnion > 0)
-                say($"Outline union: {built} of {profiles.Count} slab profile(s) merged " +
-                    $"({failedExtrude} could not be extruded, {failedUnion} could not be unioned).", "warn");
-
-            if (merged == null) return rings;
-
-            try
-            {
-                foreach (Face f in merged.Faces)
-                {
-                    // Only the top of the prism describes the footprint. The bottom repeats it
-                    // and the sides are the extrusion walls.
-                    if (!(f is PlanarFace pf)) continue;
-                    if (pf.FaceNormal == null || pf.FaceNormal.Z < 0.9) continue;
-
-                    var loops = f.GetEdgesAsCurveLoops();
-                    if (loops == null || loops.Count == 0) continue;
-
-                    // The union filled the holes already; if Revit still reports inner loops
-                    // (a genuine void that no slab ever covered), only the outermost is drawn —
-                    // the outline is meant to be one continuous line.
-                    CurveLoop? outer = null;
-                    double best = -1;
-                    foreach (var l in loops)
-                    {
-                        double a = LoopAreaFt2(l);
-                        if (a > best) { best = a; outer = l; }
-                    }
-                    if (outer == null) continue;
-
-                    var pts = FlattenLoop(outer, Transform.Identity);
-                    if (pts.Count >= 3) rings.Add(pts);
-                }
-            }
-            catch (Exception ex)
-            {
-                DiagnosticsLog.Error("ZoneSlabOutline: read union faces", ex);
-                return new List<List<XYZ>>();
-            }
-
-            return rings;
         }
 
         /// <summary>Records one finished ring and grows the result's world bounds.</summary>
@@ -427,39 +266,6 @@ namespace LemoineTools.Framework.Zones
                 if (p.Y > result.MaxY) result.MaxY = p.Y;
             }
             result.Rings.Add(ring);
-        }
-
-        /// <summary>
-        /// Planar area of a loop by the shoelace formula on its tessellated XY points. Used only
-        /// to rank loops and to drop small openings, so an approximation is exactly right here.
-        /// </summary>
-        private static double LoopAreaFt2(CurveLoop loop)
-        {
-            try
-            {
-                var pts = new List<XYZ>();
-                foreach (var c in loop)
-                {
-                    var t = c.Tessellate();
-                    if (t == null) continue;
-                    for (int i = 0; i < t.Count - 1; i++) pts.Add(t[i]);
-                }
-                if (pts.Count < 3) return 0;
-
-                double sum = 0;
-                for (int i = 0; i < pts.Count; i++)
-                {
-                    var a = pts[i];
-                    var b = pts[(i + 1) % pts.Count];
-                    sum += (a.X * b.Y) - (b.X * a.Y);
-                }
-                return Math.Abs(sum) / 2.0;
-            }
-            catch (Exception ex)
-            {
-                DiagnosticsLog.Swallowed("ZoneSlabOutline: loop area", ex);
-                return 0;
-            }
         }
     }
 }

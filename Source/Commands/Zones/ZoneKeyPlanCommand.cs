@@ -49,8 +49,9 @@ namespace LemoineTools.Commands
 
             ZoneKeyPlanViewModel BuildTool()
             {
-                var legends = new List<ZoneKeyPlanViewModel.NamedId>();
-                var links   = new List<ZoneKeyPlanViewModel.NamedId>();
+                var legends  = new List<ZoneKeyPlanViewModel.NamedId>();
+                var links    = new List<ZoneKeyPlanViewModel.NamedId>();
+                var patterns = new List<string>();
                 var d = uiApp?.ActiveUIDocument?.Document;
                 if (d != null)
                 {
@@ -75,11 +76,37 @@ namespace LemoineTools.Commands
                     }
                     catch (Exception ex) { DiagnosticsLog.Error("ZoneKeyPlanCommand: collect links", ex); }
 
+                    // DRAFTING patterns only. A filled region in a legend is annotation, and a
+                    // model pattern would scale with the view rather than the paper.
+                    try
+                    {
+                        foreach (var f in new FilteredElementCollector(d)
+                                     .OfClass(typeof(FillPatternElement)).Cast<FillPatternElement>())
+                        {
+                            FillPattern? fp = null;
+                            try { fp = f.GetFillPattern(); }
+                            catch (Exception ex)
+                            {
+                                DiagnosticsLog.Swallowed($"ZoneKeyPlanCommand: read pattern '{f.Name}'", ex);
+                            }
+                            if (fp == null || fp.Target != FillPatternTarget.Drafting) continue;
+                            if (string.IsNullOrEmpty(f.Name)) continue;
+                            patterns.Add(f.Name);
+                        }
+                        patterns = patterns.Distinct(StringComparer.OrdinalIgnoreCase)
+                                           .OrderBy(n => n, NaturalOrderComparer.OrdinalIgnoreCase)
+                                           .ToList();
+                    }
+                    catch (Exception ex) { DiagnosticsLog.Error("ZoneKeyPlanCommand: collect fill patterns", ex); }
+
+                    // A zero result is reported rather than presented as an empty picker.
                     DiagnosticsLog.Info("ZoneKeyPlanCommand",
-                        $"Found {legends.Count} legend(s) and {links.Count} loaded link(s) for key plans.");
+                        $"Found {legends.Count} legend(s), {links.Count} loaded link(s) and " +
+                        $"{patterns.Count} drafting fill pattern(s) for key plans.");
                 }
 
-                return new ZoneKeyPlanViewModel(App.ZoneKeyPlanRunHandler, App.ZoneKeyPlanRunEvent, legends, links);
+                return new ZoneKeyPlanViewModel(App.ZoneKeyPlanRunHandler, App.ZoneKeyPlanRunEvent,
+                                                legends, links, patterns);
             }
 
             var vm    = BuildTool();
