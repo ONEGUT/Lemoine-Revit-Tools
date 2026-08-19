@@ -302,6 +302,14 @@ namespace LemoineTools.Tools.Setup
         /// "another link holds this file" dance — the old cloud model is left exactly as it was,
         /// so a failed <c>LoadFrom</c> leaves the link untouched and there is nothing to restore.</para>
         ///
+        /// <para><b>Two routes, both public API.</b> Revit 2024 keeps
+        /// <c>ExternalResourceReference.CreateFromCloudPath</c> <c>internal</c>, so a cloud
+        /// reference cannot be manufactured from GUIDs. Instead: a target identified by GUIDs
+        /// goes through the public <c>LoadFrom(ModelPath, …)</c> with a cloud path built by
+        /// <c>ConvertCloudGUIDsToCloudPath</c>; a target that IS an existing cloud link borrows
+        /// that link's own <c>ExternalResourceReference</c> and uses the public
+        /// <c>LoadFrom(ExternalResourceReference, …)</c>.</para>
+        ///
         /// <para><c>LoadFrom</c> is a link-management call, so NO transaction may be open
         /// (CLAUDE.md); the base-point re-seat that follows opens its own.</para>
         /// </summary>
@@ -321,61 +329,60 @@ namespace LemoineTools.Tools.Setup
             if (anchors.Count == 0)
                 Log(AppStrings.T("replaceLink.log.noAnchors", label), "warn");
 
-            // ── Build the replacement's cloud path ───────────────────────────────
-            ModelPath? cloudPath;
-            try
-            {
-                cloudPath = ModelPathUtils.ConvertCloudGUIDsToCloudPath(
-                    target.Region, target.ProjectGuid, target.ModelGuid);
-            }
-            catch (Exception ex)
-            {
-                DiagnosticsLog.Error($"ReplaceLink: build cloud path for '{label}'", ex);
-                Log(AppStrings.T("replaceLink.log.cloudPathFail", label, target.Name, ex.Message), "fail");
-                return Outcome.Failed;
-            }
+            var wsConfig = new WorksetConfiguration(WorksetConfigurationOption.OpenAllWorksets);
+            LinkLoadResult? result;
 
-            if (cloudPath == null)
+            if (target.SourceTypeId != 0)
             {
-                Log(AppStrings.T("replaceLink.log.cloudPathFail", label, target.Name,
-                                 AppStrings.T("replaceLink.log.cloudPathNull")), "fail");
-                return Outcome.Failed;
-            }
+                // ── Route B: borrow an existing cloud link's own reference ───────
+                var reference = ReadCloudReference(hostDoc, target.SourceTypeId, label, target.Name);
+                if (reference == null) return Outcome.Failed;
 
-            ExternalResourceReference? resource;
-            try { resource = ExternalResourceReference.CreateFromCloudPath(cloudPath); }
-            catch (Exception ex)
-            {
-                DiagnosticsLog.Error($"ReplaceLink: build cloud resource for '{label}'", ex);
-                Log(AppStrings.T("replaceLink.log.cloudPathFail", label, target.Name, ex.Message), "fail");
-                return Outcome.Failed;
-            }
-
-            if (resource == null)
-            {
-                Log(AppStrings.T("replaceLink.log.cloudPathFail", label, target.Name,
-                                 AppStrings.T("replaceLink.log.cloudPathNull")), "fail");
-                return Outcome.Failed;
-            }
-
-            // ── Re-point the SAME type — outside any transaction ─────────────────
-            try
-            {
-                var wsConfig = new WorksetConfiguration(WorksetConfigurationOption.OpenAllWorksets);
-                LinkLoadResult result = type.LoadFrom(resource, wsConfig);
-
-                if (result != null && result.LoadResult != LinkLoadResultType.LinkLoaded)
+                try { result = type.LoadFrom(reference, wsConfig); }
+                catch (Exception ex)
                 {
-                    // A non-fatal load result still means the link is not showing the new model.
-                    Log(AppStrings.T("replaceLink.log.reloadResult", label, result.LoadResult.ToString()), "fail");
+                    DiagnosticsLog.Error($"ReplaceLink: re-point cloud link '{label}' by reference", ex);
+                    Log(AppStrings.T("replaceLink.log.cloudReloadFail", label, ex.Message), "fail");
                     return Outcome.Failed;
                 }
             }
-            catch (Exception ex)
+            else
             {
-                DiagnosticsLog.Error($"ReplaceLink: re-point cloud link '{label}'", ex);
-                // Nothing was unloaded or overwritten, so the link is still on its old model.
-                Log(AppStrings.T("replaceLink.log.cloudReloadFail", label, ex.Message), "fail");
+                // ── Route A: rebuild the cloud path from its GUIDs ───────────────
+                ModelPath? cloudPath;
+                try
+                {
+                    cloudPath = ModelPathUtils.ConvertCloudGUIDsToCloudPath(
+                        target.Region, target.ProjectGuid, target.ModelGuid);
+                }
+                catch (Exception ex)
+                {
+                    DiagnosticsLog.Error($"ReplaceLink: build cloud path for '{label}'", ex);
+                    Log(AppStrings.T("replaceLink.log.cloudPathFail", label, target.Name, ex.Message), "fail");
+                    return Outcome.Failed;
+                }
+
+                if (cloudPath == null)
+                {
+                    Log(AppStrings.T("replaceLink.log.cloudPathFail", label, target.Name,
+                                     AppStrings.T("replaceLink.log.cloudPathNull")), "fail");
+                    return Outcome.Failed;
+                }
+
+                try { result = type.LoadFrom(cloudPath, wsConfig); }
+                catch (Exception ex)
+                {
+                    DiagnosticsLog.Error($"ReplaceLink: re-point cloud link '{label}' by path", ex);
+                    // Nothing was unloaded or overwritten, so the link is still on its old model.
+                    Log(AppStrings.T("replaceLink.log.cloudReloadFail", label, ex.Message), "fail");
+                    return Outcome.Failed;
+                }
+            }
+
+            if (result != null && result.LoadResult != LinkLoadResultType.LinkLoaded)
+            {
+                // A non-fatal load result still means the link is not showing the new model.
+                Log(AppStrings.T("replaceLink.log.reloadResult", label, result.LoadResult.ToString()), "fail");
                 return Outcome.Failed;
             }
 
@@ -384,6 +391,43 @@ namespace LemoineTools.Tools.Setup
             // ── Measure movement, and re-seat ────────────────────────────────────
             ReconcilePosition(hostDoc, typeId, anchors, label);
             return Outcome.Replaced;
+        }
+
+        /// <summary>Reads the cloud <see cref="ExternalResourceReference"/> off an existing link
+        /// type. Returns null (having logged why) when it cannot be read — a cloud reference
+        /// cannot be built from scratch, so this is the only way to obtain one.</summary>
+        private ExternalResourceReference? ReadCloudReference(Document hostDoc, long sourceTypeId,
+                                                              string label, string targetName)
+        {
+            try
+            {
+                var src = hostDoc.GetElement(new ElementId(sourceTypeId)) as RevitLinkType;
+                if (src == null)
+                {
+                    Log(AppStrings.T("replaceLink.log.cloudSourceGone", label, targetName), "fail");
+                    return null;
+                }
+
+                foreach (var ert in new[]
+                         {
+                             ExternalResourceTypes.BuiltInExternalResourceTypes.RevitLink,
+                             ExternalResourceTypes.BuiltInExternalResourceTypes.IFCLink,
+                         })
+                {
+                    if (!src.RefersToExternalResourceReference(ert)) continue;
+                    var reference = src.GetExternalResourceReference(ert);
+                    if (reference != null) return reference;
+                }
+
+                Log(AppStrings.T("replaceLink.log.cloudSourceGone", label, targetName), "fail");
+                return null;
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Error($"ReplaceLink: read source cloud reference for '{label}'", ex);
+                Log(AppStrings.T("replaceLink.log.cloudPathFail", label, targetName, ex.Message), "fail");
+                return null;
+            }
         }
 
         // ── Destination ──────────────────────────────────────────────────────────

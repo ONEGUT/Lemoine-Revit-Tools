@@ -55,19 +55,45 @@ declaring type:
 | `ModelPathUtils.ConvertCloudGUIDsToCloudPath` | `static ModelPath ConvertCloudGUIDsToCloudPath(string region, Guid project, Guid model)` |
 | `Document.GetCloudModelPath` | `ModelPath GetCloudModelPath()` |
 
-### The ACC browsing API exists — `Autodesk.Revit.DB.ForgeDM`
+### ⚠ CORRECTION — the ACC browsing API exists but is INTERNAL
 
-This is what makes option C buildable rather than a GUID-typing exercise:
+`Autodesk.Revit.DB.ForgeDM.CloudHub / CloudProject / CloudFolder / CloudModel` are all
+**`tdNotPublic`** in Revit 2024's `RevitAPI.dll`. A plugin cannot call them — the build fails
+with **CS0122 'CloudHub' is inaccessible due to its protection level**.
 
-| Type | Members |
+**This was my error.** I read those types' member names and signatures out of the metadata and
+declared the browser buildable, but never checked the `TypeDef` *visibility flags*. Reading a
+member's name and signature says nothing about whether you are allowed to call it. The rule this
+adds to the existing research discipline: **check the TypeDef/MethodDef visibility flags, per
+overload, before designing against a Revit type.**
+
+Also internal, found in the same pass:
+
+| Member | Visibility |
 |---|---|
-| `CloudHub` | `static IList<CloudHub> GetAllHubs()`, `Id`, `Name`, `Region`, `GetProjects()` |
-| `CloudProject` | `Id`, `Name`, `GUID`, `GetHub()`, `GetFolders()` |
-| `CloudFolder` | `Id`, `Name`, `GetProject()`, `GetFolders()`, `GetModels()` |
-| `CloudModel` | `Id`, `Name`, `GUID`, `IsWorkshared`, `GetFolder()`, **`GetModelPath()`** |
+| `ExternalResourceReference.CreateFromCloudPath(ModelPath)` | **internal** — a cloud reference cannot be manufactured from a path |
+| `ExternalResourceUtils.IsCloudLink(...)` | **internal** |
+| `RevitLinkType.LoadFrom(ModelPath, OpenOptions, WorksetConfiguration)` | **internal** (the 2-arg overloads are public) |
 
-So the replacement chain is: browse `CloudModel` → `GetModelPath()` →
-`ExternalResourceReference.CreateFromCloudPath(path)` → `type.LoadFrom(err, wsConfig)`.
+### What IS public — enough to keep option C
+
+| Member | Visibility |
+|---|---|
+| `RevitLinkType.LoadFrom(ModelPath, WorksetConfiguration)` | **public** |
+| `RevitLinkType.LoadFrom(ExternalResourceReference, WorksetConfiguration)` | **public** |
+| `ModelPathUtils.ConvertCloudGUIDsToCloudPath(string, Guid, Guid)` | **public** |
+| `Element.GetExternalResourceReference` / `RefersToExternalResourceReference` | **public** |
+| `ExternalResourceTypes.BuiltInExternalResourceTypes` (nested) + `.RevitLink` / `.IFCLink` | **NestedPublic**, properties public |
+| `Document.IsModelInCloud` / `GetCloudModelPath()`, `ModelPath.GetProjectGUID/GetModelGUID/Region` | **public** |
+| `ExternalResourceUtils.GetAllExternalResourceReferences(Document[, ExternalResourceType])` | **public** |
+
+**The replacement still works; only discovery changed.** Two public routes:
+
+- **GUID route** — region + project GUID + model GUID → `ConvertCloudGUIDsToCloudPath` →
+  `LoadFrom(ModelPath, wsConfig)`.
+- **Source-link route** — an existing cloud link's own `ExternalResourceReference`, read via
+  `GetExternalResourceReference`, passed to `LoadFrom(ExternalResourceReference, wsConfig)`.
+  Needed because a reference cannot be built from a path.
 
 ## What cloud → cloud replacement actually does
 

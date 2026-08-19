@@ -40,10 +40,9 @@ namespace LemoineTools.Commands
             // snapshot; a link added or removed in Revit after the window opened needs the tool
             // reopened, which is the safe trade.
             var capturedLinks = new List<HostLinkInfo>();
-            // The host's own ACC project, so the cloud picker opens on it instead of making the
-            // user hunt for the project they are already working in. Empty for a file-based host.
-            Guid   hostProjectGuid = Guid.Empty;
-            string hostRegion      = "";
+            // The host's own cloud region, so the picker's manual-entry field starts on the
+            // right one. Empty for a file-based host.
+            string hostRegion = "";
             try
             {
                 var doc = uiApp.ActiveUIDocument?.Document;
@@ -56,11 +55,7 @@ namespace LemoineTools.Commands
                         if (doc.IsModelInCloud)
                         {
                             var mp = doc.GetCloudModelPath();
-                            if (mp != null)
-                            {
-                                hostProjectGuid = mp.GetProjectGUID();
-                                hostRegion      = mp.Region ?? "";
-                            }
+                            if (mp != null) hostRegion = mp.Region ?? "";
                         }
                     }
                     catch (Exception ex)
@@ -78,7 +73,7 @@ namespace LemoineTools.Commands
                     App.ReplaceLinkScanHandler,  App.ReplaceLinkScanEvent,
                     App.ReplaceLinkRunHandler,   App.ReplaceLinkRunEvent,
                     App.CloudBrowseHandler,      App.CloudBrowseEvent,
-                    capturedLinks, hostProjectGuid, hostRegion);
+                    capturedLinks, hostRegion);
             }
 
             var vm = BuildTool();

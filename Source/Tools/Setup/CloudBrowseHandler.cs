@@ -2,47 +2,38 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
-using Autodesk.Revit.DB.ForgeDM;
 using Autodesk.Revit.UI;
 using LemoineTools.Framework;
 
 namespace LemoineTools.Tools.Setup
 {
     /// <summary>
-    /// Read-only Autodesk Docs (ACC / BIM 360) browsing for the cloud model picker.
+    /// Finds the Autodesk Docs models that can serve as a replacement, using ONLY public Revit
+    /// 2024 API.
     ///
-    /// <para>Every call here is a Revit API call that goes to the network, so it runs on the
-    /// Revit main thread through an <see cref="ExternalEvent"/> — the picker window lives on the
-    /// tool's own STA thread and cannot make them directly. Results are handed back as Revit-free
-    /// DTOs; the window marshals them onto its dispatcher itself.</para>
+    /// <para><b>Why there is no folder browser.</b> Revit ships an ACC browsing API —
+    /// <c>Autodesk.Revit.DB.ForgeDM.CloudHub / CloudProject / CloudFolder / CloudModel</c> — but
+    /// every one of those types is <c>internal</c> in <c>RevitAPI.dll</c> (verified against the
+    /// assembly's TypeDef flags), so a plugin cannot call them. Neither can it manufacture a
+    /// cloud reference from a path: <c>ExternalResourceReference.CreateFromCloudPath</c> is
+    /// internal too. What IS public is enough to do the job from what Revit already has open or
+    /// linked, plus GUIDs the user supplies.</para>
     ///
-    /// <para>Nothing here mutates the model.</para>
+    /// <para>Read-only; nothing here mutates a model. Runs on Revit's main thread through an
+    /// <see cref="ExternalEvent"/> because the picker window is on its own STA thread.</para>
     /// </summary>
     public sealed class CloudBrowseHandler : IExternalEventHandler
     {
         // ── Inputs (set before Raise) ─────────────────────────────────────────
-        public CloudBrowseRequest Request     { get; set; } = CloudBrowseRequest.Hubs;
-        public string             HubId       { get; set; } = "";
-        public string             ProjectId   { get; set; } = "";
+        /// <summary>ElementId value of the link being replaced, so it is not offered as its own
+        /// replacement — picking it would re-point a link at the model it already shows.</summary>
+        public long ExcludeTypeId { get; set; }
 
         // ── Callbacks ─────────────────────────────────────────────────────────
-        public Action<List<CloudHubItem>, List<CloudProjectItem>>? OnHubs     { get; set; }
-        public Action<List<CloudProjectItem>>?                     OnProjects { get; set; }
-        public Action<CloudTreeResult>?                            OnTree     { get; set; }
-        /// <summary>Called with a user-facing reason when a fetch could not complete. A blank
-        /// tree with no explanation is indistinguishable from a broken collector, so every
-        /// failure path ends here.</summary>
-        public Action<string>?                                     OnError    { get; set; }
-
-        /// <summary>The host document's own hub/project, captured at launch so the picker can
-        /// default to them. Empty when the host is not a cloud model.</summary>
-        public Guid   HostProjectGuid { get; set; }
-        public string HostRegion      { get; set; } = "";
-
-        // Traversal guards — an ACC project can be arbitrarily deep and wide, and this runs
-        // synchronously on Revit's main thread. Hitting either cap is REPORTED, never silent.
-        private const int MaxDepth   = 8;
-        private const int MaxFolders = 400;
+        public Action<CloudScanResult>? OnScanned { get; set; }
+        /// <summary>Called with a user-facing reason when the scan could not complete. A blank
+        /// list with no explanation is indistinguishable from a broken collector.</summary>
+        public Action<string>?          OnError   { get; set; }
 
         public string GetName() => "LemoineTools.Tools.Setup.CloudBrowseHandler";
 
@@ -50,317 +41,178 @@ namespace LemoineTools.Tools.Setup
         {
             try
             {
-                switch (Request)
-                {
-                    case CloudBrowseRequest.Hubs:     DoHubs();     break;
-                    case CloudBrowseRequest.Projects: DoProjects(); break;
-                    case CloudBrowseRequest.Tree:     DoTree();     break;
-                }
+                var result = Scan(app);
+                OnScanned?.Invoke(result);
             }
             catch (Exception ex)
             {
-                DiagnosticsLog.Error("CloudBrowse: fetch", ex);
+                DiagnosticsLog.Error("CloudBrowse: scan", ex);
                 Report(AppStrings.T("cloudPicker.error.fetch", ex.Message));
             }
             finally
             {
-                // Static handler — it outlives the window, so nothing from this run may be
-                // left parked on it (CLAUDE.md memory discipline).
-                HubId = ""; ProjectId = "";
+                // Session-long static handler — drop the run's payload (CLAUDE.md).
+                ExcludeTypeId = 0;
             }
         }
 
         // ══════════════════════════════════════════════════════════════════════
-        private void DoHubs()
+        private CloudScanResult Scan(UIApplication app)
         {
-            var hubs = new List<CloudHubItem>();
-            IList<CloudHub>? raw = null;
-            try { raw = CloudHub.GetAllHubs(); }
+            var result = new CloudScanResult();
+
+            var hostDoc = app.ActiveUIDocument?.Document;
+            var openDocs = new List<Document>();
+            try
+            {
+                foreach (Document d in app.Application.Documents)
+                    if (d != null && !d.IsFamilyDocument) openDocs.Add(d);
+            }
             catch (Exception ex)
+            { DiagnosticsLog.Swallowed("CloudBrowse: enumerate open documents", ex); }
+
+            var openNode = new BrowserNode { Title = AppStrings.T("cloudPicker.groups.open") };
+            var linkNode = new BrowserNode { Title = AppStrings.T("cloudPicker.groups.linked") };
+
+            // ── 1. Cloud models open in this session ──────────────────────────
+            // Their cloud path yields real GUIDs, which is the route that does not need an
+            // existing link to borrow a reference from.
+            var seenModels = new HashSet<Guid>();
+            foreach (var d in openDocs)
             {
-                DiagnosticsLog.Error("CloudBrowse: GetAllHubs", ex);
-                Report(AppStrings.T("cloudPicker.error.signIn", ex.Message));
-                return;
+                var item = ReadOpenDocument(d);
+                if (item == null) continue;
+                if (item.ModelGuid != Guid.Empty && !seenModels.Add(item.ModelGuid)) continue;
+
+                long id = result.Models.Count + 1;
+                result.Models[id] = item;
+                result.OpenCount++;
+                openNode.Children.Add(new BrowserNode { Title = item.Name, Id = id });
             }
 
-            if (raw == null || raw.Count == 0)
+            // ── 2. Cloud links already loaded in the host ─────────────────────
+            // No GUIDs are reachable from an ExternalResourceReference publicly, so these carry
+            // their source link type id and the run re-reads the reference off that element.
+            if (hostDoc != null)
             {
-                // Almost always "not signed in to Autodesk Docs" — say so rather than showing
-                // an empty picker the user cannot interpret.
-                Report(AppStrings.T("cloudPicker.error.noHubs"));
-                return;
-            }
-
-            foreach (var h in raw)
-            {
-                try
+                foreach (var item in ReadCloudLinks(hostDoc, ExcludeTypeId))
                 {
-                    hubs.Add(new CloudHubItem
-                    {
-                        Id     = h.Id     ?? "",
-                        Name   = h.Name   ?? "",
-                        Region = h.Region ?? "",
-                    });
-                }
-                catch (Exception ex) { DiagnosticsLog.Swallowed("CloudBrowse: read hub", ex); }
-            }
-
-            if (hubs.Count == 0)
-            {
-                Report(AppStrings.T("cloudPicker.error.noHubs"));
-                return;
-            }
-
-            // Default to whichever hub owns the host model. Each GetProjects() is a network
-            // round-trip, so the hubs whose region matches the host are tried first and the
-            // walk stops at the first hit — the common case costs exactly one fetch.
-            var ordered = hubs
-                .OrderByDescending(h => !string.IsNullOrEmpty(HostRegion) &&
-                                        string.Equals(h.Region, HostRegion, StringComparison.OrdinalIgnoreCase))
-                .ToList();
-
-            var chosenProjects = new List<CloudProjectItem>();
-
-            foreach (var candidate in ordered)
-            {
-                var projects = ReadProjectsFor(raw, candidate.Id);
-
-                // An empty hub is never a useful default — keep walking, or the picker opens
-                // blank on an account whose first hub happens to hold nothing.
-                if (projects.Count == 0) continue;
-
-                if (chosenProjects.Count == 0) chosenProjects = projects;   // first usable = fallback
-
-                if (HostProjectGuid == Guid.Empty) break;                   // nothing to search for
-                if (projects.Any(p => p.Guid == HostProjectGuid))
-                {
-                    chosenProjects = projects;
-                    break;
+                    long id = result.Models.Count + 1;
+                    result.Models[id] = item;
+                    result.LinkCount++;
+                    linkNode.Children.Add(new BrowserNode { Title = item.Name, Id = id });
                 }
             }
 
-            if (chosenProjects.Count == 0)
-                Report(AppStrings.T("cloudPicker.error.noProjects"));
+            if (openNode.Children.Count > 0) result.Tree.Roots.Add(openNode);
+            if (linkNode.Children.Count > 0) result.Tree.Roots.Add(linkNode);
 
-            OnHubs?.Invoke(hubs, chosenProjects);
+            return result;
         }
 
-        private void DoProjects()
+        /// <summary>An open cloud document, as a replacement candidate. Null when the document is
+        /// not a cloud model or its path can't be read.</summary>
+        private CloudModelItem? ReadOpenDocument(Document doc)
         {
-            IList<CloudHub>? raw = null;
-            try { raw = CloudHub.GetAllHubs(); }
-            catch (Exception ex)
+            try
             {
-                DiagnosticsLog.Error("CloudBrowse: GetAllHubs for projects", ex);
-                Report(AppStrings.T("cloudPicker.error.fetch", ex.Message));
-                return;
-            }
-            if (raw == null) { Report(AppStrings.T("cloudPicker.error.noHubs")); return; }
+                if (!doc.IsModelInCloud) return null;
 
-            OnProjects?.Invoke(ReadProjectsFor(raw, HubId));
-        }
+                var mp = doc.GetCloudModelPath();
+                if (mp == null) return null;
 
-        private List<CloudProjectItem> ReadProjectsFor(IList<CloudHub> hubs, string hubId)
-        {
-            var list = new List<CloudProjectItem>();
-            CloudHub? hub = null;
-            foreach (var h in hubs)
-            {
-                try { if (string.Equals(h.Id, hubId, StringComparison.Ordinal)) { hub = h; break; } }
-                catch (Exception ex) { DiagnosticsLog.Swallowed("CloudBrowse: match hub id", ex); }
-            }
-            if (hub == null) return list;
-
-            string region = "";
-            try { region = hub.Region ?? ""; }
-            catch (Exception ex) { DiagnosticsLog.Swallowed("CloudBrowse: read hub region", ex); }
-
-            IList<CloudProject>? projects = null;
-            try { projects = hub.GetProjects(); }
-            catch (Exception ex)
-            {
-                DiagnosticsLog.Error("CloudBrowse: GetProjects", ex);
-                Report(AppStrings.T("cloudPicker.error.fetch", ex.Message));
-                return list;
-            }
-
-            if (projects == null || projects.Count == 0)
-            {
-                // Not reported to the user from here: the default-hub search below probes several
-                // hubs, and an empty one along the way is normal, not a failure. The picker states
-                // the zero result for the hub actually being shown.
-                DiagnosticsLog.Info("CloudBrowse: hub has no projects", hubId);
-                return list;
-            }
-
-            foreach (var p in projects)
-            {
-                try
+                var item = new CloudModelItem
                 {
-                    list.Add(new CloudProjectItem
-                    {
-                        Id     = p.Id   ?? "",
-                        Name   = p.Name ?? "",
-                        Guid   = p.GUID,
-                        HubId  = hubId,
-                        Region = region,
-                    });
+                    Source = CloudModelSource.OpenDocument,
+                    Name   = SafeTitle(doc),
+                };
+
+                try { item.ProjectGuid = mp.GetProjectGUID(); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("CloudBrowse: read project guid", ex); }
+                try { item.ModelGuid = mp.GetModelGUID(); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("CloudBrowse: read model guid", ex); }
+                try { item.Region = mp.Region ?? ""; }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("CloudBrowse: read region", ex); }
+
+                if (!item.HasGuids)
+                {
+                    // Listing it would offer a pick the run cannot act on.
+                    DiagnosticsLog.Warn("CloudBrowse: open cloud doc has no usable GUIDs", item.Name);
+                    return null;
                 }
-                catch (Exception ex) { DiagnosticsLog.Swallowed("CloudBrowse: read project", ex); }
+
+                item.Detail = AppStrings.T("cloudPicker.detail.open");
+                return item;
             }
-
-            return list
-                .OrderBy(p => p.Name, NaturalOrderComparer.OrdinalIgnoreCase)
-                .ToList();
-        }
-
-        // ══════════════════════════════════════════════════════════════════════
-        private void DoTree()
-        {
-            IList<CloudHub>? hubs = null;
-            try { hubs = CloudHub.GetAllHubs(); }
             catch (Exception ex)
             {
-                DiagnosticsLog.Error("CloudBrowse: GetAllHubs for tree", ex);
-                Report(AppStrings.T("cloudPicker.error.fetch", ex.Message));
-                return;
-            }
-            if (hubs == null) { Report(AppStrings.T("cloudPicker.error.noHubs")); return; }
-
-            CloudProject? project = null;
-            string        region  = "";
-            foreach (var h in hubs)
-            {
-                try
-                {
-                    if (!string.Equals(h.Id, HubId, StringComparison.Ordinal)) continue;
-                    region = h.Region ?? "";
-                    foreach (var p in h.GetProjects() ?? new List<CloudProject>())
-                    {
-                        if (!string.Equals(p.Id, ProjectId, StringComparison.Ordinal)) continue;
-                        project = p;
-                        break;
-                    }
-                    break;
-                }
-                catch (Exception ex) { DiagnosticsLog.Swallowed("CloudBrowse: locate project", ex); }
-            }
-
-            if (project == null)
-            {
-                Report(AppStrings.T("cloudPicker.error.projectGone"));
-                return;
-            }
-
-            var result = new CloudTreeResult();
-            Guid projGuid = Guid.Empty;
-            try { projGuid = project.GUID; }
-            catch (Exception ex) { DiagnosticsLog.Swallowed("CloudBrowse: read project guid", ex); }
-
-            IList<CloudFolder>? roots = null;
-            try { roots = project.GetFolders(); }
-            catch (Exception ex)
-            {
-                DiagnosticsLog.Error("CloudBrowse: GetFolders", ex);
-                Report(AppStrings.T("cloudPicker.error.fetch", ex.Message));
-                return;
-            }
-
-            if (roots != null)
-            {
-                foreach (var f in roots)
-                {
-                    var node = BuildFolder(f, "", 0, region, projGuid, result);
-                    if (node != null) result.Tree.Roots.Add(node);
-                }
-            }
-
-            // A zero result is stated, never left as an empty box (CLAUDE.md).
-            OnTree?.Invoke(result);
-        }
-
-        /// <summary>Recursively turns one cloud folder into a <see cref="BrowserNode"/>, adding its
-        /// models as leaves. Returns null for a folder that could not be read at all.</summary>
-        private BrowserNode? BuildFolder(CloudFolder folder, string parentPath, int depth,
-                                         string region, Guid projGuid, CloudTreeResult result)
-        {
-            if (folder == null) return null;
-
-            if (depth >= MaxDepth || result.FolderCount >= MaxFolders)
-            {
-                result.Truncated = true;
+                DiagnosticsLog.Swallowed("CloudBrowse: read open document", ex);
                 return null;
             }
+        }
 
-            string name;
-            try { name = folder.Name ?? ""; }
-            catch (Exception ex)
+        /// <summary>Every cloud link already loaded in <paramref name="doc"/>, as candidates.</summary>
+        private List<CloudModelItem> ReadCloudLinks(Document doc, long excludeTypeId)
+        {
+            var list = new List<CloudModelItem>();
+            try
             {
-                DiagnosticsLog.Swallowed("CloudBrowse: read folder name", ex);
-                return null;
-            }
-
-            var node = new BrowserNode { Title = name };
-            result.FolderCount++;
-            string path = string.IsNullOrEmpty(parentPath) ? name : parentPath + " / " + name;
-
-            // ── Models in this folder ─────────────────────────────────────────
-            IList<CloudModel>? models = null;
-            try { models = folder.GetModels(); }
-            catch (Exception ex)
-            { DiagnosticsLog.Swallowed($"CloudBrowse: GetModels in '{name}'", ex); }
-
-            if (models != null)
-            {
-                var leaves = new List<BrowserNode>();
-                foreach (var m in models)
+                foreach (var type in new FilteredElementCollector(doc)
+                             .OfClass(typeof(RevitLinkType)).Cast<RevitLinkType>())
                 {
                     try
                     {
-                        long id = result.Models.Count + 1;   // synthetic — see CloudTreeResult
-                        var item = new CloudModelItem
+                        if (type.IsNestedLink) continue;
+                        if (excludeTypeId != 0 && type.Id.Value == excludeTypeId) continue;
+
+                        var reference = LinkReference.Resolve(type);
+                        if (reference.Kind != LinkReferenceKind.Cloud) continue;
+
+                        string name = !string.IsNullOrEmpty(reference.DisplayName)
+                            ? reference.DisplayName
+                            : SafeName(type);
+                        if (string.IsNullOrEmpty(name)) continue;
+
+                        list.Add(new CloudModelItem
                         {
-                            Name         = m.Name ?? "",
-                            ModelGuid    = m.GUID,
-                            ProjectGuid  = projGuid,
-                            Region       = region,
-                            IsWorkshared = m.IsWorkshared,
-                            FolderPath   = path,
-                        };
-                        result.Models[id] = item;
-                        result.ModelCount++;
-                        leaves.Add(new BrowserNode { Title = item.Name, Id = id });
+                            Source       = CloudModelSource.ExistingLink,
+                            Name         = name,
+                            SourceTypeId = type.Id.Value,
+                            Detail       = AppStrings.T("cloudPicker.detail.linked"),
+                        });
                     }
                     catch (Exception ex)
-                    { DiagnosticsLog.Swallowed($"CloudBrowse: read model in '{name}'", ex); }
+                    { DiagnosticsLog.Swallowed("CloudBrowse: read cloud link", ex); }
                 }
-
-                foreach (var leaf in leaves.OrderBy(l => l.Title, NaturalOrderComparer.OrdinalIgnoreCase))
-                    node.Children.Add(leaf);
             }
-
-            // ── Sub-folders ───────────────────────────────────────────────────
-            IList<CloudFolder>? subs = null;
-            try { subs = folder.GetFolders(); }
             catch (Exception ex)
-            { DiagnosticsLog.Swallowed($"CloudBrowse: GetFolders in '{name}'", ex); }
+            { DiagnosticsLog.Swallowed("CloudBrowse: collect link types", ex); }
 
-            if (subs != null)
-            {
-                var childNodes = new List<BrowserNode>();
-                foreach (var sub in subs)
-                {
-                    var child = BuildFolder(sub, path, depth + 1, region, projGuid, result);
-                    if (child != null) childNodes.Add(child);
-                }
-                foreach (var c in childNodes.OrderBy(c => c.Title, NaturalOrderComparer.OrdinalIgnoreCase))
-                    node.Children.Add(c);
-            }
-
-            return node;
+            return list
+                .OrderBy(i => i.Name, NaturalOrderComparer.OrdinalIgnoreCase)
+                .ToList();
         }
 
-        // ══════════════════════════════════════════════════════════════════════
+        private static string SafeTitle(Document doc)
+        {
+            try { return doc.Title ?? ""; }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Swallowed("CloudBrowse: read document title", ex);
+                return "";
+            }
+        }
+
+        private static string SafeName(RevitLinkType type)
+        {
+            try { return type.Name ?? ""; }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Swallowed("CloudBrowse: read link type name", ex);
+                return "";
+            }
+        }
+
         private void Report(string message)
         {
             var cb = OnError;

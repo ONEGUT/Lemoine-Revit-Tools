@@ -134,6 +134,7 @@
     "cloudNoTarget":    "{0} — cloud-hosted link with no replacement model picked; skipped.",
     "cloudTargetOnFileLink": "{0} — a cloud replacement was queued but this link points at a file; skipped.",
     "cloudPathFail":    "{0} — couldn't resolve the cloud model “{1}”: {2}",
+    "cloudSourceGone":  "{0} — the link that identified cloud model “{1}” is no longer in this model, so its cloud reference can't be read.",
     "cloudPathNull":    "Revit returned no path for it",
     "cloudReloadFail":  "{0} — couldn't re-point the link at the cloud model: {1}. Nothing was overwritten, so the link is still on its old model.",
     "replacedCloud":    "{0}/{1} — {2} re-pointed at cloud model {3}",

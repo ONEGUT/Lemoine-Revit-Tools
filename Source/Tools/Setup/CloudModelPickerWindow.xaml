@@ -4,7 +4,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
     Title="Pick a cloud model"
-    Width="680" Height="560"
+    Width="680" Height="580"
     WindowStartupLocation="CenterOwner"
     WindowStyle="None"
     ResizeMode="NoResize"
@@ -33,27 +33,25 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
                         <RowDefinition Height="*"    />
+                        <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
 
-                    <!-- Hub + Project cascade -->
-                    <Grid x:Name="_scopeRow" Grid.Row="0">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="12" />
-                            <ColumnDefinition Width="1.4*" />
-                        </Grid.ColumnDefinitions>
-                    </Grid>
+                    <TextBlock x:Name="_scopeHint" Grid.Row="0" TextWrapping="Wrap"
+                               Margin="0,0,0,10" />
 
-                    <TextBlock x:Name="_scopeHint" Grid.Row="1" TextWrapping="Wrap"
-                               Margin="0,8,0,10" />
-
-                    <TextBlock x:Name="_treeLabel" Grid.Row="2" Margin="0,0,0,4" />
+                    <TextBlock x:Name="_treeLabel" Grid.Row="1" Margin="0,0,0,4" />
 
                     <!-- BrowserTreePicker carries its own scroller; it fills the * row -->
-                    <ContentControl x:Name="_treeSlot" Grid.Row="3" />
+                    <ContentControl x:Name="_treeSlot" Grid.Row="2" />
+
+                    <!-- Manual GUID entry — the escape hatch when the model is neither open
+                         nor already linked. -->
+                    <Border x:Name="_manualBorder" Grid.Row="3" BorderThickness="0,1,0,0"
+                            Padding="0,10,0,0" Margin="0,10,0,0">
+                        <StackPanel x:Name="_manualPanel" />
+                    </Border>
 
                     <TextBlock x:Name="_statusLine" Grid.Row="4" TextWrapping="Wrap"
                                Margin="0,8,0,0" />

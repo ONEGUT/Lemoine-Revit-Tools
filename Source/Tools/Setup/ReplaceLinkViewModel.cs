@@ -44,8 +44,7 @@ namespace LemoineTools.Tools.Setup
         private readonly CloudBrowseHandler?      _cloudHandler;  // Autodesk Docs browsing
         private readonly ExternalEvent?           _cloudEvent;
         private readonly List<HostLinkInfo>       _hostLinks;     // captured on the Revit thread at launch
-        private readonly Guid                     _hostProjectGuid;  // host's own ACC project, for the picker default
-        private readonly string                   _hostRegion;
+        private readonly string                   _hostRegion;    // host's own cloud region, preselects the picker
 
         // ── State ──────────────────────────────────────────────────────────────
         private readonly List<ReplaceRow> _rows = new List<ReplaceRow>();
@@ -77,26 +76,20 @@ namespace LemoineTools.Tools.Setup
             ReplaceLinkRunHandler?   runHandler,   ExternalEvent? runEvent,
             CloudBrowseHandler?      cloudHandler, ExternalEvent? cloudEvent,
             List<HostLinkInfo>?      hostLinks,
-            Guid                     hostProjectGuid = default,
-            string?                  hostRegion      = null)
+            string?                  hostRegion = null)
         {
             _scanHandler  = scanHandler;  _scanEvent  = scanEvent;
             _runHandler   = runHandler;   _runEvent   = runEvent;
             _cloudHandler = cloudHandler; _cloudEvent = cloudEvent;
             _hostLinks    = hostLinks ?? new List<HostLinkInfo>();
-            _hostProjectGuid = hostProjectGuid;
-            _hostRegion      = hostRegion ?? "";
+            _hostRegion   = hostRegion ?? "";
         }
 
         public void OnWindowClosed()
         {
             if (_scanHandler != null) { _scanHandler.OnScanned = null; _scanHandler.OnError = null; }
             if (_runHandler  != null) { _runHandler.PushLog = null; _runHandler.OnProgress = null; _runHandler.OnComplete = null; }
-            if (_cloudHandler != null)
-            {
-                _cloudHandler.OnHubs = null; _cloudHandler.OnProjects = null;
-                _cloudHandler.OnTree = null; _cloudHandler.OnError    = null;
-            }
+            if (_cloudHandler != null) { _cloudHandler.OnScanned = null; _cloudHandler.OnError = null; }
         }
 
         // ═══════════════════════════════════════════════════════════════════════
@@ -493,7 +486,7 @@ namespace LemoineTools.Tools.Setup
             {
                 var owner = _linksContainer != null ? WpfWindow.GetWindow(_linksContainer) : null;
                 picked = CloudModelPickerWindow.Pick(owner, _cloudHandler, _cloudEvent,
-                                                    _hostProjectGuid, _hostRegion);
+                                                    _hostRegion, row.TypeId);
             }
             catch (Exception ex)
             {

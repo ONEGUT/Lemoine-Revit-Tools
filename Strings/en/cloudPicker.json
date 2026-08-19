@@ -1,37 +1,47 @@
 // cloudPicker.json — the Autodesk Docs (ACC / BIM 360) model picker.
-// Window: CloudModelPickerWindow. Fetches run through CloudBrowseHandler on an ExternalEvent.
+// Window: CloudModelPickerWindow. The scan runs through CloudBrowseHandler on an ExternalEvent.
+//
+// NOTE: there is deliberately no folder-browser wording here. Revit 2024 keeps its ACC browsing
+// types (Autodesk.Revit.DB.ForgeDM.CloudHub / CloudProject / CloudFolder / CloudModel) INTERNAL,
+// so a plugin cannot enumerate Autodesk Docs. The picker offers what public API can reach.
 {
   "title":  "Pick a cloud model",
   "cancel": "Cancel",
   "select": "Select model",
 
+  "groups": {
+    "open":   "Open in Revit",
+    "linked": "Linked in this model"
+  },
+
+  "detail": {
+    "open":   "open in this Revit session",
+    "linked": "already linked here",
+    "manual": "entered by GUID"
+  },
+
   "labels": {
-    "hub":       "Hub",
-    "project":   "Project",
-    "scopeHint": "Defaulted to this model's own hub and project. Change either to reach a model stored elsewhere in Autodesk Docs.",
-    "treeLabel": "Folders in this project"
+    "scopeHint":  "Revit does not let add-ins browse Autodesk Docs, so this lists the cloud models Revit can already see. To use a model that is not listed, open it in Revit first — or enter its GUIDs below.",
+    "treeLabel":  "Cloud models Revit can see",
+    "manualHead": "Or identify a model directly. Its project and model GUIDs appear in the model's Autodesk Docs URL.",
+    "region":     "Region",
+    "regionUS":   "US",
+    "regionEMEA": "EMEA",
+    "projectGuid": "Project GUID",
+    "modelGuid":   "Model GUID",
+    "guidPlaceholder": "00000000-0000-0000-0000-000000000000"
   },
 
   "status": {
-    // Shown while a fetch is in flight — every one of these is a network round-trip.
-    "loadingHubs":     "Reading your Autodesk Docs hubs…",
-    "loadingProjects": "Reading projects…",
-    "loadingTree":     "Reading folders and models…",
-    // A zero result is always stated: an empty tree with no message is indistinguishable
+    "scanning": "Looking for cloud models Revit can see…",
+    // A zero result is always stated: an empty list with no message is indistinguishable
     // from a broken collector.
-    "found":     "Found {0} folder(s) · {1} model(s). One model per replacement.",
-    "noModels":  "No models found in this project's folders.",
-    "truncated": "The folder tree is deeper or wider than this browser reads in one pass — some folders are not listed."
+    "found":    "Found {0} open · {1} already linked. Or enter a model's GUIDs below.",
+    "none":     "No cloud models are open or linked right now. Open the replacement model in Revit, or enter its GUIDs below."
   },
 
   "error": {
     "handlerMissing": "The cloud browser isn't available — restart Revit and try again.",
-    "signIn":         "Couldn't reach Autodesk Docs ({0}). Sign in to your Autodesk account in Revit, then reopen this tool.",
-    "noHubs":         "No Autodesk Docs hubs are available. Sign in to your Autodesk account in Revit, then reopen this tool.",
-    "noProjects":     "This hub has no projects you can open.",
-    "projectGone":    "That project is no longer available — pick another.",
-    // The fetch came back with nothing at all, as opposed to a project whose folders are empty.
-    "noModels":       "Nothing came back for this project — try it again, or pick another.",
-    "fetch":          "Couldn't read from Autodesk Docs: {0}"
+    "fetch":          "Couldn't read the cloud models: {0}"
   }
 }

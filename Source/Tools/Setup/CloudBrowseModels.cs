@@ -4,68 +4,75 @@ using LemoineTools.Framework;
 
 namespace LemoineTools.Tools.Setup
 {
-    /// <summary>Which fetch <see cref="CloudBrowseHandler"/> should perform. Tokens are compared
-    /// in a switch — never externalized.</summary>
-    public enum CloudBrowseRequest
+    /// <summary>Where a listed cloud model came from. Tokens drive grouping only.</summary>
+    public enum CloudModelSource
     {
-        /// <summary>List the signed-in account's hubs, and the projects of the default hub.</summary>
-        Hubs,
-        /// <summary>List one hub's projects.</summary>
-        Projects,
-        /// <summary>Enumerate one project's folder/model tree.</summary>
-        Tree,
+        /// <summary>A cloud model currently open in this Revit session.</summary>
+        OpenDocument,
+        /// <summary>A cloud model already linked into the host (or into an open document).</summary>
+        ExistingLink,
+        /// <summary>Identified by GUIDs the user typed in.</summary>
+        Manual,
     }
 
-    /// <summary>One Autodesk Docs hub. Revit-free so the picker window can hold it across threads.
-    /// Named <c>…Item</c> to stay clear of <c>Autodesk.Revit.DB.ForgeDM.CloudHub</c>.</summary>
-    public sealed class CloudHubItem
-    {
-        public string Id     { get; set; } = "";
-        public string Name   { get; set; } = "";
-        public string Region { get; set; } = "";
-    }
-
-    /// <summary>One Autodesk Docs project.</summary>
-    public sealed class CloudProjectItem
-    {
-        public string Id     { get; set; } = "";
-        public string Name   { get; set; } = "";
-        public Guid   Guid   { get; set; }
-        public string HubId  { get; set; } = "";
-        public string Region { get; set; } = "";
-    }
-
-    /// <summary>One cloud model, carrying everything the run needs to rebuild its
-    /// <c>ModelPath</c> via <c>ModelPathUtils.ConvertCloudGUIDsToCloudPath</c>.</summary>
+    /// <summary>
+    /// One cloud model that can be used as a replacement, plus everything the run needs to reach
+    /// it again — **without** any internal Revit API.
+    ///
+    /// <para>Two routes exist because Revit 2024 exposes two different public doors:</para>
+    /// <list type="bullet">
+    /// <item><b>GUID route</b> — <see cref="Region"/> + <see cref="ProjectGuid"/> +
+    /// <see cref="ModelGuid"/> rebuild a cloud <c>ModelPath</c> through the public
+    /// <c>ModelPathUtils.ConvertCloudGUIDsToCloudPath</c>.</item>
+    /// <item><b>Source-link route</b> — <see cref="SourceTypeId"/> names a
+    /// <c>RevitLinkType</c> already in the document whose <c>ExternalResourceReference</c> the
+    /// run re-reads. Used when the model is only known as an existing link, because
+    /// <c>ExternalResourceReference.CreateFromCloudPath</c> is internal and a reference cannot
+    /// be manufactured from a path.</item>
+    /// </list>
+    ///
+    /// <para>Revit objects are never held here — the picker window lives on its own STA thread,
+    /// so only GUIDs, strings and element-id values cross over.</para>
+    /// </summary>
     public sealed class CloudModelItem
     {
-        public string Name         { get; set; } = "";
-        public Guid   ModelGuid    { get; set; }
-        public Guid   ProjectGuid  { get; set; }
-        public string Region       { get; set; } = "";
-        public bool   IsWorkshared { get; set; }
-        /// <summary>Folder path inside the project, for display only (e.g. "Project Files / 01 — Arch").</summary>
-        public string FolderPath   { get; set; } = "";
+        public string           Name   { get; set; } = "";
+        public CloudModelSource Source { get; set; } = CloudModelSource.Manual;
+
+        // ── GUID route ────────────────────────────────────────────────────────
+        public string Region      { get; set; } = "";
+        public Guid   ProjectGuid { get; set; }
+        public Guid   ModelGuid   { get; set; }
+
+        /// <summary>True when the GUID route can be taken.</summary>
+        public bool HasGuids => ProjectGuid != Guid.Empty && ModelGuid != Guid.Empty;
+
+        // ── Source-link route ─────────────────────────────────────────────────
+        /// <summary>ElementId value of a <c>RevitLinkType</c> whose cloud reference this model
+        /// IS. 0 when there is none.</summary>
+        public long SourceTypeId { get; set; }
+
+        /// <summary>Free-text note about where this entry came from, shown under the row.</summary>
+        public string Detail { get; set; } = "";
+
+        public bool IsUsable => HasGuids || SourceTypeId != 0;
     }
 
-    /// <summary>Result of a <see cref="CloudBrowseRequest.Tree"/> fetch: a
-    /// <see cref="BrowserTree"/> the existing <c>BrowserTreePicker</c> can render, plus the map
-    /// from each leaf's synthetic id back to the real model.
+    /// <summary>
+    /// What <see cref="CloudBrowseHandler"/> found, as a <see cref="BrowserTree"/> the existing
+    /// <c>BrowserTreePicker</c> renders, plus the map from each leaf's synthetic id to the model.
     ///
-    /// <para>The synthetic ids exist because <c>BrowserNode.Id</c> is a <c>long</c> (an
-    /// ElementId value for view/sheet trees) while a cloud model is identified by GUIDs. Reusing
-    /// the control beats re-rolling a second tree picker, so the index IS the id and this map is
-    /// the way back.</para></summary>
-    public sealed class CloudTreeResult
+    /// <para>The synthetic ids exist because <c>BrowserNode.Id</c> is a <c>long</c> (an ElementId
+    /// value for view/sheet trees) while a cloud model is identified by GUIDs. Reusing the
+    /// control beats re-rolling a second tree picker, so the index IS the id.</para>
+    /// </summary>
+    public sealed class CloudScanResult
     {
         public BrowserTree Tree { get; set; } = new BrowserTree();
         public Dictionary<long, CloudModelItem> Models { get; set; } = new Dictionary<long, CloudModelItem>();
 
-        public int FolderCount { get; set; }
-        public int ModelCount  { get; set; }
-
-        /// <summary>Set when enumeration hit the traversal guard, so the picker can say the tree
-        /// is incomplete rather than presenting a silently truncated one.</summary>
-        public bool Truncated { get; set; }
+        public int OpenCount { get; set; }
+        public int LinkCount { get; set; }
+        public int Total => OpenCount + LinkCount;
     }
 }
