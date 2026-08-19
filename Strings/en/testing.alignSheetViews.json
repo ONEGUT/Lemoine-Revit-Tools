@@ -19,13 +19,11 @@
     "noTargetsLeft": "Every sheet in this project is selected as a reference sheet, so there is nothing left to align. Go back and untick the sheets you want to move.",
     "secOverlap": "FALLBACK MATCH — MINIMUM OVERLAP (%)",
     "secInherit": "INHERIT FROM SOURCE VIEW",
-    "optScopeBox": "Scope box assignment",
     "optGrids": "Grid extents, heads and elbows",
     "optCropVis": "Crop region visibility",
     "optCropSize": "Crop size + annotation crop",
     // Replaces optCropSize while "Scope box assignment" is ticked: the scope box governs the
     // crop rectangle, so there is no separate crop-size decision left to make.
-    "impliedCropSize": "Crop size inherited from the scope box",
     // Legends are sheet content, not a property of a matched view, so they get their own section
     // rather than another row under "inherit from source view".
     "secSheetContent": "SHEET CONTENT",
@@ -47,7 +45,6 @@
   },
   "inherit": {
     "nothing": "Nothing",
-    "scopeBox": "scope box",
     "gridExtents": "grid extents, heads and elbows",
     "cropVisibility": "crop visibility",
     "cropSize": "crop size",
@@ -73,7 +70,20 @@
     "stoppedByUser":      "Stopped by user — {0} of {1} target sheet(s) processed; work so far preserved.",
     "noPlaceableViews":   "[{0}] No placeable views found — cannot align this sheet.",
     "noCounterpart":      "[{0}] No counterpart views found on any of the {1} source sheet(s) — left unchanged.",
-    "missing":            "[{0}] MISSING counterpart for source view '{1}'.",
+    // ── Why a reference view found no counterpart. "No counterpart" alone is not a
+    // diagnosis: a target sheet holding nothing of that view type and a candidate whose
+    // crop covers a different model area look identical in the log and need opposite
+    // fixes, so each cause names itself and quotes the numbers behind it.
+    "missNoEligible":       "[FAIL] {0} — no counterpart for '{1}': the target sheet holds no {2} view facing the same way.",
+    "missNoOverlap":        "[FAIL] {0} — no counterpart for '{1}': no view on the target sheet covers any of its model area (reference crop {2}).",
+    "missTargetTaken":      "[FAIL] {0} — no counterpart for '{1}': its closest match '{2}' ({3}% area) was already claimed by another reference view.",
+    "missLowOverlap":       "[FAIL] {0} — no counterpart for '{1}': closest is '{2}', but they share only {3}% of their model area (threshold {4}%). Reference crop {5}, target crop {6} — re-crop the target, or lower the overlap threshold on step 3.",
+    "cropSize":             "{0}' × {1}' @ 1:{2}",
+    "scopeBoxNone":         "none",
+    // ── Measurements worth seeing on a pair that DID align. None of these stop the run.
+    "scopeBoxMismatch":     "[WARN] {0} — '{1}': reference uses scope box '{2}', target has '{3}'. Scope box not applied; aligned from model space ({4}% area match).",
+    "areaMismatch":         "[WARN] {0} — '{1}': matched, but the two views share only {2}% of their model area. Reference crop {3}, target crop {4}.",
+    "matchedDifferentDepth": "[WARN] {0} — '{1}': matched on plan area only — the two views' cut depths do not overlap. Check it is the level you expect.",
     "ambiguous":          "[{0}] AMBIGUOUS — source view '{1}' overlaps both '{2}' and '{3}'. Left unchanged.",
     "extra":              "[{0}] EXTRA view '{1}' has no source counterpart — left unchanged.",
     "scaleDiffers":       "[{0}] '{1}' scale 1:{2} differs from source 1:{3} — only the anchor point will register.",
@@ -87,7 +97,6 @@
     "sheetOkRef":         "[{0}] {1} matching view(s) found and aligned to reference '{2}'.",
     "sheetWithIssuesRef": "[{0}] {1} matching view(s) aligned to reference '{3}' — {2} issue(s) reported above.",
     "failedMove":         "[{0}] Failed to move '{1}' — see diagnostics log.",
-    "couldNotAssignScope":"[{0}] Could not assign scope box to '{1}'.",
     "couldNotMatchCropSize":"[{0}] Could not match crop size for '{1}'.",
     "couldNotMatchAnnoCrop":"[{0}] Could not match annotation crop for '{1}' (this view type may not support one).",
     "couldNotMatchCropVis":"[{0}] Could not match crop visibility for '{1}'.",

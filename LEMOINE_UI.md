@@ -643,6 +643,38 @@ Supporting controls for the color picker UI.
 
 A collapsible card with a header and content area. Used inside `GlobalSettingsWindow`.
 
+#### ReorderList
+**File:** `Controls/Layout/ReorderList.cs` (code-behind only, no XAML)
+
+A two-column list reordered with Move up / Move down buttons, selecting the way Revit does:
+click selects one, Ctrl+click toggles one, Shift+click selects the range from the anchor.
+
+```csharp
+var list = new ReorderList
+{
+    Height      = 300,
+    LeftHeader  = "VIEW",
+    RightHeader = "SHEET NUMBER & NAME",
+};
+list.SetRows(BuildRows());
+list.MoveRequested += (selected, delta) =>
+{
+    ApplyMoveToMyList(selected, delta);         // caller owns the data
+    list.SetRows(BuildRows(), selected.Select(i => i + delta).ToList());
+};
+```
+
+- The control does **not** own the order. It renders what `SetRows` is given and reports the
+  move that was asked for; the caller mutates its own list and calls `SetRows` again with the
+  moved selection. One source of truth, and the caller's list is always what the run uses.
+- Use it when the RIGHT column belongs to the row POSITION rather than to the item — Create
+  Sheets' Order step, where sheet numbers stay put and views move between numbered slots.
+- Distinct from `ListReorder` (§ *Reusable Components* in CLAUDE.md), which is drag-and-drop and
+  moves a single row. Use `ListReorder` for a free arrangement, `ReorderList` for precise
+  multi-row ordering.
+- A move is refused wholesale when any selected row has nowhere to go, so a multi-row block
+  slides as a block instead of collapsing onto itself.
+
 #### ReviewSummary
 **File:** `Controls/Layout/ReviewSummary.xaml(.cs)`
 

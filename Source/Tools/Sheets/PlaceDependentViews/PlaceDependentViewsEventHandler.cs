@@ -21,44 +21,36 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
         OneViewPerSheet,
     }
 
-    /// <summary>How placed viewports are sized for layout.</summary>
-    public enum LayoutMode
-    {
-        /// <summary>Place every view, regen per sheet, and measure each viewport's real outline.</summary>
-        Measured,
-        /// <summary>Measure the first view of each identical size (crop+scale) group, then reuse that
-        /// footprint for the rest — far fewer regens when many views match. Requires trim on.</summary>
-        Grouped,
-        /// <summary>Size every view from its crop box and scale; no measure regen. Fast, approximate.</summary>
-        Estimate,
-    }
-
     /// <summary>
-    /// Creates one sheet per selected parent view and places either that view's
-    /// dependents (packed without overlap, centered) or — in composite mode — the view
+    /// Creates one sheet per selected view and places either that view alone, that view's
+    /// dependents (packed without overlap, centered), or — in composite mode — the view
     /// itself plus its visible callouts/sections/elevations (source anchored top- or
-    /// left-center, sub views in aligned rows/columns). Sub views are trimmed
-    /// (annotation crop) when enabled; the composite source view never is.
+    /// left-center, sub views in aligned rows/columns).
+    ///
+    /// Views are placed, measured once per footprint group, then positioned: the first view of
+    /// each (crop, scale, annotation-crop) group is measured for real and every later view of that
+    /// group reuses its size, so a run of identical plans costs one regeneration rather than N.
     /// Runs on the Revit API thread; set all inputs before Raise().
     /// </summary>
     public sealed class PlaceDependentViewsEventHandler : IExternalEventHandler
     {
         // ── Inputs set by the view model before Raise() ───────────────────────
-        public PlaceViewsMode  Mode           { get; set; } = PlaceViewsMode.DependentsPerParent;
+        public PlaceViewsMode  Mode           { get; set; } = PlaceViewsMode.OneViewPerSheet;
         public List<ElementId> ParentViewIds  { get; set; } = new List<ElementId>();
+
+        /// <summary>The sheet number for each entry of <see cref="ParentViewIds"/>, same order and
+        /// same length. Computed by the view model — which is where the numbering preview the user
+        /// approved was computed too, so what they saw is what gets created. A number that has been
+        /// taken since the window opened is reported per sheet, never silently shifted.</summary>
+        public List<string>    SheetNumbers   { get; set; } = new List<string>();
+
         public ElementId       TitleBlockTypeId { get; set; } = ElementId.InvalidElementId;
-        public int             StartingNumber { get; set; } = 1;
         public string          NamingPattern  { get; set; } = "{ParentViewName}";
-        public string          NumberPrefix   { get; set; } = "";
-        public string          NumberSuffix   { get; set; } = "";
+
+        /// <summary>The sheet parameter to write <see cref="SheetSeries"/> into, identified by GUID
+        /// (shared) or definition id (project) — never by name.</summary>
+        public SheetSeriesParam? SeriesParam  { get; set; }
         public string          SheetSeries    { get; set; } = "";
-        public string          SeriesParamName { get; set; } = "Sheet Series";
-
-        /// <summary>How placed viewports are sized for layout (measured / grouped / estimate).</summary>
-        public LayoutMode      Layout         { get; set; } = LayoutMode.Measured;
-
-        public bool   TrimBubbles { get; set; } = true;
-        public double TrimInches  { get; set; } = 0.125;   // paper inches past the model crop
 
         public double MarginTopIn    { get; set; } = 0.5;  // all paper inches
         public double MarginBottomIn { get; set; } = 0.5;
@@ -110,7 +102,19 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
                 double marginLeft   = MarginLeftIn   / 12.0;
                 double marginRight  = MarginRightIn  / 12.0;
                 double gap          = Math.Max(0, GapIn) / 12.0;
-                double trimPaperFt  = Math.Max(0, TrimInches) / 12.0;
+
+                // The numbers come from the view model paired 1:1 with the views. A short list is a
+                // wiring bug, not a user error, so it fails loudly here instead of silently
+                // numbering the tail of the run wrong.
+                if (SheetNumbers.Count != ParentViewIds.Count)
+                {
+                    Log(AppStrings.T("testing.placeDependentViews.log.numbersMismatch",
+                                     SheetNumbers.Count, ParentViewIds.Count), "fail");
+                    DiagnosticsLog.Error("PlaceDependentViews",
+                        new InvalidOperationException($"SheetNumbers ({SheetNumbers.Count}) != ParentViewIds ({ParentViewIds.Count})"));
+                    onComplete(0, 1, 0);
+                    return;
+                }
 
                 int total = ParentViewIds.Count;
 
@@ -119,11 +123,11 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
                     ConfigureFailures(tx);
                     tx.Start();
 
-                    int number = StartingNumber;
                     bool seriesWarned = false;
 
-                    // Existing sheet numbers, built once; NextFreeNumber adds to it as we go so the
-                    // O(N²) "rescan every sheet" cost is gone.
+                    // Existing sheet numbers, read once. The view model already skipped these when
+                    // it built the number list; this is the re-check for anything created since the
+                    // window opened, and it reports rather than reassigns.
                     var usedNumbers = new HashSet<string>(
                         new FilteredElementCollector(doc).OfClass(typeof(ViewSheet))
                             .Cast<ViewSheet>().Select(vs => vs.SheetNumber),
@@ -134,26 +138,14 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
                     bool   areaKnown = false;
                     double areaMinX = 0, areaMinY = 0, areaW = 0, areaH = 0;
 
-                    // Grouped layout only reliably predicts a view's real outline when the annotation
-                    // crop is uniform across a group — which only trimming guarantees. Without trim the
-                    // key is approximate, so fall back to a full measured run rather than mis-size silently.
-                    LayoutMode layout = Layout;
-                    if (layout == LayoutMode.Grouped && !TrimBubbles)
-                    {
-                        Log(AppStrings.T("testing.placeDependentViews.log.groupedNeedsTrim"), "warn");
-                        DiagnosticsLog.Warn("PlaceDependentViews", "Grouped layout requested with trim off — fell back to measured.");
-                        layout = LayoutMode.Measured;
-                    }
+                    // Run-level cache of measured footprints. The first view of each group is
+                    // measured for real; the rest reuse its size. The key now includes each view's
+                    // own annotation-crop state (see GroupKey) — it used to rely on trimming to make
+                    // every group's annotation crop uniform, and with trimming gone that assumption
+                    // would have quietly turned every group into a mis-size.
+                    var sizeCache = new Dictionary<GroupKeyRec, (double w, double h)>();
 
-                    // Run-level cache of measured footprints, keyed by (cropWidth, cropHeight, scale).
-                    // The first view of each group is measured for real; the rest reuse its size.
-                    var sizeCache = new Dictionary<(long, long, int), (double w, double h)>();
-
-                    Log(layout == LayoutMode.Estimate
-                        ? AppStrings.T("testing.placeDependentViews.log.announceEstimate")
-                        : layout == LayoutMode.Grouped
-                            ? AppStrings.T("testing.placeDependentViews.log.announceGrouped")
-                            : AppStrings.T("testing.placeDependentViews.log.announceAccurate"), "info");
+                    Log(AppStrings.T("testing.placeDependentViews.log.announceGrouped"), "info");
 
                     bool composite = Mode == PlaceViewsMode.CompositeOneSheet;
                     bool oneView   = Mode == PlaceViewsMode.OneViewPerSheet;
@@ -250,16 +242,28 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
                         }
 
                         // ── Sheet number / name ──────────────────────────────
-                        string? sheetNumber = NextFreeNumber(ref number, NumberPrefix, NumberSuffix, usedNumbers);
-                        if (sheetNumber == null)
+                        // The number was chosen (and shown) before the run. If something has taken
+                        // it since, that is reported against this sheet — quietly sliding to the
+                        // next free number would create sheets numbered differently from the list
+                        // the user just approved on the Order step.
+                        string sheetNumber = SheetNumbers[i] ?? "";
+                        if (!usedNumbers.Add(sheetNumber))
                         {
-                            Log(AppStrings.T("testing.placeDependentViews.log.noFreeNumber", parent.Name), "fail");
+                            Log(AppStrings.T("testing.placeDependentViews.log.numberTaken", sheetNumber, parent.Name), "fail");
+                            DiagnosticsLog.Warn("PlaceDependentViews", $"Sheet number '{sheetNumber}' already in use.");
                             fail++;
                             onProgress(Pct(i + 1, total), pass, fail, skip);
                             continue;
                         }
+                        // Target is deliberately NOT the sheet: it does not exist yet, and the
+                        // pattern names it from the VIEW being placed. Every view-side token is
+                        // supplied explicitly so the run resolves exactly what the naming step's
+                        // preview resolved — a token that read the (absent) sheet would preview as
+                        // the view's name and then create a sheet named nothing.
                         var namingCtx = new TokenContext { Doc = doc, Source = parent };
                         namingCtx.Computed["ViewType"]    = parent.ViewType.ToString();
+                        namingCtx.Computed["ViewName"]    = parent.Name;
+                        namingCtx.Computed["CurrentName"] = parent.Name;
                         namingCtx.Computed["SheetNumber"] = sheetNumber;
                         try { namingCtx.Computed["Level"] = parent.GenLevel?.Name ?? ""; }
                         catch (Exception ex) { DiagnosticsLog.Swallowed("PlaceDependentViews: read GenLevel", ex); namingCtx.Computed["Level"] = ""; }
@@ -284,19 +288,8 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
                         }
 
                         // ── Sheet Series parameter ───────────────────────────
-                        if (!string.IsNullOrWhiteSpace(SheetSeries))
-                            WriteSeries(sheet, ref seriesWarned);
-
-                        // ── Trim each placed view's annotation crop ──────────
-                        // The composite source view is never trimmed — its callout
-                        // boundaries and section heads must stay visible.
-                        if (TrimBubbles)
-                            foreach (var depId in candidateIds)
-                            {
-                                if (sourceView != null && depId == sourceView.Id) continue;
-                                if (doc.GetElement(depId) is View depView)
-                                    TrimAnnotationCrop(depView, trimPaperFt);
-                            }
+                        if (SeriesParam != null && !string.IsNullOrWhiteSpace(SheetSeries))
+                            WriteSeries(sheet, sheetNumber, ref seriesWarned);
 
                         // ── Which views can actually be placed ───────────────
                         var toPlace = new List<View>(candidateIds.Count);
@@ -327,60 +320,11 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
 
                         int placedCount = 0;
 
-                        if (layout == LayoutMode.Estimate)
                         {
-                            // Resolve the area once (one regen so the title-block bbox is valid).
-                            if (!areaKnown)
-                            {
-                                doc.Regenerate();
-                                areaKnown = TryGetDrawingArea(doc, sheet, marginLeft, marginRight, marginTop, marginBottom,
-                                                             out areaMinX, out areaMinY, out areaW, out areaH);
-                            }
-                            if (!areaKnown)
-                            {
-                                Log(AppStrings.T("testing.placeDependentViews.log.noTbSizeEstimate", sheetNumber), "warn");
-                                DiagnosticsLog.Warn("PlaceDependentViews", $"No title-block bbox on sheet {sheetNumber}.");
-                                pass++;
-                                onProgress(Pct(i + 1, total), pass, fail, skip);
-                                continue;
-                            }
-
-                            // Estimate footprints from the crop box, lay out, place directly — no
-                            // regen. The untrimmed composite source gets the default annotation pad.
-                            var rects = toPlace
-                                .Select(v => EstimateRect(
-                                    v,
-                                    TrimBubbles && (sourceView == null || v.Id != sourceView.Id),
-                                    trimPaperFt))
-                                .ToList();
-                            var (centers, overflow) = LayOutSheet(rects, sourceView != null,
-                                                                  areaW, areaH, gap, sheetNumber);
-                            for (int k = 0; k < toPlace.Count; k++)
-                            {
-                                var p = centers[k];
-                                try
-                                {
-                                    Viewport.Create(doc, sheet.Id, toPlace[k].Id,
-                                                    new XYZ(areaMinX + p.CenterX, areaMinY + p.CenterY, 0));
-                                    placedCount++;
-                                }
-                                catch (Exception ex)
-                                {
-                                    Log(AppStrings.T("testing.placeDependentViews.log.placeFail", toPlace[k].Name, ex.Message), "fail");
-                                    DiagnosticsLog.Swallowed("PlaceDependentViews: Viewport.Create (estimate)", ex);
-                                    fail++;
-                                }
-                            }
-                            if (overflow)
-                                Log(AppStrings.T("testing.placeDependentViews.log.overflowEstimate", sheetNumber), "warn");
-                        }
-                        else
-                        {
-                            // Accurate / grouped: place provisionally, then size each viewport. In grouped
-                            // mode a view whose (crop+scale) group is already cached reuses that measured
-                            // footprint; only unseen groups (and uncacheable views) are measured — so a sheet
-                            // with no new groups skips the regen entirely.
-                            bool grouped = layout == LayoutMode.Grouped;
+                            // Place provisionally, then size each viewport. A view whose group is
+                            // already cached reuses that measured footprint; only unseen groups (and
+                            // uncacheable views) are measured — so a sheet with no new groups skips
+                            // the regen entirely.
                             var recs = new List<PlaceRec>(toPlace.Count);
                             foreach (var dv in toPlace)
                             {
@@ -393,11 +337,13 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
                                     fail++;
                                     continue;
                                 }
-                                // The composite source is never trimmed (non-uniform annotation crop) and a
-                                // crop-inactive view's footprint isn't crop-bound, so neither is cacheable.
-                                bool cacheable = grouped && dv.CropBoxActive
-                                                 && (sourceView == null || dv.Id != sourceView.Id);
-                                var key = cacheable ? GroupKey(dv) : default((long, long, int));
+                                // A crop-inactive view's footprint isn't crop-bound, so its size can
+                                // neither be predicted from the crop nor stand in for another view's.
+                                // A view whose annotation crop cannot be read is uncacheable too:
+                                // guessing "no annotation crop" would let it share a cached size with
+                                // a view that really has none, and silently mis-size both.
+                                GroupKeyRec key = default(GroupKeyRec);
+                                bool cacheable = dv.CropBoxActive && TryGroupKey(dv, out key);
                                 recs.Add(new PlaceRec(vp, cacheable, key, cacheable && sizeCache.ContainsKey(key)));
                             }
                             if (recs.Count == 0)
@@ -456,8 +402,7 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
                                     Log(AppStrings.T("testing.placeDependentViews.log.vpNoSize"), "warn");
                                 }
                             }
-                            if (grouped)
-                                Log(AppStrings.T("testing.placeDependentViews.log.groupedSummary", keep.Count, measured, reused), "info");
+                            Log(AppStrings.T("testing.placeDependentViews.log.groupedSummary", keep.Count, measured, reused), "info");
 
                             // Composite layout anchors on the source view's measured size, so a
                             // source that reported no outline fails the whole sheet (viewports
@@ -512,8 +457,12 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
             }
             finally
             {
-                // Session-long static handler — drop the run's payload.
+                // Session-long static handler — drop the run's payload so a closed window's inputs
+                // (and the Revit objects behind the captured series parameter) are not held for the
+                // rest of the Revit session.
                 ParentViewIds = new List<ElementId>();
+                SheetNumbers  = new List<string>();
+                SeriesParam   = null;
             }
         }
 
@@ -599,38 +548,6 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
             return subs;
         }
 
-        // ── Annotation crop trimming ──────────────────────────────────────────
-        private static void TrimAnnotationCrop(View view, double trimPaperFt)
-        {
-            if (view == null) return;
-            try
-            {
-                if (view.Scale <= 0) return;                 // perspective / no defined scale — can't convert
-                view.CropBoxActive = true;
-
-                var annoParam = view.get_Parameter(BuiltInParameter.VIEWER_ANNOTATION_CROP_ACTIVE);
-                if (annoParam != null && !annoParam.IsReadOnly) annoParam.Set(1);
-
-                var mgr = view.GetCropRegionShapeManager();
-                if (mgr == null) return;
-
-                // Offsets are model feet; convert the paper gap with the view scale so the
-                // on-sheet trim is constant. Floor to a tiny positive value (Revit rejects 0).
-                double offset = Math.Max(trimPaperFt * view.Scale, 1.0 / 64.0 / 12.0 * view.Scale);
-                if (offset <= 0) offset = 1e-3;
-
-                mgr.TopAnnotationCropOffset    = offset;
-                mgr.BottomAnnotationCropOffset = offset;
-                mgr.LeftAnnotationCropOffset   = offset;
-                mgr.RightAnnotationCropOffset  = offset;
-            }
-            catch (Exception ex)
-            {
-                // Non-fatal — place the view untrimmed rather than aborting the whole run.
-                DiagnosticsLog.Swallowed($"PlaceDependentViews: trim annotation crop on view {view.Id.Value}", ex);
-            }
-        }
-
         // ── Drawing area from the placed title block ──────────────────────────
         private static bool TryGetDrawingArea(
             Document doc, ViewSheet sheet,
@@ -673,26 +590,10 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
             }
         }
 
-        /// <summary>
-        /// Advances <paramref name="number"/> past any used sheet numbers and returns the first free
-        /// fully-formatted number (<c>prefix + running-number + suffix</c>), reserving it in
-        /// <paramref name="used"/> so later sheets in the same run don't collide.
-        /// </summary>
-        private static string? NextFreeNumber(ref int number, string prefix, string suffix, HashSet<string> used)
-        {
-            for (int guard = 0; guard < 100000; guard++)
-            {
-                string candidate = (prefix ?? "") + number.ToString() + (suffix ?? "");
-                number++;
-                if (used.Add(candidate)) return candidate;   // Add is false when already present
-            }
-            return null;
-        }
-
         /// <summary>A provisionally-placed viewport plus its grouped-layout size source.</summary>
         private readonly struct PlaceRec
         {
-            public PlaceRec(Viewport vp, bool cacheable, (long, long, int) key, bool cached)
+            public PlaceRec(Viewport vp, bool cacheable, GroupKeyRec key, bool cached)
             {
                 Vp = vp; Cacheable = cacheable; Key = key; Cached = cached;
             }
@@ -700,68 +601,140 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
             public Viewport Vp { get; }
             /// <summary>Whether this view's measured size may be stored and reused for its group.</summary>
             public bool Cacheable { get; }
-            /// <summary>The (cropW, cropH, scale) group key; default when not cacheable.</summary>
-            public (long, long, int) Key { get; }
+            /// <summary>The group key; default when not cacheable.</summary>
+            public GroupKeyRec Key { get; }
             /// <summary>Whether the group's size is already known (reuse it, skip measuring).</summary>
             public bool Cached { get; }
         }
 
         /// <summary>
-        /// Group key for grouped layout: views sharing crop-box size and scale render to the same
-        /// on-sheet outline (with a uniform annotation crop). Paper dimensions are bucketed to a
-        /// 1/64" grid so near-identical crops collapse into one group. Only called for crop-active views.
+        /// Identity of a footprint group: two views with the same key render to the same on-sheet
+        /// outline, so the first one measured stands in for all of them.
+        ///
+        /// The annotation crop is part of the key, not an assumption. The old key was
+        /// (crop, scale) alone and was only sound because trimming forced every view's annotation
+        /// crop to the same offsets; with trimming removed, two views of identical crop and scale
+        /// but different bubble margins would have shared one cached size and both been placed
+        /// wrong — with nothing logged, because a cache hit looks like a success.
         /// </summary>
-        private static (long, long, int) GroupKey(View v)
+        private readonly struct GroupKeyRec : IEquatable<GroupKeyRec>
         {
-            double scale = v.Scale > 0 ? v.Scale : 1.0;
-            BoundingBoxXYZ cb = v.CropBox;
-            double wPaper = Math.Abs(cb.Max.X - cb.Min.X) / scale;
-            double hPaper = Math.Abs(cb.Max.Y - cb.Min.Y) / scale;
-            long Bucket(double ft) => (long)Math.Round(ft * 12.0 * 64.0);   // 1/64" units
-            return (Bucket(wPaper), Bucket(hPaper), (int)Math.Round(scale));
-        }
+            private readonly (long W, long H, int Scale, bool Anno, long T, long B, long L, long R) _v;
 
-        /// <summary>Per-side paper pad assumed for un-trimmed views (rough bubble allowance) in estimate mode.</summary>
-        private const double DefaultAnnotationPadIn = 0.5;
+            public GroupKeyRec(long w, long h, int scale, bool anno, long t, long b, long l, long r)
+                => _v = (w, h, scale, anno, t, b, l, r);
+
+            public bool Equals(GroupKeyRec other)   => _v.Equals(other._v);
+            public override bool Equals(object? obj) => obj is GroupKeyRec o && Equals(o);
+            public override int GetHashCode()        => _v.GetHashCode();
+        }
 
         /// <summary>
-        /// Approximates a viewport's on-sheet footprint from the view's crop box and scale, without
-        /// placing or regenerating. When trimming we know the annotation gap exactly; otherwise a
-        /// default pad stands in for bubbles/section heads so the estimate isn't grossly undersized.
+        /// Builds the group key for a crop-active view. Returns false when the view's annotation
+        /// crop cannot be read — the caller then treats the view as uncacheable and measures it,
+        /// rather than filing it under a key that claims it has no annotation crop.
+        /// Paper dimensions are bucketed to 1/64" so near-identical crops collapse into one group.
         /// </summary>
-        private static SheetLayoutPacker.Rect EstimateRect(View v, bool trim, double trimPaperFt)
+        private static bool TryGroupKey(View v, out GroupKeyRec key)
         {
-            double scale = v.Scale > 0 ? v.Scale : 1.0;
-            BoundingBoxXYZ cb = v.CropBox;
-            double wPaper = Math.Abs(cb.Max.X - cb.Min.X) / scale;
-            double hPaper = Math.Abs(cb.Max.Y - cb.Min.Y) / scale;
-            double pad = trim ? trimPaperFt : (DefaultAnnotationPadIn / 12.0);
-            return new SheetLayoutPacker.Rect(wPaper + 2 * pad, hPaper + 2 * pad);
+            key = default(GroupKeyRec);
+            try
+            {
+                double scale = v.Scale > 0 ? v.Scale : 1.0;
+                BoundingBoxXYZ cb = v.CropBox;
+                if (cb == null) return false;
+
+                double wPaper = Math.Abs(cb.Max.X - cb.Min.X) / scale;
+                double hPaper = Math.Abs(cb.Max.Y - cb.Min.Y) / scale;
+
+                bool anno = false;
+                double at = 0, ab = 0, al = 0, ar = 0;
+                var p = v.get_Parameter(BuiltInParameter.VIEWER_ANNOTATION_CROP_ACTIVE);
+                if (p != null && p.AsInteger() == 1)
+                {
+                    var sm = v.GetCropRegionShapeManager();
+                    if (sm == null) return false;
+                    anno = true;
+                    // Offsets are model feet; the key compares PAPER sizes, so divide by the scale
+                    // exactly as the crop dimensions above do.
+                    at = sm.TopAnnotationCropOffset    / scale;
+                    ab = sm.BottomAnnotationCropOffset / scale;
+                    al = sm.LeftAnnotationCropOffset   / scale;
+                    ar = sm.RightAnnotationCropOffset  / scale;
+                }
+
+                key = new GroupKeyRec(Bucket(wPaper), Bucket(hPaper), (int)Math.Round(scale),
+                                      anno, Bucket(at), Bucket(ab), Bucket(al), Bucket(ar));
+                return true;
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Swallowed($"PlaceDependentViews: group key for view {v?.Id.Value}", ex);
+                return false;
+            }
         }
 
-        /// <summary>Writes the Sheet Series value to the named sheet parameter; warns once if it's missing or read-only.</summary>
-        private void WriteSeries(ViewSheet sheet, ref bool warned)
-        {
-            // LookupParameter returns only the FIRST name match and silently picks the wrong one
-            // when duplicates exist (a shared "Sheet Series" is rarely the first). GetParameters
-            // returns all matches, so prefer the shared, writable, text one — else any writable text.
-            var matches = sheet.GetParameters(SeriesParamName);
-            Parameter? p =
-                matches.FirstOrDefault(x => x != null && !x.IsReadOnly && x.StorageType == StorageType.String && x.IsShared)
-                ?? matches.FirstOrDefault(x => x != null && !x.IsReadOnly && x.StorageType == StorageType.String);
+        /// <summary>Paper feet to 1/64" units, the bucket every key term shares.</summary>
+        private static long Bucket(double ft) => (long)Math.Round(ft * 12.0 * 64.0);
 
-            if (p == null)
+        /// <summary>
+        /// Writes the Sheet Series value, binding the parameter by IDENTITY and then reading it back.
+        ///
+        /// The previous version looked the parameter up by NAME. <c>LookupParameter</c> returns only
+        /// the first name match and silently picks the wrong duplicate; <c>GetParameters(name)</c>
+        /// returns all matches in no defined order. Either way the value could land on a different
+        /// parameter, or nowhere, with nothing reported — which is exactly what this field did.
+        /// The parameter is now identified by its shared-parameter GUID (or, for a project
+        /// parameter, its definition id) captured from the document before the run.
+        ///
+        /// The read-back is not belt-and-braces: a silently dropped value is the failure being
+        /// fixed, so the write is not allowed to fail quietly a second time.
+        /// </summary>
+        private void WriteSeries(ViewSheet sheet, string sheetNumber, ref bool warned)
+        {
+            var param = SeriesParam;
+            if (param == null) return;
+
+            Parameter? p;
+            try { p = param.Resolve(sheet); }
+            catch (Exception ex)
             {
+                Log(AppStrings.T("testing.placeDependentViews.log.seriesResolveFail", param.Name, sheetNumber, ex.Message), "fail");
+                DiagnosticsLog.Error($"PlaceDependentViews: resolve series parameter '{param.Name}'", ex);
+                return;
+            }
+
+            if (p == null || p.IsReadOnly)
+            {
+                // One line for the whole run, not one per sheet: the parameter is either on sheets
+                // or it is not, and repeating that N times buries everything else in the log.
                 if (!warned)
                 {
                     warned = true;
-                    Log(AppStrings.T("testing.placeDependentViews.log.seriesParamMissing", SeriesParamName), "warn");
+                    Log(AppStrings.T("testing.placeDependentViews.log.seriesParamMissing", param.Name), "warn");
                     DiagnosticsLog.Warn("PlaceDependentViews",
-                        $"Series param '{SeriesParamName}' not found as a writable text parameter on sheets.");
+                        $"Series parameter '{param.Name}' is not present or not writable on sheets.");
                 }
                 return;
             }
-            p.Set(SheetSeries);
+
+            try
+            {
+                bool set = p.Set(SheetSeries);
+                string readBack = p.AsString() ?? "";
+                if (!set || !string.Equals(readBack, SheetSeries, StringComparison.Ordinal))
+                {
+                    Log(AppStrings.T("testing.placeDependentViews.log.seriesWriteFail",
+                                     param.Name, sheetNumber, SheetSeries, readBack), "fail");
+                    DiagnosticsLog.Warn("PlaceDependentViews",
+                        $"Series write to '{param.Name}' on sheet {sheetNumber} did not take (read back '{readBack}').");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log(AppStrings.T("testing.placeDependentViews.log.seriesResolveFail", param.Name, sheetNumber, ex.Message), "fail");
+                DiagnosticsLog.Error($"PlaceDependentViews: write series parameter '{param.Name}'", ex);
+            }
         }
 
         private static int Pct(int done, int total) => total > 0 ? (int)(done * 100.0 / total) : 100;
