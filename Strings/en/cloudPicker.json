@@ -1,0 +1,37 @@
+// cloudPicker.json — the Autodesk Docs (ACC / BIM 360) model picker.
+// Window: CloudModelPickerWindow. Fetches run through CloudBrowseHandler on an ExternalEvent.
+{
+  "title":  "Pick a cloud model",
+  "cancel": "Cancel",
+  "select": "Select model",
+
+  "labels": {
+    "hub":       "Hub",
+    "project":   "Project",
+    "scopeHint": "Defaulted to this model's own hub and project. Change either to reach a model stored elsewhere in Autodesk Docs.",
+    "treeLabel": "Folders in this project"
+  },
+
+  "status": {
+    // Shown while a fetch is in flight — every one of these is a network round-trip.
+    "loadingHubs":     "Reading your Autodesk Docs hubs…",
+    "loadingProjects": "Reading projects…",
+    "loadingTree":     "Reading folders and models…",
+    // A zero result is always stated: an empty tree with no message is indistinguishable
+    // from a broken collector.
+    "found":     "Found {0} folder(s) · {1} model(s). One model per replacement.",
+    "noModels":  "No models found in this project's folders.",
+    "truncated": "The folder tree is deeper or wider than this browser reads in one pass — some folders are not listed."
+  },
+
+  "error": {
+    "handlerMissing": "The cloud browser isn't available — restart Revit and try again.",
+    "signIn":         "Couldn't reach Autodesk Docs ({0}). Sign in to your Autodesk account in Revit, then reopen this tool.",
+    "noHubs":         "No Autodesk Docs hubs are available. Sign in to your Autodesk account in Revit, then reopen this tool.",
+    "noProjects":     "This hub has no projects you can open.",
+    "projectGone":    "That project is no longer available — pick another.",
+    // The fetch came back with nothing at all, as opposed to a project whose folders are empty.
+    "noModels":       "Nothing came back for this project — try it again, or pick another.",
+    "fetch":          "Couldn't read from Autodesk Docs: {0}"
+  }
+}

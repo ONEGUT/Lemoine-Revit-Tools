@@ -18,6 +18,7 @@
     "destOverwrite": "Overwrite the linked file",
     "destRename":    "Save beside it under a new name",
     "destFolder":    "Folder “{0}”",
+    "destCloudOnly": "Not used — cloud replacements write no file",
     "run":           "Ready to run"
   },
 
@@ -32,6 +33,13 @@
     "needFile":      "Pick the replacement file for this link.",
     "replaceWith":   "↓ replace with",
     "browse":        "Browse…",
+    // Cloud links are replaced from Autodesk Docs, so their row offers a different browse.
+    "browseCloud":   "Browse cloud…",
+    "cloudSource":   "Autodesk Docs · {0}",
+    "badgeCloud":    "cloud",
+    // A cloud model has no local file to read a version header from — Revit reports on load.
+    "badgeCloudVersion": "version checked on load",
+    "cloudNote":     "Cloud replacements write nothing over the old model: the link is simply re-pointed, so no backup is needed and the Destination step is skipped.",
     "fileDialog":    "Pick the replacement Revit model",
     "noLinks":       "This model has no Revit links to replace.",
     "noneReplaceable": "None of this model's links can be replaced in place — see the reasons listed above.",
@@ -39,6 +47,7 @@
     "readWarning":   "{0} — some details couldn't be read ({1}); what's shown for them is a placeholder, not the real value.",
     "scanning":      "Reading file versions…",
     "scanFailed":    "Couldn't read the file versions ({0}) — you can still run, but unreadable files will fail when they're opened.",
+    "cloudFailed":   "Couldn't reach Autodesk Docs ({0}) — cloud links can't be given a replacement until it responds.",
     "verUnknown":    "?",
     "verCurrent":    "{0} (current)",
     "verUpgrade":    "{0} → current",
@@ -84,7 +93,9 @@
   },
 
   "blocked": {
-    "cloud":       "Cloud-hosted — no local file to write over",
+    // NOTE: there is no "cloud" reason any more — a cloud link is replaceable, with another
+    // cloud model. It used to be listed here and was in fact unreachable, because the
+    // unguarded GetExternalFileReference() threw first and stamped "noReference" instead.
     "nested":      "Nested inside another link",
     "noReference": "No external file reference",
     "noPath":      "Path can't be resolved",
@@ -97,6 +108,7 @@
     "linksNone":    "None",
     "linksValue":   "{0} link(s) · {1} need upgrade",
     "chipBackup":   "Backup",
+    "chipCloud":    "{0} cloud",
     "chipAudit":    "Audit",
     "positionNote": "Each new model is re-seated onto the Survey Point and Project Base Point read from the link it replaces, and the result is measured and reported.",
     "warnNoLinks":  "Add at least one complete replacement — a link and the file that replaces it.",
@@ -118,7 +130,13 @@
     "unnamedLink":      "(unnamed link)",
     "typeGone":         "{0} — the link no longer exists in this model (deleted since the list was built).",
     "noReference":      "{0} — the link has no external file reference; can't tell what it points at.",
-    "cloudUnsupported": "{0} — cloud-hosted link; there's no local file to write over. Use Upgrade & Link Models for cloud models.",
+    "noPath":           "{0} — the link's file path can't be resolved; can't tell what it points at.",
+    "cloudNoTarget":    "{0} — cloud-hosted link with no replacement model picked; skipped.",
+    "cloudTargetOnFileLink": "{0} — a cloud replacement was queued but this link points at a file; skipped.",
+    "cloudPathFail":    "{0} — couldn't resolve the cloud model “{1}”: {2}",
+    "cloudPathNull":    "Revit returned no path for it",
+    "cloudReloadFail":  "{0} — couldn't re-point the link at the cloud model: {1}. Nothing was overwritten, so the link is still on its old model.",
+    "replacedCloud":    "{0}/{1} — {2} re-pointed at cloud model {3}",
     "newFileMissing":   "{0} — the replacement file is missing: {1}",
     "destFail":         "{0} — couldn't work out where to save the upgraded copy: {1}",
     "renameInvalid":    "{0} — the save-as name has no usable characters; keeping the linked file's own name.",

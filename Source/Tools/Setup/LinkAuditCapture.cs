@@ -67,13 +67,16 @@ namespace LemoineTools.Tools.Setup
                 try { return "[" + Path.GetFileNameWithoutExtension(linkDoc.Title) + "]"; }
                 catch (Exception ex) { DiagnosticsLog.Swallowed("LinkAudit: name from link document", ex); }
             }
-            try
+            // Guarded resolver — GetExternalFileReference() throws on a cloud link, which used
+            // to lose the name of every link in an Autodesk Docs project.
+            var reference = LinkReference.Resolve(linkType);
+            if (reference.Kind == LinkReferenceKind.File && !string.IsNullOrEmpty(reference.Path))
             {
-                var extRef = linkType?.GetExternalFileReference();
-                var path = extRef != null ? ModelPathUtils.ConvertModelPathToUserVisiblePath(extRef.GetAbsolutePath()) : null;
-                if (!string.IsNullOrEmpty(path)) return "[" + Path.GetFileNameWithoutExtension(path) + "]";
+                try { return "[" + Path.GetFileNameWithoutExtension(reference.Path) + "]"; }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("LinkAudit: name from file reference", ex); }
             }
-            catch (Exception ex) { DiagnosticsLog.Swallowed("LinkAudit: name from external file reference", ex); }
+            if (reference.Kind == LinkReferenceKind.Cloud && !string.IsNullOrEmpty(reference.DisplayName))
+                return "[" + reference.DisplayName + "]";
 
             try { return "[" + li.Name + "]"; }
             catch (Exception ex) { DiagnosticsLog.Swallowed("LinkAudit: name from instance", ex); return "[link]"; }
@@ -137,12 +140,14 @@ namespace LemoineTools.Tools.Setup
             if (linkType == null) return "n/a";
             try
             {
-                var extRef = linkType.GetExternalFileReference();
-                if (extRef == null) return "n/a";
-                string path = ModelPathUtils.ConvertModelPathToUserVisiblePath(extRef.GetAbsolutePath());
-                if (string.IsNullOrEmpty(path)) return "n/a (cloud)";
-                if (!File.Exists(path)) return "n/a (cloud)";
-                return File.GetLastWriteTime(path).ToString("yyyy-MM-dd HH:mm");
+                var reference = LinkReference.Resolve(linkType);
+                // A cloud model has no local file to stat — say so, rather than reporting "n/a"
+                // as though the read had failed.
+                if (reference.Kind == LinkReferenceKind.Cloud) return "n/a (cloud)";
+                if (reference.Kind != LinkReferenceKind.File)  return "n/a";
+                if (string.IsNullOrEmpty(reference.Path))      return "n/a";
+                if (!File.Exists(reference.Path))              return "n/a (not found)";
+                return File.GetLastWriteTime(reference.Path).ToString("yyyy-MM-dd HH:mm");
             }
             catch (Exception ex) { DiagnosticsLog.Swallowed("LinkAudit: read last saved", ex); return "n/a"; }
         }

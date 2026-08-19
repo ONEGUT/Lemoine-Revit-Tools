@@ -25,7 +25,13 @@ namespace LemoineTools.Tools.Setup
         /// <summary>User-visible absolute path of the file the link points at. Empty for a
         /// cloud-hosted link (which has no local path to overwrite).</summary>
         public string Path          { get; set; } = "";
+
+        /// <summary>Which kind of reference this link resolves through. Cloud links are
+        /// replaceable — with another CLOUD model, never with a local file.</summary>
+        public LinkReferenceKind Kind { get; set; } = LinkReferenceKind.None;
         public bool   IsCloud       { get; set; }
+        /// <summary>Autodesk Docs resource name, shown where a file link shows its path.</summary>
+        public string CloudName     { get; set; } = "";
         public bool   IsLoaded      { get; set; }
         public int    InstanceCount { get; set; }
         public string Status        { get; set; } = "";
@@ -54,8 +60,18 @@ namespace LemoineTools.Tools.Setup
         public string LinkName { get; set; } = "";
         public string LinkPath { get; set; } = "";
 
-        /// <summary>Absolute path of the replacement file. Empty until the user browses.</summary>
+        /// <summary>True when the link being replaced is cloud-hosted, so the replacement is
+        /// picked from Autodesk Docs rather than the file system.</summary>
+        public bool IsCloudTarget { get; set; }
+
+        /// <summary>Absolute path of the replacement file. Empty until the user browses.
+        /// Unused on a cloud row — see <see cref="CloudModel"/>.</summary>
         public string NewFilePath { get; set; } = "";
+
+        /// <summary>The chosen replacement cloud model. Null until the user browses.
+        /// Held only for the life of the window: its GUIDs name elements inside one specific
+        /// ACC project and must never reach a machine-wide settings file (CLAUDE.md).</summary>
+        public CloudModelItem? CloudModel { get; set; }
 
         /// <summary>Save-as base name (no extension) for the two non-overwrite destinations.
         /// Ignored by <see cref="ReplaceDestination.OverwriteLinkedFile"/>, which always writes
@@ -78,6 +94,13 @@ namespace LemoineTools.Tools.Setup
         public string LinkName    { get; set; } = "";
         public string NewFilePath { get; set; } = "";
         public string SaveAsName  { get; set; } = "";
+
+        /// <summary>Cloud → cloud replacement: re-point the link at this Autodesk Docs model.
+        /// When set, <see cref="NewFilePath"/> / <see cref="SaveAsName"/> are ignored and the run
+        /// writes no file at all.</summary>
+        public CloudModelItem? CloudModel { get; set; }
+
+        public bool IsCloud => CloudModel != null;
     }
 
     /// <summary>Everything <see cref="ReplaceLinkRunHandler"/> needs for one run. There is no

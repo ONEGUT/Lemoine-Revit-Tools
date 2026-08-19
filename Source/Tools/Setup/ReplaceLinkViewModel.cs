@@ -10,6 +10,7 @@ using Autodesk.Revit.UI;
 using LemoineTools.Framework;
 using LemoineTools.Framework.Controls;
 using WpfTextBox = System.Windows.Controls.TextBox;
+using WpfWindow  = System.Windows.Window;
 
 namespace LemoineTools.Tools.Setup
 {
@@ -21,7 +22,7 @@ namespace LemoineTools.Tools.Setup
     /// instances, view overrides and filters survive untouched. See
     /// <see cref="ReplaceLinkRunHandler"/> for the run itself.
     /// </summary>
-    public sealed class ReplaceLinkViewModel : IStepFlowTool, IReviewableTool, IRunResult, IStepAware, IToolCleanup
+    public sealed class ReplaceLinkViewModel : IStepFlowTool, IReviewableTool, IRunResult, IStepAware, IConditionalSteps, IToolCleanup
     {
         public string Title       => AppStrings.T("replaceLink.title");
         public string RunLabel    => AppStrings.T("replaceLink.runLabel");
@@ -40,7 +41,11 @@ namespace LemoineTools.Tools.Setup
         private readonly ExternalEvent?           _scanEvent;
         private readonly ReplaceLinkRunHandler?   _runHandler;
         private readonly ExternalEvent?           _runEvent;
+        private readonly CloudBrowseHandler?      _cloudHandler;  // Autodesk Docs browsing
+        private readonly ExternalEvent?           _cloudEvent;
         private readonly List<HostLinkInfo>       _hostLinks;     // captured on the Revit thread at launch
+        private readonly Guid                     _hostProjectGuid;  // host's own ACC project, for the picker default
+        private readonly string                   _hostRegion;
 
         // ── State ──────────────────────────────────────────────────────────────
         private readonly List<ReplaceRow> _rows = new List<ReplaceRow>();
@@ -50,6 +55,7 @@ namespace LemoineTools.Tools.Setup
         private bool   _audit    = ReplaceLinkSettings.Instance.AuditOnOpen;
         private bool   _scanning;
         private string? _scanError;
+        private string? _cloudError;   // Autodesk Docs browse failure — reported in its own words
 
         // True while RebuildLinksTable is constructing rows. SingleSelect.Items AUTO-SELECTS
         // index 0 as a side effect of its setter, which raises SelectionChanged — so every row
@@ -67,19 +73,30 @@ namespace LemoineTools.Tools.Setup
         private void Changed() => ValidationChanged?.Invoke(this, EventArgs.Empty);
 
         public ReplaceLinkViewModel(
-            UpgradeLinksScanHandler? scanHandler, ExternalEvent? scanEvent,
-            ReplaceLinkRunHandler?   runHandler,  ExternalEvent?  runEvent,
-            List<HostLinkInfo>?      hostLinks)
+            UpgradeLinksScanHandler? scanHandler,  ExternalEvent? scanEvent,
+            ReplaceLinkRunHandler?   runHandler,   ExternalEvent? runEvent,
+            CloudBrowseHandler?      cloudHandler, ExternalEvent? cloudEvent,
+            List<HostLinkInfo>?      hostLinks,
+            Guid                     hostProjectGuid = default,
+            string?                  hostRegion      = null)
         {
-            _scanHandler = scanHandler; _scanEvent = scanEvent;
-            _runHandler  = runHandler;  _runEvent  = runEvent;
-            _hostLinks   = hostLinks ?? new List<HostLinkInfo>();
+            _scanHandler  = scanHandler;  _scanEvent  = scanEvent;
+            _runHandler   = runHandler;   _runEvent   = runEvent;
+            _cloudHandler = cloudHandler; _cloudEvent = cloudEvent;
+            _hostLinks    = hostLinks ?? new List<HostLinkInfo>();
+            _hostProjectGuid = hostProjectGuid;
+            _hostRegion      = hostRegion ?? "";
         }
 
         public void OnWindowClosed()
         {
             if (_scanHandler != null) { _scanHandler.OnScanned = null; _scanHandler.OnError = null; }
             if (_runHandler  != null) { _runHandler.PushLog = null; _runHandler.OnProgress = null; _runHandler.OnComplete = null; }
+            if (_cloudHandler != null)
+            {
+                _cloudHandler.OnHubs = null; _cloudHandler.OnProjects = null;
+                _cloudHandler.OnTree = null; _cloudHandler.OnError    = null;
+            }
         }
 
         // ═══════════════════════════════════════════════════════════════════════
@@ -140,7 +157,8 @@ namespace LemoineTools.Tools.Setup
             var blocked     = _hostLinks.Where(l => !l.Replaceable).ToList();
 
             if (_scanning)          _linksContainer.Children.Add(Dim(AppStrings.T("replaceLink.labels.scanning")));
-            if (_scanError != null) _linksContainer.Children.Add(Warn(AppStrings.T("replaceLink.labels.scanFailed", _scanError)));
+            if (_scanError  != null) _linksContainer.Children.Add(Warn(AppStrings.T("replaceLink.labels.scanFailed", _scanError)));
+            if (_cloudError != null) _linksContainer.Children.Add(Warn(AppStrings.T("replaceLink.labels.cloudFailed", _cloudError)));
 
             if (_rows.Count == 0)
             {
@@ -156,10 +174,18 @@ namespace LemoineTools.Tools.Setup
                 int tooNew = _rows.Count(r => r.IsFutureVersion);
                 if (tooNew > 0) _linksContainer.Children.Add(Warn(AppStrings.T("replaceLink.labels.tooNewNote", tooNew)));
 
-                string curVer = _scanHandler?.CurrentVersionNumber ?? "";
-                _linksContainer.Children.Add(Dim(string.IsNullOrEmpty(curVer)
-                    ? AppStrings.T("replaceLink.labels.futureVersionNoteGeneric")
-                    : AppStrings.T("replaceLink.labels.futureVersionNote", curVer)));
+                // The version ladder only concerns FILE rows — a cloud model is not opened,
+                // upgraded or saved here, so the note would be misleading on an all-cloud list.
+                if (_rows.Any(r => !r.IsCloudTarget))
+                {
+                    string curVer = _scanHandler?.CurrentVersionNumber ?? "";
+                    _linksContainer.Children.Add(Dim(string.IsNullOrEmpty(curVer)
+                        ? AppStrings.T("replaceLink.labels.futureVersionNoteGeneric")
+                        : AppStrings.T("replaceLink.labels.futureVersionNote", curVer)));
+                }
+
+                if (_rows.Any(r => r.IsCloudTarget))
+                    _linksContainer.Children.Add(Dim(AppStrings.T("replaceLink.labels.cloudNote")));
             }
 
             // Links that can't be replaced are listed with their reason — a silently shorter
@@ -247,6 +273,7 @@ namespace LemoineTools.Tools.Setup
                 {
                     // Back to "nothing picked" — clear the row rather than leaving a stale link.
                     row.TypeId = 0; row.LinkName = ""; row.LinkPath = "";
+                    row.IsCloudTarget = false; row.CloudModel = null; row.NewFilePath = "";
                     RebuildLinksTable();
                     Changed();
                     return;
@@ -254,9 +281,21 @@ namespace LemoineTools.Tools.Setup
 
                 var hit = replaceable.FirstOrDefault(l => string.Equals(LinkLabel(l), sel, StringComparison.Ordinal));
                 if (hit == null) return;
+                bool wasCloud = row.IsCloudTarget;
                 row.TypeId   = hit.TypeId;
                 row.LinkName = hit.Name;
                 row.LinkPath = hit.Path;
+
+                // A cloud link is replaced by another CLOUD model and a file link by a file —
+                // switching the row between the two invalidates whatever was already picked.
+                row.IsCloudTarget = hit.Kind == LinkReferenceKind.Cloud;
+                if (row.IsCloudTarget != wasCloud)
+                {
+                    row.CloudModel = null;
+                    row.NewFilePath = "";
+                    row.Scanned = false; row.Readable = true; row.Version = "?";
+                    row.IsCurrent = false; row.IsFutureVersion = false; row.IsWorkshared = false;
+                }
                 // The save-as name defaults to the linked file's own name, so the rename
                 // destinations start from something valid rather than empty.
                 if (string.IsNullOrEmpty(row.SaveAsName) && !string.IsNullOrEmpty(hit.Path))
@@ -280,7 +319,17 @@ namespace LemoineTools.Tools.Setup
             top.Children.Add(rm);
 
             content.Children.Add(top);
-            if (!string.IsNullOrEmpty(row.LinkPath)) content.Children.Add(Mono(row.LinkPath));
+            // A file link shows its path; a cloud link shows where in Autodesk Docs it lives.
+            if (row.IsCloudTarget)
+            {
+                var host = replaceable.FirstOrDefault(l => l.TypeId == row.TypeId);
+                string cloudName = host != null && !string.IsNullOrEmpty(host.CloudName) ? host.CloudName : row.LinkName;
+                content.Children.Add(Mono(AppStrings.T("replaceLink.labels.cloudSource", cloudName)));
+            }
+            else if (!string.IsNullOrEmpty(row.LinkPath))
+            {
+                content.Children.Add(Mono(row.LinkPath));
+            }
 
             content.Children.Add(Sub(AppStrings.T("replaceLink.labels.replaceWith")));
 
@@ -291,9 +340,9 @@ namespace LemoineTools.Tools.Setup
 
             var fileBox = new WpfTextBox
             {
-                Text = string.IsNullOrEmpty(row.NewFilePath)
-                    ? ""
-                    : System.IO.Path.GetFileName(row.NewFilePath),
+                Text = row.IsCloudTarget
+                    ? (row.CloudModel?.Name ?? "")
+                    : (string.IsNullOrEmpty(row.NewFilePath) ? "" : System.IO.Path.GetFileName(row.NewFilePath)),
                 IsReadOnly = true,
                 VerticalContentAlignment = VerticalAlignment.Center,
                 Padding = new Thickness(4, 3, 4, 3),
@@ -306,7 +355,10 @@ namespace LemoineTools.Tools.Setup
             Grid.SetColumn(fileBox, 0);
             fileRow.Children.Add(fileBox);
 
-            var browse = ControlStyles.BuildSmallButton(AppStrings.T("replaceLink.labels.browse"));
+            // Only the browse that can work for this link is offered — the invalid one is
+            // hidden, never shown disabled (CLAUDE.md UX philosophy).
+            var browse = ControlStyles.BuildSmallButton(AppStrings.T(
+                row.IsCloudTarget ? "replaceLink.labels.browseCloud" : "replaceLink.labels.browse"));
             browse.Margin = new Thickness(8, 0, 0, 0);
             browse.Click += (s, e) => OnBrowse(row);
             Grid.SetColumn(browse, 1);
@@ -314,7 +366,29 @@ namespace LemoineTools.Tools.Setup
 
             content.Children.Add(fileRow);
 
-            if (!string.IsNullOrEmpty(row.NewFilePath))
+            if (row.IsCloudTarget && row.CloudModel != null)
+            {
+                content.Children.Add(Mono(row.CloudModel.FolderPath));
+
+                var meta = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0) };
+                meta.Children.Add(Badge(AppStrings.T("replaceLink.labels.badgeCloud"), "LemoineAccent"));
+
+                // There is no local file to read a version header from, so the version is
+                // genuinely unknown until Revit loads it — say that rather than showing "?"
+                // next to badges that elsewhere mean a real, scanned value.
+                var ver = Badge(AppStrings.T("replaceLink.labels.badgeCloudVersion"), "LemoineTextDim");
+                ver.Margin = new Thickness(6, 0, 0, 0);
+                meta.Children.Add(ver);
+
+                if (row.CloudModel.IsWorkshared)
+                {
+                    var ws = Badge(AppStrings.T("replaceLink.labels.verWorkshared"), "LemoineTextDim");
+                    ws.Margin = new Thickness(6, 0, 0, 0);
+                    meta.Children.Add(ws);
+                }
+                content.Children.Add(meta);
+            }
+            else if (!row.IsCloudTarget && !string.IsNullOrEmpty(row.NewFilePath))
             {
                 content.Children.Add(Mono(System.IO.Path.GetDirectoryName(row.NewFilePath) ?? ""));
 
@@ -380,6 +454,8 @@ namespace LemoineTools.Tools.Setup
 
         private void OnBrowse(ReplaceRow row)
         {
+            if (row.IsCloudTarget) { OnBrowseCloud(row); return; }
+
             var dlg = new Microsoft.Win32.OpenFileDialog
             {
                 Multiselect = false,
@@ -399,9 +475,47 @@ namespace LemoineTools.Tools.Setup
             ScanRow(row);
         }
 
+        /// <summary>Cloud link → pick the replacement from Autodesk Docs. There is no local file
+        /// to version-scan, so no scan is raised for this row.</summary>
+        private void OnBrowseCloud(ReplaceRow row)
+        {
+            if (_cloudHandler == null || _cloudEvent == null)
+            {
+                _cloudError = AppStrings.T("cloudPicker.error.handlerMissing");
+                RebuildLinksTable();
+                Changed();
+                return;
+            }
+
+            CloudModelItem? picked;
+            _cloudError = null;
+            try
+            {
+                var owner = _linksContainer != null ? WpfWindow.GetWindow(_linksContainer) : null;
+                picked = CloudModelPickerWindow.Pick(owner, _cloudHandler, _cloudEvent,
+                                                    _hostProjectGuid, _hostRegion);
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Error("ReplaceLink: open cloud model picker", ex);
+                _cloudError = ex.Message;
+                RebuildLinksTable();
+                Changed();
+                return;
+            }
+
+            if (picked == null) return;   // cancelled
+
+            row.CloudModel  = picked;
+            row.NewFilePath = "";
+            RebuildLinksTable();
+            Changed();
+        }
+
         private void ScanRow(ReplaceRow row)
         {
             if (_scanHandler == null || _scanEvent == null) return;
+            if (row.IsCloudTarget) return;   // no local file to read a version header from
             _scanning  = true;
             _scanError = null;
             RebuildLinksTable();
@@ -607,11 +721,23 @@ namespace LemoineTools.Tools.Setup
             ["dest"]     = DestSummary(),
         };
 
-        public IList<string>? ReviewChips => new List<string>
+        public IList<string>? ReviewChips
         {
-            AppStrings.T("replaceLink.review.chipBackup")   + (_backup   ? " ✓" : " ✗"),
-            AppStrings.T("replaceLink.review.chipAudit")    + (_audit    ? " ✓" : " ✗"),
-        };
+            get
+            {
+                var chips = new List<string>();
+                // Backup and audit both act on a FILE being opened and written over. Showing them
+                // on an all-cloud run would imply a protection that has nothing to protect.
+                if (FileRunnableCount() > 0)
+                {
+                    chips.Add(AppStrings.T("replaceLink.review.chipBackup") + (_backup ? " ✓" : " ✗"));
+                    chips.Add(AppStrings.T("replaceLink.review.chipAudit")  + (_audit  ? " ✓" : " ✗"));
+                }
+                if (CloudRunnableCount() > 0)
+                    chips.Add(AppStrings.T("replaceLink.review.chipCloud", CloudRunnableCount()));
+                return chips;
+            }
+        }
 
         // Positioning is fixed behaviour, not a setting, so the review states it rather than
         // showing it as a choice the user made.
@@ -626,20 +752,34 @@ namespace LemoineTools.Tools.Setup
                 int incomplete = _rows.Count(r => !IsComplete(r));
                 if (incomplete > 0) return AppStrings.T("replaceLink.review.warnIncomplete", incomplete);
 
-                int tooNew = _rows.Count(r => IsComplete(r) && r.IsFutureVersion);
+                int tooNew = _rows.Count(r => IsComplete(r) && !r.IsCloudTarget && r.IsFutureVersion);
                 if (tooNew > 0) return AppStrings.T("replaceLink.review.warnTooNew", tooNew);
 
-                int unreadable = _rows.Count(r => IsComplete(r) && r.Scanned && !r.Readable && !r.IsFutureVersion);
+                int unreadable = _rows.Count(r => IsComplete(r) && !r.IsCloudTarget && r.Scanned && !r.Readable && !r.IsFutureVersion);
                 if (unreadable > 0) return AppStrings.T("replaceLink.review.warnUnreadable", unreadable);
 
-                if (_dest == ReplaceDestination.OverwriteLinkedFile)
+                // Only FILE rows overwrite anything — a cloud replacement re-points the link and
+                // leaves the old model untouched, so counting cloud rows here would overstate it.
+                int overwritten = FileRunnableCount();
+                if (overwritten > 0 && _dest == ReplaceDestination.OverwriteLinkedFile)
                 {
                     return _backup
-                        ? AppStrings.T("replaceLink.review.warnOverwrite", RunnableCount())
-                        : AppStrings.T("replaceLink.review.warnOverwriteNoBackup", RunnableCount());
+                        ? AppStrings.T("replaceLink.review.warnOverwrite", overwritten)
+                        : AppStrings.T("replaceLink.review.warnOverwriteNoBackup", overwritten);
                 }
                 return null;
             }
+        }
+
+        // ── IConditionalSteps ──────────────────────────────────────────────────
+        /// <summary>Destination governs where an upgraded FILE is written. A cloud → cloud
+        /// replacement writes no file at all, so on an all-cloud run the step has nothing to
+        /// decide and is hidden. It is the middle step, never the last, so the rule that a
+        /// conditional step must not carry the Run button holds.</summary>
+        public bool IsStepVisible(string stepId)
+        {
+            if (!string.Equals(stepId, "dest", StringComparison.Ordinal)) return true;
+            return FileRunnableCount() > 0;
         }
 
         // ── Validation / Summary ───────────────────────────────────────────────
@@ -650,7 +790,10 @@ namespace LemoineTools.Tools.Setup
                 // Invalid while the version scan is in flight — a not-yet-scanned row defaults to
                 // readable, so running early could include a file the scan would have flagged.
                 case "links":    return !_scanning && RunnableCount() > 0;
-                case "dest":     return _dest != ReplaceDestination.SelectedFolder || !string.IsNullOrWhiteSpace(_selectedFolder);
+                // Hidden on an all-cloud run — a step the user can never see must not block them.
+                case "dest":     return FileRunnableCount() == 0
+                                     || _dest != ReplaceDestination.SelectedFolder
+                                     || !string.IsNullOrWhiteSpace(_selectedFolder);
                 default:         return true;
             }
         }
@@ -671,6 +814,7 @@ namespace LemoineTools.Tools.Setup
 
         private string DestSummary()
         {
+            if (FileRunnableCount() == 0) return AppStrings.T("replaceLink.summaries.destCloudOnly");
             switch (_dest)
             {
                 case ReplaceDestination.RenameBesideIt: return AppStrings.T("replaceLink.summaries.destRename");
@@ -681,11 +825,18 @@ namespace LemoineTools.Tools.Setup
 
         // A row runs only when it names both ends and the new file is usable — Revit cannot open
         // a file saved in a later release, so a future-version row is excluded like an unreadable one.
-        private static bool IsComplete(ReplaceRow r) => r.TypeId != 0 && !string.IsNullOrEmpty(r.NewFilePath);
-        private static bool IsRunnable(ReplaceRow r) => IsComplete(r) && r.Readable && !r.IsFutureVersion;
+        private static bool IsComplete(ReplaceRow r) =>
+            r.TypeId != 0 && (r.IsCloudTarget ? r.CloudModel != null : !string.IsNullOrEmpty(r.NewFilePath));
 
-        private int RunnableCount() => _rows.Count(IsRunnable);
-        private int UpgradeCount()  => _rows.Count(r => IsRunnable(r) && !r.IsCurrent);
+        // A cloud row has no local file, so the version gates that exclude an unreadable or
+        // too-new FILE simply do not apply to it — Revit reports the outcome when it loads.
+        private static bool IsRunnable(ReplaceRow r) =>
+            IsComplete(r) && (r.IsCloudTarget || (r.Readable && !r.IsFutureVersion));
+
+        private int RunnableCount()      => _rows.Count(IsRunnable);
+        private int FileRunnableCount()  => _rows.Count(r => IsRunnable(r) && !r.IsCloudTarget);
+        private int CloudRunnableCount() => _rows.Count(r => IsRunnable(r) &&  r.IsCloudTarget);
+        private int UpgradeCount()       => _rows.Count(r => IsRunnable(r) && !r.IsCloudTarget && !r.IsCurrent);
 
         // ── Run ────────────────────────────────────────────────────────────────
         public void Run(Action<string, string> pushLog, Action<int, int, int, int> onProgress, Action<int, int, int> onComplete)
@@ -705,8 +856,9 @@ namespace LemoineTools.Tools.Setup
                 {
                     TypeId      = r.TypeId,
                     LinkName    = r.LinkName,
-                    NewFilePath = r.NewFilePath,
-                    SaveAsName  = r.SaveAsName,
+                    NewFilePath = r.IsCloudTarget ? "" : r.NewFilePath,
+                    SaveAsName  = r.IsCloudTarget ? "" : r.SaveAsName,
+                    CloudModel  = r.IsCloudTarget ? r.CloudModel : null,
                 }).ToList(),
                 Destination    = _dest,
                 SelectedFolder = _selectedFolder,

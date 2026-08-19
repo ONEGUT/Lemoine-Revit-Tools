@@ -192,9 +192,15 @@ namespace LemoineTools.Tools.Setup
             string srcPath;
             try
             {
-                var extRef = linkType.GetExternalFileReference();
-                if (extRef == null) { Log(T("log.noExternalRef", spec.LinkName), "warn"); return PushResult.Skipped; }
-                srcPath = ModelPathUtils.ConvertModelPathToUserVisiblePath(extRef.GetAbsolutePath());
+                // Guarded resolver — GetExternalFileReference() throws on a cloud link rather
+                // than returning null, so an Autodesk Docs link used to fail here as "no
+                // external reference" instead of being reported as unsupported.
+                var reference = LinkReference.Resolve(linkType);
+                if (reference.Kind == LinkReferenceKind.Cloud)
+                { Log(T("log.cloudUnsupported", spec.LinkName), "warn"); return PushResult.Skipped; }
+                if (reference.Kind != LinkReferenceKind.File)
+                { Log(T("log.noExternalRef", spec.LinkName), "warn"); return PushResult.Skipped; }
+                srcPath = reference.Path;
             }
             catch (Exception ex)
             {

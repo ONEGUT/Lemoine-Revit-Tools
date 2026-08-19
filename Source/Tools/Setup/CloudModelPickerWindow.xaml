@@ -1,0 +1,77 @@
+<Window
+    x:Class="LemoineTools.Tools.Setup.CloudModelPickerWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+    Title="Pick a cloud model"
+    Width="680" Height="560"
+    WindowStartupLocation="CenterOwner"
+    WindowStyle="None"
+    ResizeMode="NoResize"
+    AllowsTransparency="False"
+    ShowInTaskbar="False">
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome
+            CaptionHeight="0"
+            ResizeBorderThickness="0"
+            GlassFrameThickness="0"
+            UseAeroCaptionButtons="False" />
+    </shell:WindowChrome.WindowChrome>
+
+    <Border x:Name="_outerBorder" BorderThickness="1">
+        <Grid x:Name="_root">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="38" />
+                <RowDefinition Height="*"  />
+                <RowDefinition Height="42" />
+            </Grid.RowDefinitions>
+
+            <Border x:Name="_toolbarBorder" Grid.Row="0" BorderThickness="0,0,0,1" ClipToBounds="True" />
+
+            <Border x:Name="_bodyBorder" Grid.Row="1" Padding="14,12,14,12">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*"    />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <!-- Hub + Project cascade -->
+                    <Grid x:Name="_scopeRow" Grid.Row="0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="12" />
+                            <ColumnDefinition Width="1.4*" />
+                        </Grid.ColumnDefinitions>
+                    </Grid>
+
+                    <TextBlock x:Name="_scopeHint" Grid.Row="1" TextWrapping="Wrap"
+                               Margin="0,8,0,10" />
+
+                    <TextBlock x:Name="_treeLabel" Grid.Row="2" Margin="0,0,0,4" />
+
+                    <!-- BrowserTreePicker carries its own scroller; it fills the * row -->
+                    <ContentControl x:Name="_treeSlot" Grid.Row="3" />
+
+                    <TextBlock x:Name="_statusLine" Grid.Row="4" TextWrapping="Wrap"
+                               Margin="0,8,0,0" />
+                </Grid>
+            </Border>
+
+            <Border x:Name="_footerBorder" Grid.Row="2" BorderThickness="0,1,0,0"
+                    Padding="14,0,14,0" ClipToBounds="True">
+                <Grid VerticalAlignment="Center">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*"    />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ContentControl x:Name="_cancelSlot" Grid.Column="0" />
+                    <ContentControl x:Name="_selectSlot" Grid.Column="2" />
+                </Grid>
+            </Border>
+        </Grid>
+    </Border>
+</Window>

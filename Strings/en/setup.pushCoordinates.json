@@ -52,6 +52,9 @@
     "instanceGone":     "⚠ {0}: that link isn't in the model anymore — skipped.",
     "typeMissing":      "⚠ {0}: could not resolve its link type — skipped.",
     "noExternalRef":    "⚠ {0}: has no external file reference — skipped.",
+    // Cloud (Autodesk Docs) links resolve through an external RESOURCE reference and have no
+    // local file to open, correct and save, which is what this tool does.
+    "cloudUnsupported": "⚠ {0}: cloud-hosted (Autodesk Docs) — there is no local file to correct — skipped.",
     "pathFail":         "⚠ {0}: could not resolve its source file ({1}) — skipped.",
     "fileMissing":      "⚠ {0}: source file not found on disk ({1}) — skipped.",
     "multiInstance":    "⚠ {0}: this file is placed {1} times in the model — pushing it through this instance only; reposition the other placements manually afterward.",

@@ -720,11 +720,12 @@ namespace LemoineTools.Tools.Setup
                 {
                     try
                     {
-                        var er = t.GetExternalFileReference();
-                        if (er == null) continue;
-                        string p = ModelPathUtils.ConvertModelPathToUserVisiblePath(er.GetAbsolutePath());
-                        if (string.Equals(p, srcPath, StringComparison.OrdinalIgnoreCase) &&
-                            er.GetLinkedFileStatus() == LinkedFileStatus.Loaded)
+                        // Guarded: a cloud link throws on GetExternalFileReference and can never
+                        // point at the local file being upgraded anyway.
+                        var er = LinkReference.Resolve(t);
+                        if (er.Kind != LinkReferenceKind.File) continue;
+                        if (string.Equals(er.Path, srcPath, StringComparison.OrdinalIgnoreCase) &&
+                            er.Status == LinkedFileStatus.Loaded)
                         {
                             loadedType = t;
                             break;

@@ -85,8 +85,12 @@ namespace LemoineTools.Tools.Setup
 
                 // Resolve the SelectedFolder destination up front so a bad path fails before any
                 // link is unloaded.
+                // A cloud → cloud replacement writes no file at all, so an all-cloud run must
+                // not be aborted by a destination it never uses.
+                bool anyFileItem = items.Any(i => !i.IsCloud);
+
                 string? destFolder = null;
-                if (Spec.Destination == ReplaceDestination.SelectedFolder)
+                if (anyFileItem && Spec.Destination == ReplaceDestination.SelectedFolder)
                 {
                     if (string.IsNullOrWhiteSpace(Spec.SelectedFolder))
                     {
@@ -171,30 +175,34 @@ namespace LemoineTools.Tools.Setup
                 return Outcome.Failed;
             }
 
-            // ── Resolve the path the link currently points at ────────────────────
-            string oldPath;
-            try
+            // ── Resolve what the link currently points at ─────────────────────────
+            // Through the guarded resolver: GetExternalFileReference() THROWS on a cloud link
+            // rather than returning null, which is what used to fail every link in a
+            // cloud-hosted project here as "no external file reference".
+            var reference = LinkReference.Resolve(type);
+
+            if (reference.Kind == LinkReferenceKind.Cloud)
+                return ProcessCloud(hostDoc, type, typeId, item, label, index, total);
+
+            if (reference.Kind != LinkReferenceKind.File)
             {
-                var extRef = type.GetExternalFileReference();
-                if (extRef == null)
-                {
-                    Log(AppStrings.T("replaceLink.log.noReference", label), "fail");
-                    return Outcome.Failed;
-                }
-                oldPath = ModelPathUtils.ConvertModelPathToUserVisiblePath(extRef.GetAbsolutePath()) ?? "";
-            }
-            catch (Exception ex)
-            {
-                DiagnosticsLog.Error($"ReplaceLink: read external reference for '{label}'", ex);
                 Log(AppStrings.T("replaceLink.log.noReference", label), "fail");
                 return Outcome.Failed;
             }
 
+            if (item.IsCloud)
+            {
+                // A cloud replacement was queued against a file link — the row was built for a
+                // different link than the one that is here now. Never guess which the user meant.
+                Log(AppStrings.T("replaceLink.log.cloudTargetOnFileLink", label), "warn");
+                return Outcome.Skipped;
+            }
+
+            string oldPath = reference.Path;
             if (string.IsNullOrEmpty(oldPath))
             {
-                // Cloud-hosted (or otherwise unresolvable) — there is no local file to write over.
-                Log(AppStrings.T("replaceLink.log.cloudUnsupported", label), "warn");
-                return Outcome.Skipped;
+                Log(AppStrings.T("replaceLink.log.noPath", label), "fail");
+                return Outcome.Failed;
             }
 
             string newPath = item.NewFilePath;
@@ -282,6 +290,98 @@ namespace LemoineTools.Tools.Setup
                 "info");
 
             // ── Measure movement, and re-seat if asked ───────────────────────────
+            ReconcilePosition(hostDoc, typeId, anchors, label);
+            return Outcome.Replaced;
+        }
+
+        /// <summary>
+        /// Cloud → cloud replacement: re-point the link at another Autodesk Docs model.
+        ///
+        /// <para>Structurally simpler and safer than the file path, because <b>nothing is written
+        /// over</b>. There is no backup, no unload, no open/upgrade/save/close and no
+        /// "another link holds this file" dance — the old cloud model is left exactly as it was,
+        /// so a failed <c>LoadFrom</c> leaves the link untouched and there is nothing to restore.</para>
+        ///
+        /// <para><c>LoadFrom</c> is a link-management call, so NO transaction may be open
+        /// (CLAUDE.md); the base-point re-seat that follows opens its own.</para>
+        /// </summary>
+        private Outcome ProcessCloud(Document hostDoc, RevitLinkType type, ElementId typeId,
+                                     ReplaceItem item, string label, int index, int total)
+        {
+            var target = item.CloudModel;
+            if (target == null)
+            {
+                // A cloud link with no cloud replacement picked — the row is incomplete.
+                Log(AppStrings.T("replaceLink.log.cloudNoTarget", label), "warn");
+                return Outcome.Skipped;
+            }
+
+            // ── Capture where the link sits right now ────────────────────────────
+            var anchors = CaptureAnchors(hostDoc, typeId, label);
+            if (anchors.Count == 0)
+                Log(AppStrings.T("replaceLink.log.noAnchors", label), "warn");
+
+            // ── Build the replacement's cloud path ───────────────────────────────
+            ModelPath? cloudPath;
+            try
+            {
+                cloudPath = ModelPathUtils.ConvertCloudGUIDsToCloudPath(
+                    target.Region, target.ProjectGuid, target.ModelGuid);
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Error($"ReplaceLink: build cloud path for '{label}'", ex);
+                Log(AppStrings.T("replaceLink.log.cloudPathFail", label, target.Name, ex.Message), "fail");
+                return Outcome.Failed;
+            }
+
+            if (cloudPath == null)
+            {
+                Log(AppStrings.T("replaceLink.log.cloudPathFail", label, target.Name,
+                                 AppStrings.T("replaceLink.log.cloudPathNull")), "fail");
+                return Outcome.Failed;
+            }
+
+            ExternalResourceReference? resource;
+            try { resource = ExternalResourceReference.CreateFromCloudPath(cloudPath); }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Error($"ReplaceLink: build cloud resource for '{label}'", ex);
+                Log(AppStrings.T("replaceLink.log.cloudPathFail", label, target.Name, ex.Message), "fail");
+                return Outcome.Failed;
+            }
+
+            if (resource == null)
+            {
+                Log(AppStrings.T("replaceLink.log.cloudPathFail", label, target.Name,
+                                 AppStrings.T("replaceLink.log.cloudPathNull")), "fail");
+                return Outcome.Failed;
+            }
+
+            // ── Re-point the SAME type — outside any transaction ─────────────────
+            try
+            {
+                var wsConfig = new WorksetConfiguration(WorksetConfigurationOption.OpenAllWorksets);
+                LinkLoadResult result = type.LoadFrom(resource, wsConfig);
+
+                if (result != null && result.LoadResult != LinkLoadResultType.LinkLoaded)
+                {
+                    // A non-fatal load result still means the link is not showing the new model.
+                    Log(AppStrings.T("replaceLink.log.reloadResult", label, result.LoadResult.ToString()), "fail");
+                    return Outcome.Failed;
+                }
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Error($"ReplaceLink: re-point cloud link '{label}'", ex);
+                // Nothing was unloaded or overwritten, so the link is still on its old model.
+                Log(AppStrings.T("replaceLink.log.cloudReloadFail", label, ex.Message), "fail");
+                return Outcome.Failed;
+            }
+
+            Log(AppStrings.T("replaceLink.log.replacedCloud", index, total, label, target.Name), "info");
+
+            // ── Measure movement, and re-seat ────────────────────────────────────
             ReconcilePosition(hostDoc, typeId, anchors, label);
             return Outcome.Replaced;
         }
@@ -645,11 +745,12 @@ namespace LemoineTools.Tools.Setup
                     if (t.Id == skipTypeId) continue;
                     try
                     {
-                        var er = t.GetExternalFileReference();
-                        if (er == null) continue;
-                        if (er.GetLinkedFileStatus() != LinkedFileStatus.Loaded) continue;
-                        string p = ModelPathUtils.ConvertModelPathToUserVisiblePath(er.GetAbsolutePath()) ?? "";
-                        if (!string.Equals(p, newPath, StringComparison.OrdinalIgnoreCase)) continue;
+                        // Guarded: a cloud link in the same host throws on GetExternalFileReference,
+                        // and can never point at a local file anyway.
+                        var er = LinkReference.Resolve(t);
+                        if (er.Kind != LinkReferenceKind.File) continue;
+                        if (er.Status != LinkedFileStatus.Loaded) continue;
+                        if (!string.Equals(er.Path, newPath, StringComparison.OrdinalIgnoreCase)) continue;
 
                         // Link-management call — NO transaction may be open (CLAUDE.md).
                         t.Unload(null);

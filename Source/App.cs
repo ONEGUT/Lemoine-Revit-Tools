@@ -172,6 +172,9 @@ namespace LemoineTools
         internal static ExternalEvent?             ReplaceLinkScanEvent { get; private set; }
         internal static LemoineTools.Tools.Setup.ReplaceLinkRunHandler? ReplaceLinkRunHandler { get; private set; }
         internal static ExternalEvent?             ReplaceLinkRunEvent  { get; private set; }
+        // Autodesk Docs browsing for the cloud model picker — read-only, never mutates the model.
+        internal static LemoineTools.Tools.Setup.CloudBrowseHandler? CloudBrowseHandler { get; private set; }
+        internal static ExternalEvent?             CloudBrowseEvent   { get; private set; }
 
         // ── Setup — Align Coordinates / Compare Grids / Push Coordinates to Links ───
         internal static LemoineTools.Tools.Setup.AlignCoordinatesRunHandler? AlignCoordinatesRunHandler { get; private set; }
@@ -353,6 +356,8 @@ namespace LemoineTools
             ReplaceLinkScanEvent    = ExternalEvent.Create(ReplaceLinkScanHandler);
             ReplaceLinkRunHandler   = new LemoineTools.Tools.Setup.ReplaceLinkRunHandler();
             ReplaceLinkRunEvent     = ExternalEvent.Create(ReplaceLinkRunHandler);
+            CloudBrowseHandler      = new LemoineTools.Tools.Setup.CloudBrowseHandler();
+            CloudBrowseEvent        = ExternalEvent.Create(CloudBrowseHandler);
 
             AlignCoordinatesRunHandler = new LemoineTools.Tools.Setup.AlignCoordinatesRunHandler();
             AlignCoordinatesRunEvent   = ExternalEvent.Create(AlignCoordinatesRunHandler);

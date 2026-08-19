@@ -12,9 +12,11 @@ namespace LemoineTools.Tools.Setup
     /// Revit read wrapped so one bad link can't stop the rest from being listed. Must run on
     /// Revit's main/API thread (called from <c>IExternalCommand.Execute</c>).
     ///
-    /// <para>A link that cannot be replaced in place (cloud-hosted, unresolvable path, or no
-    /// placed instance) is still returned, flagged <see cref="HostLinkInfo.Replaceable"/> = false
-    /// with a reason — the picker shows it disabled so the user sees WHY it is unavailable.</para>
+    /// <para>Both reference kinds are resolved through <see cref="LinkReference"/>: a file link
+    /// is replaced by another file, a cloud (Autodesk Docs) link by another cloud model. A link
+    /// that can't be replaced at all — nested, unresolvable, or loaded-but-not-placed — is still
+    /// returned, flagged <see cref="HostLinkInfo.Replaceable"/> = false with a reason, so the
+    /// picker shows it disabled and the user sees WHY rather than facing a shorter list.</para>
     /// </summary>
     public static class ReplaceLinkCapture
     {
@@ -63,74 +65,77 @@ namespace LemoineTools.Tools.Setup
                 info.Name          = SafeName(type, info);
                 info.InstanceCount = instanceCounts.TryGetValue(info.TypeId, out int count) ? count : 0;
 
-                ExternalFileReference? extRef = null;
-                try { extRef = type.GetExternalFileReference(); }
-                catch (Exception ex)
+                // One guarded resolver for BOTH reference kinds. Calling
+                // GetExternalFileReference() directly here is what made every link in a
+                // cloud-hosted project report "No external file reference" — it throws rather
+                // than returning null when the link is an external RESOURCE reference.
+                var reference = LinkReference.Resolve(type);
+
+                info.Kind    = reference.Kind;
+                info.Path    = reference.Path;
+                info.IsCloud = reference.Kind == LinkReferenceKind.Cloud;
+                info.CloudName = reference.DisplayName;
+
+                info.Status = reference.Status.HasValue
+                    ? reference.Status.Value.ToString()
+                    : AppStrings.T("replaceLink.status.unknown");
+                info.IsLoaded = reference.Status == LinkedFileStatus.Loaded;
+
+                // ReadWarning means "a value shown here is a placeholder". Being cloud-hosted is
+                // a known state, not a failed read, and must never raise it.
+                if (reference.ReadFailed)
+                    foreach (var field in reference.FailedField.Split(','))
+                        Note(info, FieldLabel(field.Trim()));
+
+                switch (reference.Kind)
                 {
-                    DiagnosticsLog.Swallowed("ReplaceLink: read external file reference", ex);
-                    Note(info, AppStrings.T("replaceLink.readFail.reference"));
+                    case LinkReferenceKind.None:
+                        info.Replaceable   = false;
+                        info.BlockedReason = AppStrings.T("replaceLink.blocked.noReference");
+                        break;
+
+                    case LinkReferenceKind.File when string.IsNullOrEmpty(info.Path):
+                        info.Replaceable   = false;
+                        info.BlockedReason = AppStrings.T("replaceLink.blocked.noPath");
+                        break;
+
+                    case LinkReferenceKind.Cloud when string.IsNullOrEmpty(info.CloudName):
+                        // Resolvable as cloud but unnamed — still replaceable; the name is
+                        // cosmetic and the link type id is what the run acts on.
+                        info.CloudName = info.Name;
+                        break;
                 }
 
-                if (extRef == null)
-                {
-                    info.Status        = AppStrings.T("replaceLink.status.unknown");
-                    info.Replaceable   = false;
-                    info.BlockedReason = AppStrings.T("replaceLink.blocked.noReference");
-                    list.Add(info);
-                    continue;
-                }
-
-                try
-                {
-                    var status  = extRef.GetLinkedFileStatus();
-                    info.IsLoaded = status == LinkedFileStatus.Loaded;
-                    info.Status   = status.ToString();
-                }
-                catch (Exception ex)
-                {
-                    DiagnosticsLog.Swallowed("ReplaceLink: read linked file status", ex);
-                    info.Status = AppStrings.T("replaceLink.status.unknown");
-                    Note(info, AppStrings.T("replaceLink.readFail.status"));
-                }
-
-                try
-                {
-                    var mp = extRef.GetAbsolutePath();
-                    // A cloud model path converts to an empty user-visible string — that is the
-                    // documented way to tell a cloud link from a file-based one here.
-                    info.Path    = ModelPathUtils.ConvertModelPathToUserVisiblePath(mp) ?? "";
-                    info.IsCloud = string.IsNullOrEmpty(info.Path);
-                }
-                catch (Exception ex)
-                {
-                    DiagnosticsLog.Swallowed("ReplaceLink: resolve link path", ex);
-                    info.Path = "";
-                    Note(info, AppStrings.T("replaceLink.readFail.path"));
-                }
-
-                if (info.IsCloud)
-                {
-                    info.Replaceable   = false;
-                    info.BlockedReason = AppStrings.T("replaceLink.blocked.cloud");
-                }
-                else if (string.IsNullOrEmpty(info.Path))
-                {
-                    info.Replaceable   = false;
-                    info.BlockedReason = AppStrings.T("replaceLink.blocked.noPath");
-                }
-                else if (info.InstanceCount == 0)
+                if (info.Replaceable && info.InstanceCount == 0)
                 {
                     info.Replaceable   = false;
                     info.BlockedReason = AppStrings.T("replaceLink.blocked.noInstance");
                 }
 
-                if (string.IsNullOrEmpty(info.Name) && !string.IsNullOrEmpty(info.Path))
-                    info.Name = Path.GetFileNameWithoutExtension(info.Path);
+                if (string.IsNullOrEmpty(info.Name))
+                {
+                    if (!string.IsNullOrEmpty(info.Path))
+                        info.Name = Path.GetFileNameWithoutExtension(info.Path);
+                    else if (!string.IsNullOrEmpty(info.CloudName))
+                        info.Name = info.CloudName;
+                }
 
                 list.Add(info);
             }
 
-            return list.OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase).ToList();
+            return list.OrderBy(r => r.Name, NaturalOrderComparer.OrdinalIgnoreCase).ToList();
+        }
+
+        /// <summary>Maps a <see cref="LinkReference"/> field token onto its localized label.</summary>
+        private static string FieldLabel(string token)
+        {
+            switch (token)
+            {
+                case "status":    return AppStrings.T("replaceLink.readFail.status");
+                case "name":      return AppStrings.T("replaceLink.readFail.name");
+                case "reference": return AppStrings.T("replaceLink.readFail.reference");
+                default:          return AppStrings.T("replaceLink.readFail.reference");
+            }
         }
 
         private static string SafeName(RevitLinkType type, HostLinkInfo info)
@@ -148,6 +153,9 @@ namespace LemoineTools.Tools.Setup
         /// placeholder values says so instead of passing them off as real.</summary>
         private static void Note(HostLinkInfo info, string field)
         {
+            if (string.IsNullOrEmpty(field)) return;
+            if (!string.IsNullOrEmpty(info.ReadWarning) &&
+                info.ReadWarning.Split(',').Any(f => f.Trim() == field)) return;   // no duplicates
             info.ReadWarning = string.IsNullOrEmpty(info.ReadWarning) ? field : info.ReadWarning + ", " + field;
         }
     }

@@ -258,13 +258,24 @@ removed; `log.cloudUnsupported` is replaced by the real cloud path.
 | `Source/App.cs` | register the cloud browse handler + event |
 | `Strings/en/replaceLink.json`, `Strings/en/cloudPicker.json` | new/changed strings |
 
-## Sequence
+## Sequence — DONE
 
-1. You pick 1a/1b/1c and 2a/2b/2c (or "go with the recommendations").
-2. I invoke `/revit-navisworks-ui` and render a faithful mockup of the cloud picker window and
-   the changed row card, from the real `ThemePalette`, for your approval — per CLAUDE.md, the
-   image is iterated on, not compiled code.
-3. Implement, silent-failure scan, commit, push.
+1. ~~Pick the UX options~~ — **1a + 2a** chosen.
+2. ~~Mockup for approval~~ — rendered from the real `DarkMono` palette, approved.
+3. ~~Implement, silent-failure scan, commit, push~~ — done; see the commit on this branch.
+
+### Fixed during implementation (found by review, not by the compiler)
+
+- `PickDefaultHub` fetched every hub's projects and then `ReadProjects` fetched the chosen
+  hub's projects *again* — two network round-trips for the same data. Replaced by a single
+  walk, region-matching hubs first, stopping at the host project.
+- That walk then adopted the **first** hub as the default even when it had **zero** projects,
+  so an account whose first hub is empty would open the picker blank. It now skips empty hubs.
+- The picker's failure was being rendered with the version-scan's wording ("Couldn't read the
+  file versions…"), which describes something else entirely. It has its own message now.
+- `TitleBar.IconGlyph` renders in **Segoe MDL2 Assets**, so the geometric `▣` first used would
+  not have resolved — replaced with `char.ConvertFromUtf32(0xE753)` (Cloud), ASCII in source
+  per CLAUDE.md.
 
 ## Cannot be verified here — needs a Windows/Revit run
 

@@ -40,10 +40,35 @@ namespace LemoineTools.Commands
             // snapshot; a link added or removed in Revit after the window opened needs the tool
             // reopened, which is the safe trade.
             var capturedLinks = new List<HostLinkInfo>();
+            // The host's own ACC project, so the cloud picker opens on it instead of making the
+            // user hunt for the project they are already working in. Empty for a file-based host.
+            Guid   hostProjectGuid = Guid.Empty;
+            string hostRegion      = "";
             try
             {
                 var doc = uiApp.ActiveUIDocument?.Document;
-                if (doc != null) capturedLinks = ReplaceLinkCapture.Capture(doc);
+                if (doc != null)
+                {
+                    capturedLinks = ReplaceLinkCapture.Capture(doc);
+
+                    try
+                    {
+                        if (doc.IsModelInCloud)
+                        {
+                            var mp = doc.GetCloudModelPath();
+                            if (mp != null)
+                            {
+                                hostProjectGuid = mp.GetProjectGUID();
+                                hostRegion      = mp.Region ?? "";
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        // Only costs the picker its default scope — the user can still choose.
+                        DiagnosticsLog.Swallowed("ReplaceLinkCommand: read host cloud path", ex);
+                    }
+                }
             }
             catch (Exception ex) { DiagnosticsLog.Error("ReplaceLinkCommand: capture host links", ex); }
 
@@ -52,7 +77,8 @@ namespace LemoineTools.Commands
                 return new ReplaceLinkViewModel(
                     App.ReplaceLinkScanHandler,  App.ReplaceLinkScanEvent,
                     App.ReplaceLinkRunHandler,   App.ReplaceLinkRunEvent,
-                    capturedLinks);
+                    App.CloudBrowseHandler,      App.CloudBrowseEvent,
+                    capturedLinks, hostProjectGuid, hostRegion);
             }
 
             var vm = BuildTool();
