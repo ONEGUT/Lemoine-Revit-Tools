@@ -10,12 +10,31 @@ using LemoineTools.Framework.Controls;
 using LemoineTools.Framework.Naming;
 using LemoineTools.Framework.Sheets;
 
+// This file imports both Autodesk.Revit.DB and the WPF namespaces, so any type name the two
+// could share is aliased rather than left bare.
+using WpfOrientation = System.Windows.Controls.Orientation;
+
 namespace LemoineTools.Tools.Sheets.PlaceDependentViews
 {
     public sealed class PlaceDependentViewsViewModel : IStepFlowTool, IReviewableTool, IStepAware, IToolCleanup
     {
         private const string ToolId         = "sheets.placeDependent";
         private const string DefaultPattern = "{ParentViewName}";
+
+        /// <summary>
+        /// This tool's own per-run tokens, offered alongside the VIEW vocabulary.
+        ///
+        /// The pattern names a sheet that does not exist yet, so the sheet's own fields — its name,
+        /// revision, issue date — have no value to read and are not offered: every one of them would
+        /// resolve to nothing. What the pattern actually has to work with is the VIEW being placed,
+        /// plus the one sheet field this tool computes itself before the sheet is created.
+        /// </summary>
+        private static readonly IReadOnlyList<TokenDefinition> ComputedTokens = new List<TokenDefinition>
+        {
+            new TokenDefinition("SheetNumber", AppStrings.T("naming.tokens.sheetNumber.label"),
+                                TokenOrigin.Computed, TokenSubject.Target, TokenEntity.View,
+                                AppStrings.T("naming.tokens.sheetNumber.desc")),
+        };
 
         // ── IStepFlowTool ──────────────────────────────────────────────────────
         public string Title    => AppStrings.T("testing.placeDependentViews.title");
@@ -143,10 +162,27 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
 
             LoadMarginsForTitleBlock();
             _gapInches = SheetMarginStore.Instance.Gap;
+            _seriesParam = PickDefaultSeriesParam();
         }
 
         /// <summary>Settings-only constructor (no document open).</summary>
         public PlaceDependentViewsViewModel() : this(null, null, null, null, null) { }
+
+        /// <summary>
+        /// The sheet parameter the series step starts on. A parameter actually named "Sheet Series"
+        /// is what this step exists for, so it wins; otherwise a shared parameter beats a project
+        /// one (shared is how a series parameter is normally distributed), and failing both, the
+        /// first captured parameter. Leaving the value blank is what skips the write, so a default
+        /// selection commits the user to nothing.
+        /// </summary>
+        private SheetSeriesParam? PickDefaultSeriesParam()
+        {
+            if (_seriesParams.Count == 0) return null;
+            return _seriesParams.FirstOrDefault(p =>
+                       string.Equals(p.Name, "Sheet Series", StringComparison.OrdinalIgnoreCase))
+                ?? _seriesParams.FirstOrDefault(p => p.IsShared)
+                ?? _seriesParams[0];
+        }
 
         // ── IStepAware ────────────────────────────────────────────────────────
         // Step content is built eagerly at window construction, so every step that reads a choice
@@ -487,13 +523,15 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
 
             var body = new StackPanel();
 
-            var labels = _seriesParams.Select(p => p.Label).ToList();
-            var none   = AppStrings.T("testing.placeDependentViews.labels.seriesParamNone");
-            labels.Insert(0, none);
+            // The parameter is chosen for the user, not by them: there is normally exactly one right
+            // answer and making them find it in a dropdown every run is friction for nothing. It is
+            // shown as a plain row so what will be written to is still visible. When the project
+            // offers more than one candidate a Change button swaps the row for the full list —
+            // explicit, and only present when there is actually something to change.
+            var paramHost = new Border();
+            paramHost.Child = BuildSeriesParamRow(paramHost);
+            body.Children.Add(paramHost);
 
-            var paramSelect = new SingleSelect { Items = labels };
-            paramSelect.SelectedItem = _seriesParam?.Label ?? none;
-            body.Children.Add(paramSelect);
             body.Children.Add(Spaced(Note(AppStrings.T("testing.placeDependentViews.labels.noteSeries")), 8));
 
             var valueBox = new SearchAutocomplete
@@ -504,17 +542,73 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
                 Margin      = new Thickness(0, 12, 0, 0),
             };
             valueBox.SelectionChanged += v => { _seriesValue = v ?? ""; OnValidationChanged(); };
-
-            paramSelect.SelectionChanged += s =>
-            {
-                _seriesParam = _seriesParams.FirstOrDefault(p => p.Label == s);
-                valueBox.Items = _seriesParam?.ExistingValues ?? new List<string>();
-                OnValidationChanged();
-            };
+            _seriesValueBox = valueBox;
 
             body.Children.Add(valueBox);
             outer.Children.Add(Card(AppStrings.T("testing.placeDependentViews.labels.secSeries"), body));
             return outer;
+        }
+
+        // Held so a parameter change can refresh the suggestion list in place.
+        private SearchAutocomplete? _seriesValueBox;
+
+        /// <summary>The selected-parameter row: name + kind, plus a Change button when the project
+        /// offers alternatives. Swaps itself for a dropdown when Change is clicked.</summary>
+        private FrameworkElement BuildSeriesParamRow(Border host)
+        {
+            var row = new StackPanel { Orientation = WpfOrientation.Horizontal };
+
+            var name = new TextBlock
+            {
+                Text              = _seriesParam?.Label ?? "—",
+                VerticalAlignment = VerticalAlignment.Center,
+                TextTrimming      = TextTrimming.CharacterEllipsis,
+            };
+            name.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
+            name.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            name.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            row.Children.Add(name);
+
+            if (_seriesParams.Count > 1)
+            {
+                var change = new Button
+                {
+                    Content         = AppStrings.T("testing.placeDependentViews.labels.seriesChange"),
+                    Padding         = new Thickness(10, 2, 10, 2),
+                    Margin          = new Thickness(12, 0, 0, 0),
+                    BorderThickness = new Thickness(1),
+                    Cursor          = System.Windows.Input.Cursors.Hand,
+                    Template        = ControlStyles.BuildFlatButtonTemplate(),
+                };
+                change.SetResourceReference(Button.MinHeightProperty,   "LemoineH_BtnSm");
+                change.SetResourceReference(Button.FontSizeProperty,    "LemoineFS_SM");
+                change.SetResourceReference(Button.FontFamilyProperty,  "LemoineUiFont");
+                change.SetResourceReference(Button.BackgroundProperty,  "LemoineRaised");
+                change.SetResourceReference(Button.BorderBrushProperty, "LemoineBorder");
+                change.SetResourceReference(Button.ForegroundProperty,  "LemoineTextDim");
+                change.Click += (s, e) => host.Child = BuildSeriesParamPicker(host);
+                row.Children.Add(change);
+            }
+
+            return row;
+        }
+
+        /// <summary>The full parameter list, shown only after the user asks to change it. Picking one
+        /// collapses back to the row.</summary>
+        private FrameworkElement BuildSeriesParamPicker(Border host)
+        {
+            var select = new SingleSelect { Items = _seriesParams.Select(p => p.Label).ToList() };
+            select.SelectedItem = _seriesParam?.Label;
+            select.SelectionChanged += s =>
+            {
+                var picked = _seriesParams.FirstOrDefault(p => p.Label == s);
+                if (picked == null) return;
+                _seriesParam = picked;
+                if (_seriesValueBox != null) _seriesValueBox.Items = picked.ExistingValues;
+                host.Child = BuildSeriesParamRow(host);
+                OnValidationChanged();
+            };
+            return select;
         }
 
         // ── Step 6 — Sheet naming ─────────────────────────────────────────────
@@ -522,17 +616,22 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
         {
             var outer = new StackPanel();
 
-            var tokens     = NamingTokenRegistry.TokensFor(TokenEntity.Sheet, hasSource: true);
+            // The VIEW vocabulary, not the sheet's: the sheet is being created by this run, so its
+            // own fields have nothing in them yet. The sheet number is the one exception and is
+            // supplied as a Computed token above.
+            var tokens     = NamingTokenRegistry.TokensFor(TokenEntity.View, hasSource: true, ComputedTokens);
             var tokenInput = new TokenInput(tokens, DefaultPattern) { Text = _namingPattern };
 
-            outer.Children.Add(Card(AppStrings.T("testing.placeDependentViews.labels.secNamingPattern"), tokenInput));
-
+            // Preview first. It is the line the user is actually reading — the pattern box is the
+            // control they edit to change it, and it reads better under the result than over it.
             var previewText = BigPreview();
             var previewSub  = Note("");
             var previewBody = new StackPanel();
             previewBody.Children.Add(previewText);
             previewBody.Children.Add(Spaced(previewSub, 6));
-            outer.Children.Add(Card(AppStrings.T("testing.placeDependentViews.labels.secPreview"), previewBody, 12));
+            outer.Children.Add(Card(AppStrings.T("testing.placeDependentViews.labels.secPreview"), previewBody));
+
+            outer.Children.Add(Card(AppStrings.T("testing.placeDependentViews.labels.secNamingPattern"), tokenInput, 12));
 
             Action update = () =>
             {
@@ -576,6 +675,7 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
             ctx.Computed["ParentViewName"] = entry?.Name      ?? AppStrings.T("testing.placeDependentViews.labels.previewSampleName");
             ctx.Computed["SourceViewName"] = ctx.Computed["ParentViewName"];
             ctx.Computed["ViewName"]       = ctx.Computed["ParentViewName"];
+            ctx.Computed["CurrentName"]    = ctx.Computed["ParentViewName"];
             ctx.Computed["ViewType"]       = entry?.TypeLabel ?? "FloorPlan";
             ctx.Computed["Level"]          = entry?.LevelName ?? AppStrings.T("testing.placeDependentViews.labels.previewSampleLevel");
             ctx.Computed["SheetNumber"]    = number;
@@ -599,6 +699,24 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
                 LeftHeader  = AppStrings.T("testing.placeDependentViews.labels.orderColView"),
                 RightHeader = AppStrings.T("testing.placeDependentViews.labels.orderColSheet"),
             };
+
+            // Quick sorts, because arranging thirty views one row at a time is not a workflow.
+            // Two comparers, because they genuinely differ on the names this tool sees: natural
+            // order reads digit runs as numbers, so "Level 2" precedes "Level 10"; alphabetical
+            // compares character by character and puts "Level 10" first.
+            var sortRow = new StackPanel
+            {
+                Orientation = WpfOrientation.Horizontal,
+                Margin      = new Thickness(0, 0, 0, 8),
+            };
+            sortRow.Children.Add(SortButton(
+                AppStrings.T("testing.placeDependentViews.labels.sortNumeric"),
+                NaturalOrderComparer.OrdinalIgnoreCase, list));
+            sortRow.Children.Add(SortButton(
+                AppStrings.T("testing.placeDependentViews.labels.sortAlpha"),
+                StringComparer.OrdinalIgnoreCase, list));
+            outer.Children.Add(sortRow);
+
             list.SetRows(BuildOrderRows());
 
             // The number column belongs to the ROW, not to the view: moving a view moves its name
@@ -615,6 +733,39 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
             outer.Children.Add(list);
             outer.Children.Add(Spaced(Note(AppStrings.T("testing.placeDependentViews.labels.noteOrder")), 10));
             return outer;
+        }
+
+        /// <summary>A quick-sort button that reorders by view name and refreshes the list. The sheet
+        /// numbers do not move — they belong to the row positions — so sorting re-pairs views with
+        /// numbers rather than renumbering anything.</summary>
+        private Button SortButton(string label, IComparer<string> comparer, ReorderList list)
+        {
+            var b = new Button
+            {
+                Content         = label,
+                Padding         = new Thickness(12, 3, 12, 3),
+                Margin          = new Thickness(0, 0, 6, 0),
+                BorderThickness = new Thickness(1),
+                Cursor          = System.Windows.Input.Cursors.Hand,
+                Template        = ControlStyles.BuildFlatButtonTemplate(),
+            };
+            b.SetResourceReference(Button.MinHeightProperty,   "LemoineH_BtnSm");
+            b.SetResourceReference(Button.FontSizeProperty,    "LemoineFS_SM");
+            b.SetResourceReference(Button.FontFamilyProperty,  "LemoineUiFont");
+            b.SetResourceReference(Button.BackgroundProperty,  "LemoineRaised");
+            b.SetResourceReference(Button.BorderBrushProperty, "LemoineBorder");
+            b.SetResourceReference(Button.ForegroundProperty,  "LemoineText");
+            b.Click += (s, e) =>
+            {
+                var sorted = OrderedSelection
+                    .OrderBy(id => EntryFor(id)?.Name ?? "", comparer)
+                    .ToList();
+                _order.Clear();
+                _order.AddRange(sorted);
+                list.SetRows(BuildOrderRows());
+                OnValidationChanged();
+            };
+            return b;
         }
 
         private List<(string Left, string Right)> BuildOrderRows()

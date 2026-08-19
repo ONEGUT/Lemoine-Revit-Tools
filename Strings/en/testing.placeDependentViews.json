@@ -54,12 +54,12 @@
     "secPreview": "Preview",
 
     "secSeries": "Sheet series",
-    "seriesParamNone": "(don't write a series)",
     "phSeriesValue": "e.g. Architectural",
     "paramShared": "· shared",
     "paramProject": "· project",
     "noSeriesParams": "No writable text parameters were found on sheets in this project. Add a shared or project parameter to the Sheets category, then reopen this tool.",
-    "noteSeries": "Written to this parameter on every created sheet (e.g. for Project Browser grouping). The parameter is matched by its shared-parameter GUID, not by name, and the value is read back after writing — a write that does not land is reported.",
+    "seriesChange": "Change",
+    "noteSeries": "Written to this parameter on every created sheet (e.g. for Project Browser grouping). Leave the value blank to skip it. The parameter is matched by its shared-parameter GUID, not by name, and the value is read back after writing — a write that does not land is reported.",
 
     "secNamingPattern": "Sheet name pattern",
     "previewSampleName": "Level 1 - Power",
@@ -69,7 +69,9 @@
     "orderColView": "VIEW",
     "orderColSheet": "SHEET NUMBER & NAME",
     "orderNoViews": "No views selected yet — pick them on step 2 and come back.",
-    "noteOrder": "The number belongs to the row, not to the view: moving a view moves it into a different numbered slot. Click to select, Ctrl+click to add one, Shift+click for a range."
+    "sortNumeric": "Sort 1 → 9",
+    "sortAlpha": "Sort A → Z",
+    "noteOrder": "Quick-sort by view name, then fine-tune with the arrows. The number belongs to the row, not to the view: moving a view moves it into a different numbered slot. Click to select, Ctrl+click to add one, Shift+click for a range."
   },
   "review": {
     "itemMode": "Mode",

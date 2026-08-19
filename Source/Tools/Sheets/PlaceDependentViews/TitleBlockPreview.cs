@@ -22,12 +22,16 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
     /// </summary>
     public sealed class TitleBlockPreview : UserControl
     {
-        // Render box the sheet is fitted into (device-independent px). The sheet keeps its real
-        // aspect ratio inside this, so a portrait title block reads as portrait.
-        private const double MaxRenderW = 300;
-        private const double MaxRenderH = 190;
+        // The sheet fills the width the step actually gives it (measured, not guessed) and is
+        // capped in height so a portrait title block cannot run off the bottom of the step. It
+        // keeps its real aspect ratio inside that box, so a portrait block reads as portrait.
+        private const double MaxRenderH  = 420;
+        private const double FallbackW   = 300;   // used before the first layout pass reports a width
+        private const double MinRenderW  = 120;
 
         private readonly Border    _sheet;
+        private readonly Grid      _centreHost;
+        private double             _availableW;
         private readonly Rectangle _drawArea;
         private readonly TextBlock _sizeLabel;
         private readonly InlineStepper _top, _bottom, _left, _right;
@@ -71,9 +75,24 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
             _sizeLabel.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             _sizeLabel.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
 
-            var centre = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
-            centre.Children.Add(_sheet);
-            centre.Children.Add(_sizeLabel);
+            var centreStack = new StackPanel { HorizontalAlignment = HorizontalAlignment.Stretch };
+            centreStack.Children.Add(_sheet);
+            centreStack.Children.Add(_sizeLabel);
+
+            // The sheet is sized from what this host is actually given rather than from a constant,
+            // so the drawing fills the step instead of sitting small in the middle of it. The host
+            // is a star-sized grid cell and the sheet is centred inside it at a width never greater
+            // than the cell's, so re-sizing the sheet cannot feed back into the cell's own width.
+            _centreHost = new Grid { HorizontalAlignment = HorizontalAlignment.Stretch };
+            _centreHost.Children.Add(centreStack);
+            _centreHost.SizeChanged += (s, e) =>
+            {
+                if (!e.WidthChanged) return;
+                double w = e.NewSize.Width;
+                if (Math.Abs(w - _availableW) < 0.5) return;
+                _availableW = w;
+                Redraw();
+            };
 
             // ── Steppers, one per edge ────────────────────────────────────────
             _top    = EdgeStepper(v => { _mTop    = v; Raise(); });
@@ -91,7 +110,7 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
 
             Add(grid, EdgeCell(AppStrings.T("testing.placeDependentViews.labels.marginTop"),    _top,    HorizontalAlignment.Center), 0, 1);
             Add(grid, EdgeCell(AppStrings.T("testing.placeDependentViews.labels.marginLeft"),   _left,   HorizontalAlignment.Left),   1, 0);
-            Add(grid, centre, 1, 1);
+            Add(grid, _centreHost, 1, 1);
             Add(grid, EdgeCell(AppStrings.T("testing.placeDependentViews.labels.marginRight"),  _right,  HorizontalAlignment.Right),  1, 2);
             Add(grid, EdgeCell(AppStrings.T("testing.placeDependentViews.labels.marginBottom"), _bottom, HorizontalAlignment.Center), 2, 1);
 
@@ -140,7 +159,8 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
             double w = known ? _sheetW : 42.0;      // generic landscape stand-in
             double h = known ? _sheetH : 30.0;
 
-            double scale = Math.Min(MaxRenderW / w, MaxRenderH / h);
+            double availW = _availableW > MinRenderW ? _availableW : FallbackW;
+            double scale  = Math.Min(availW / w, MaxRenderH / h);
             double rw = w * scale, rh = h * scale;
             _sheet.Width  = rw;
             _sheet.Height = rh;

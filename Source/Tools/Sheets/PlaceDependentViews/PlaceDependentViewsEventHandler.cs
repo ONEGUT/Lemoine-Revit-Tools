@@ -255,8 +255,15 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
                             onProgress(Pct(i + 1, total), pass, fail, skip);
                             continue;
                         }
+                        // Target is deliberately NOT the sheet: it does not exist yet, and the
+                        // pattern names it from the VIEW being placed. Every view-side token is
+                        // supplied explicitly so the run resolves exactly what the naming step's
+                        // preview resolved — a token that read the (absent) sheet would preview as
+                        // the view's name and then create a sheet named nothing.
                         var namingCtx = new TokenContext { Doc = doc, Source = parent };
                         namingCtx.Computed["ViewType"]    = parent.ViewType.ToString();
+                        namingCtx.Computed["ViewName"]    = parent.Name;
+                        namingCtx.Computed["CurrentName"] = parent.Name;
                         namingCtx.Computed["SheetNumber"] = sheetNumber;
                         try { namingCtx.Computed["Level"] = parent.GenLevel?.Name ?? ""; }
                         catch (Exception ex) { DiagnosticsLog.Swallowed("PlaceDependentViews: read GenLevel", ex); namingCtx.Computed["Level"] = ""; }
