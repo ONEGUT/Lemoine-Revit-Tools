@@ -4,6 +4,7 @@ using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Framework;
+using LemoineTools.Framework.Zones;
 
 namespace LemoineTools.Tools.Sheets.AlignSheetViews
 {
@@ -2412,17 +2413,11 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
         /// serves both the predicted placement and the verification against the real crop.
         /// </summary>
         private static XYZ TargetBoxCentre(VpEntry src, ViewportRotation rotation, int scale, CropState crop)
-        {
-            XYZ anchor = AnchorWorld(src);
-            XYZ local  = crop.Transform.Inverse.OfPoint(anchor);
-
-            FootprintCentre(crop.Min, crop.Max, crop.AnnoActive,
-                            crop.AnnoTop, crop.AnnoBottom, crop.AnnoLeft, crop.AnnoRight,
-                            out double fx, out double fy);
-            XYZ off = ApplyRotation(new XYZ((local.X - fx) / scale, (local.Y - fy) / scale, 0), rotation);
-
-            return SourceAnchorOnSheet(src) - off;
-        }
+            => SheetAnchorMath.BoxCentreForAnchor(
+                   AnchorWorld(src), SourceAnchorOnSheet(src),
+                   crop.Transform, crop.Min, crop.Max,
+                   crop.AnnoActive, crop.AnnoTop, crop.AnnoBottom, crop.AnnoLeft, crop.AnnoRight,
+                   scale, rotation);
 
         /// <summary>
         /// Sheet coordinate at which the source view's anchor (its model-crop centre) actually sits
@@ -2432,15 +2427,10 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
         /// formula never applied, so source/target scale mismatches were mis-scaled too.
         /// </summary>
         private static XYZ SourceAnchorOnSheet(VpEntry src)
-        {
-            double acx = (src.CropMin.X + src.CropMax.X) / 2.0;
-            double acy = (src.CropMin.Y + src.CropMax.Y) / 2.0;
-            FootprintCentre(src.CropMin, src.CropMax, src.AnnoCropActive,
-                            src.AnnoTop, src.AnnoBottom, src.AnnoLeft, src.AnnoRight,
-                            out double fx, out double fy);
-            XYZ d = ApplyRotation(new XYZ((acx - fx) / src.Scale, (acy - fy) / src.Scale, 0), src.Rotation);
-            return src.BoxCenter + d;
-        }
+            => SheetAnchorMath.SourceAnchorOnSheet(
+                   src.BoxCenter, src.CropMin, src.CropMax,
+                   src.AnnoCropActive, src.AnnoTop, src.AnnoBottom, src.AnnoLeft, src.AnnoRight,
+                   src.Scale, src.Rotation);
 
         /// <summary>
         /// Centre of the viewport's on-sheet footprint, expressed in the view's crop-local coords.
@@ -2451,13 +2441,8 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
         private static void FootprintCentre(XYZ cropMin, XYZ cropMax, bool annoActive,
                                             double annoTop, double annoBottom, double annoLeft, double annoRight,
                                             out double cx, out double cy)
-        {
-            cx = (cropMin.X + cropMax.X) / 2.0;
-            cy = (cropMin.Y + cropMax.Y) / 2.0;
-            if (!annoActive) return;
-            cx += (annoRight - annoLeft)   / 2.0;
-            cy += (annoTop   - annoBottom) / 2.0;
-        }
+            => SheetAnchorMath.FootprintCentre(cropMin, cropMax, annoActive,
+                                               annoTop, annoBottom, annoLeft, annoRight, out cx, out cy);
 
         /// <summary>
         /// Reads a view's annotation-crop state (offsets are model feet). Not every view type
@@ -2497,22 +2482,10 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
         /// PROVISIONAL: the sign convention is not verified against Revit.
         /// </summary>
         private static XYZ ApplyRotation(XYZ v, ViewportRotation r)
-        {
-            switch (r)
-            {
-                case ViewportRotation.Clockwise:        return new XYZ( v.Y, -v.X, 0);
-                case ViewportRotation.Counterclockwise: return new XYZ(-v.Y,  v.X, 0);
-                default:                                return v;
-            }
-        }
+            => SheetAnchorMath.ApplyRotation(v, r);
 
         private static XYZ AnchorWorld(VpEntry e)
-        {
-            double cx = (e.CropMin.X + e.CropMax.X) / 2.0;
-            double cy = (e.CropMin.Y + e.CropMax.Y) / 2.0;
-            double cz = (e.CropMin.Z + e.CropMax.Z) / 2.0;
-            return e.Transform.OfPoint(new XYZ(cx, cy, cz));
-        }
+            => SheetAnchorMath.AnchorWorld(e.Transform, e.CropMin, e.CropMax);
 
         private static string F(double v) => v.ToString("0.####");
 

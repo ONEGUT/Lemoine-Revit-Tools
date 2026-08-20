@@ -41,6 +41,21 @@ namespace LemoineTools
         internal static LemoineTools.Tools.Ceilings.CeilingTags.CeilingTagEventHandler? CeilingTagHandler { get; private set; }
         internal static ExternalEvent?                                                  CeilingTagEvent   { get; private set; }
 
+        // ── Zones ─────────────────────────────────────────────────────────────
+        internal static LemoineTools.Tools.Zones.ZoneDiscoverScanHandler? ZoneDiscoverScanHandler { get; private set; }
+        internal static ExternalEvent?                                    ZoneDiscoverScanEvent   { get; private set; }
+        internal static LemoineTools.Tools.Zones.ZoneDiscoverRunHandler?  ZoneDiscoverRunHandler  { get; private set; }
+        internal static ExternalEvent?                                    ZoneDiscoverRunEvent    { get; private set; }
+        // Opens Zone Discover from inside the Zone Manager (main-thread window setup).
+        internal static LemoineTools.Tools.Zones.ZoneOpenDiscoverEventHandler? ZoneOpenDiscoverHandler { get; private set; }
+        internal static ExternalEvent?                                    ZoneOpenDiscoverEvent   { get; private set; }
+        internal static LemoineTools.Tools.Zones.ZoneViewsRunHandler?     ZoneViewsRunHandler     { get; private set; }
+        internal static ExternalEvent?                                    ZoneViewsRunEvent       { get; private set; }
+        internal static LemoineTools.Tools.Zones.ZoneSheetsRunHandler?    ZoneSheetsRunHandler    { get; private set; }
+        internal static ExternalEvent?                                    ZoneSheetsRunEvent      { get; private set; }
+        internal static LemoineTools.Tools.Zones.ZoneKeyPlanRunHandler?   ZoneKeyPlanRunHandler   { get; private set; }
+        internal static ExternalEvent?                                    ZoneKeyPlanRunEvent     { get; private set; }
+
         // ── Make Ceiling Grids ──────────────────────────────────────────────────
         internal static MakeCeilingGridsPhase1Handler? MakeCeilingGridsPhase1Handler { get; private set; }
         internal static ExternalEvent?                 MakeCeilingGridsPhase1Event   { get; private set; }
@@ -239,6 +254,12 @@ namespace LemoineTools
             Framework.Project.ProjectLibraries.Register(
                 Framework.Project.ProjectLibraryStore.SectionClash,
                 xml => LemoineTools.Tools.Dimensioning.ClashDefinitionsSettings.LoadProjectLibrary(xml));
+            // Zones hold no %AppData% cache at all, so an empty payload here CLEARS the
+            // library rather than meaning "seed me" — that is what stops one project's zones
+            // appearing in the next one opened. See ZoneSettings.
+            Framework.Project.ProjectLibraries.Register(
+                Framework.Project.ProjectLibraryStore.SectionZones,
+                xml => Framework.Zones.ZoneSettings.LoadProjectLibrary(xml));
 
             ProjectHandler   = new CeilingGridEventHandler();
             ProjectEvent     = ExternalEvent.Create(ProjectHandler);
@@ -250,6 +271,20 @@ namespace LemoineTools
             // ── Tag Ceilings ──────────────────────────────────────────────────
             CeilingTagHandler = new LemoineTools.Tools.Ceilings.CeilingTags.CeilingTagEventHandler();
             CeilingTagEvent   = ExternalEvent.Create(CeilingTagHandler);
+
+            // ── Zone Discover ─────────────────────────────────────────────────
+            ZoneDiscoverScanHandler = new LemoineTools.Tools.Zones.ZoneDiscoverScanHandler();
+            ZoneDiscoverScanEvent   = ExternalEvent.Create(ZoneDiscoverScanHandler);
+            ZoneDiscoverRunHandler  = new LemoineTools.Tools.Zones.ZoneDiscoverRunHandler();
+            ZoneDiscoverRunEvent    = ExternalEvent.Create(ZoneDiscoverRunHandler);
+            ZoneOpenDiscoverHandler = new LemoineTools.Tools.Zones.ZoneOpenDiscoverEventHandler();
+            ZoneOpenDiscoverEvent   = ExternalEvent.Create(ZoneOpenDiscoverHandler);
+            ZoneViewsRunHandler     = new LemoineTools.Tools.Zones.ZoneViewsRunHandler();
+            ZoneViewsRunEvent       = ExternalEvent.Create(ZoneViewsRunHandler);
+            ZoneSheetsRunHandler    = new LemoineTools.Tools.Zones.ZoneSheetsRunHandler();
+            ZoneSheetsRunEvent      = ExternalEvent.Create(ZoneSheetsRunHandler);
+            ZoneKeyPlanRunHandler   = new LemoineTools.Tools.Zones.ZoneKeyPlanRunHandler();
+            ZoneKeyPlanRunEvent     = ExternalEvent.Create(ZoneKeyPlanRunHandler);
 
             // ── Make Ceiling Grids ────────────────────────────────────────────
             MakeCeilingGridsPhase1Handler = new MakeCeilingGridsPhase1Handler();
@@ -570,6 +605,56 @@ namespace LemoineTools
             // Pulldown: Duplicate Views (Bulk Duplicate | By Template | Dependent)
             // Large:    Explode View by Trade
             var viewsPanel = application.CreateRibbonPanel("Lemoine Tools", L.T("ribbon.panels.views"));
+
+            // Zones come first: scope boxes and the views built from them both hang off a zone,
+            // so the library is authored before anything that consumes it.
+            var zonesPulldown = new PulldownButtonData("LT_Zones", L.T("ribbon.buttons.zones.label"))
+            {
+                ToolTip    = L.T("ribbon.buttons.zones.tip"),
+                LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE809)),  // MapPin
+                Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE809)),
+            };
+            var zonesBtn = viewsPanel.AddItem(zonesPulldown) as PulldownButton;
+
+            zonesBtn?.AddPushButton(new PushButtonData(
+                "LT_ZoneManager", L.T("ribbon.buttons.zoneManager.label"), dll,
+                "LemoineTools.Commands.ZoneManagerCommand")
+            {
+                ToolTip    = L.T("ribbon.buttons.zoneManager.tip"),
+                LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE809)),
+                Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE809)),
+            });
+
+            // Discover Zones deliberately has NO ribbon button — it is opened from the Zone
+            // Manager's Discover button, the same way Discover Rules is opened from inside
+            // Auto Filters. ZoneDiscoverCommand stays registered as the launcher target.
+
+            zonesBtn?.AddPushButton(new PushButtonData(
+                "LT_ZoneViews", L.T("ribbon.buttons.zoneViews.label"), dll,
+                "LemoineTools.Commands.ZoneViewsCommand")
+            {
+                ToolTip    = L.T("ribbon.buttons.zoneViews.tip"),
+                LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE8A9)),  // ViewAll
+                Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE8A9)),
+            });
+
+            zonesBtn?.AddPushButton(new PushButtonData(
+                "LT_ZoneSheets", L.T("ribbon.buttons.zoneSheets.label"), dll,
+                "LemoineTools.Commands.ZoneSheetsCommand")
+            {
+                ToolTip    = L.T("ribbon.buttons.zoneSheets.tip"),
+                LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE7C3)),  // Page
+                Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE7C3)),
+            });
+
+            zonesBtn?.AddPushButton(new PushButtonData(
+                "LT_ZoneKeyPlan", L.T("ribbon.buttons.zoneKeyPlan.label"), dll,
+                "LemoineTools.Commands.ZoneKeyPlanCommand")
+            {
+                ToolTip    = L.T("ribbon.buttons.zoneKeyPlan.tip"),
+                LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE81D)),  // Map
+                Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE81D)),
+            });
 
             // Scope Boxes pulldown — Creator now; the Manager joins here when it lands.
             var scopeBoxPulldown = new PulldownButtonData("LT_ScopeBoxes", L.T("ribbon.buttons.scopeBoxes.label"))

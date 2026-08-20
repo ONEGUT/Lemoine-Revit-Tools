@@ -1,0 +1,428 @@
+{
+  // Project Zones — the per-project library of buildings, levels, areas, view
+  // view definitions, sheet sets and exact sheet placements.
+  //
+  // JSONC: // comments are stripped before parsing. Keys are dot-flattened, so
+  // "picker.summary" here is AppStrings.T("zones.picker.summary").
+  "picker": {
+    // ZonePicker — the reusable Building/Level/Area tree control.
+    "searchHint": "Search zones…",
+    "clear": "Clear",
+    "clearAll": "Clear all",
+    "selectAll": "Select all",
+    // {0} = selected cell count, {1} = total cells listed
+    "summary": "{0} of {1} selected",
+    // {0} = number of matching cells
+    "matchCount": "{0} matches",
+    // Shown when the library has no buildings/levels/areas at all.
+    "emptyLibrary": "No zones defined yet. Open the Zone Manager to create them.",
+    // {0} = the search query
+    "noMatches": "Nothing matches “{0}”.",
+    // Levels and areas not assigned to any building.
+    "unassigned": "Unassigned",
+    // A cell whose extents have never been resolved cannot be placed.
+    "noExtents": "no extents"
+  },
+
+  "manager": {
+    // Zone Manager window chrome.
+    "title": "Zone Manager",
+    "close": "Close",
+    "reload": "Reload from model",
+    // {0} = document title
+    "subtitle": "{0}",
+
+    // Tree node type labels, shown as the row's meta or the detail card heading.
+    "node": {
+      "building": "Building",
+      "level": "Level",
+      "sheets": "Sheets"
+    },
+
+    "actions": {
+      "addBuilding": "Building",
+      "addLevel": "Level",
+      "addArea": "Area",
+      "addView": "View",
+      "addSheetSet": "Sheet size",
+      "addGroup": "Group",
+      "deleteGroup": "Delete group",
+      "duplicate": "Duplicate",
+      "delete": "Delete",
+      "discover": "Discover",
+      "resolvePlacements": "Re-solve placements",
+      "checkScopeBoxes": "Check scope boxes",
+      "readoptExtents": "Re-adopt extents"
+    },
+
+    // Names given to a freshly created record, before the user renames it.
+    "defaults": {
+      "building": "Building",
+      "level": "Level",
+      "area": "Area",
+      "view": "Floor Plan",
+      "sheetSet": "Sheet size"
+    },
+
+    "pickSomething": "Pick something on the left to edit it.",
+    "gone": "That record no longer exists.",
+    "noMatches": "Nothing matches that search.",
+
+    "building": {
+      "levels": "Levels"
+    },
+
+    "level": {
+      "hostLevel": "Host level",
+      "bandBase": "Band base (ft)",
+      "bandTop": "Band top (ft)",
+      "views": "Views",
+      "noViews": "No views yet. Add one — every area on this level inherits it.",
+      "viewsNote": "Defined here, inherited by every area on this level. An area can override any field."
+    },
+
+    "view": {
+      "inherited": "inherited",
+      // {0} = number of overridden fields
+      "overriddenN": "overridden · {0} field(s)",
+      "noneOnLevel": "This level defines no views yet.",
+      "overrideSection": "Overrides for this area",
+      "overrideNote": "Tick a field to override it for this area only. Unticked fields keep tracking the level, so changing the level later still reaches this area.",
+      "overrideTip": "Override this field for this area",
+      "resetSection": "Reset",
+      "resetAll": "Reset every field to the level"
+    },
+
+    "status": {
+      "reloaded": "Reloaded after Discover.",
+      "openingDiscover": "Opening Discover Zones…",
+      "discoverUnavailable": "Discover is unavailable — the event handler is not registered.",
+      "saveFailed": "The zone library could not be saved; Discover was not opened."
+    },
+
+    // Footer status. {0} = zones, {1} = sheet sizes, {2} = placements
+    "statusLine": "{0} zones · {1} sheet sizes · {2} placements · saved in the model",
+
+    "area": {
+      "section": "Area",
+      "name": "Name",
+      "code": "Code",
+      "definition": "Defined by",
+      "scopeBox": "Scope box",
+      "extents": "Extents",
+      "anchor": "Anchor",
+      "anchorMode": "Anchor mode",
+      "appliesTo": "Appears on levels",
+      // {0} width ft, {1} depth ft
+      "extentsValue": "{0}' × {1}'",
+      "extentsUnresolved": "not resolved yet",
+      // {0} = scope box name
+      "boxMissing": "Scope box '{0}' is not in this document. The area is kept, but its extents cannot be refreshed until it is re-pointed.",
+      // Explains why the anchor mode is offered separately from the definition.
+      "anchorNote": "A grid intersection does not move when extents change, so placements built from it stay put. The extents centre moves with the box."
+    },
+
+    "viewDef": {
+      "section": "View",
+      "name": "Name",
+      "kind": "View type",
+      "familyType": "View family type",
+      "template": "View template",
+      "scaleMode": "Scale",
+      "scale": "Fixed scale",
+      "viewRange": "View range",
+      "namePattern": "View name",
+      "duplicateMode": "Second sheet size",
+      "top": "Top",
+      "cut": "Cut plane",
+      "bottom": "Bottom",
+      "depth": "View depth",
+      // Why a distinguishing token matters across sheet sizes.
+      "patternNote": "Include {SheetSize} when generating for more than one sheet size — a view can sit on only one sheet, so each size needs its own view and its own name.",
+      // {0} = level name
+      "levelNote": "Defined on {0}. Every area on that level inherits this view; an area can override any field."
+    },
+
+    "layout": {
+      "section": "Sheet",
+      "name": "Name",
+      "titleBlock": "Title block",
+      "margins": "Margins (L/R/T/B)",
+      "drawingArea": "Drawing area",
+      "composition": "Arrangement",
+      "gap": "Gap",
+      "groups": "Groups — one sheet each",
+      "placements": "Placements",
+      "continuous": "Continuous",
+      "packed": "Packed",
+      // {0} = measured or estimated
+      "drawingAreaMeasured": "{0}\" × {1}\" — measured from sheet {2}",
+      "drawingAreaDeclared": "{0}\" × {1}\" — from the title block's declared size",
+      "drawingAreaUnknown": "could not be determined",
+      "compositionNote": "Continuous holds every view in the group at one shared scale and its true world offset — so a matchline meets exactly and views cannot overlap. Packed inserts a paper gap instead.",
+      // {0} = scale label, {1} = slack in inches
+      "groupFits": "fits · {0}\" slack",
+      "groupOverflows": "does not fit",
+      "placementSolved": "solved",
+      // {0} = sheet number
+      "placementCaptured": "captured · {0}",
+      "placementNone": "not placed yet",
+
+      // ── Group editor ──
+      "suffix": "Sheet suffix",
+      "scale": "Scale",
+      "scaleAuto": "Auto (fit)",
+      "areas": "Areas",
+      "addArea": "+ Add area",
+      "noGroups": "No groups yet. Add one, then put the areas that share a sheet into it.",
+      "cannotSolve": "cannot solve",
+      "missingArea": "(area deleted)",
+      "noAreas": "(no areas)",
+      "noSets": "No sheet sizes yet. Add one, then group the areas that share a sheet.",
+      // {0} = count, {1} = comma-separated names
+      "unassigned": "{0} area(s) are not on any sheet at this size: {1}. They will not be generated for this layout until they are added to a group.",
+      // {0} = area A, {1} = area B, {2} = overlap width in, {3} = overlap height in
+      "overlapWarn": "'{0}' and '{1}' overlap by {2}\" × {3}\" on the sheet. On Continuous composition that means the areas overlap in the model.",
+      // {0} = short X in, {1} = short Y in, {2} = scale label
+      "overflowWarn": "Short by {0}\" × {1}\" at {2}. Set the scale to Auto, or move an area to its own group.",
+      "matchlineOk": "Matchline exact — every area in this group shares one scale and sits at its true world offset, so their edges meet and nothing overlaps.",
+      // {0} world X, {1} world Y, {2} sheet X in, {3} sheet Y in
+      "placementValue": "world {0}, {1} → sheet {2}\", {3}\""
+    }
+  },
+
+  "discover": {
+    // Zone Discover — scan a linked model and propose a zone structure.
+    "title": "Discover Zones",
+    "runLabel": "Apply to the zone library →",
+
+    "steps": {
+      "S1": "Source model",
+      "S2": "Discover",
+      "S3": "Results",
+      "S4": "Confirm & commit"
+    },
+
+    "sourceHint": "Levels and rooms are read from these documents. The architectural link is the usual source.",
+    "hostSuffix": "(host)",
+    "noSources": "No documents are available to read.",
+
+    "opt": {
+      "levels": "Levels",
+      "buildings": "Buildings (from room clusters)",
+      "areasFromBoxes": "Areas from existing scope boxes",
+      "areasFromRooms": "Areas from room clusters"
+    },
+    "optHint": "Scope boxes are the usual source for areas. Room clusters are the fallback when none have been drawn yet.",
+
+    "scan": "Scan the model",
+    "scanning": "Scanning…",
+    "notScanned": "Not scanned yet — run the scan on the Discover step.",
+    "nothingFound": "The scan found nothing to propose.",
+    // Shown on Results when the scan itself failed. {0} = the reason.
+    "scanFailed": "The scan failed: {0}",
+    "scanFailedUnknown": "the scan reported no reason",
+    "resultsHint": "Untick anything you do not want. Nothing is written until the last step.",
+    "keepAll": "keep all",
+    // Every discovered level is seeded with one view, so the areas under it produce something.
+    "defaultViewName": "Floor Plan",
+    "nothingAccepted": "Nothing is ticked, so no zones were changed.",
+    "noHandler": "The Discover run handler is unavailable.",
+
+    "group": {
+      "buildings": "Buildings",
+      "levels": "Levels",
+      "areas": "Areas"
+    },
+
+    "action": {
+      "add": "add",
+      "update": "update",
+      "unchanged": "already present"
+    },
+
+    // Stated on the review card because it is the thing to fear from a scan.
+    "reviewNote": "Discover only adds and updates. It never deletes a zone, so anything authored by hand is safe.",
+    // Banner shown when accepted proposals would re-adopt extents. {0} = count
+    "updateWarning": "{0} accepted proposal(s) will re-adopt an existing area's extents. If that area already has sheet placements, its views will move — re-solve placements afterwards.",
+
+    "summary": {
+      // {0} = number of source documents
+      "sources": "{0} source document(s)",
+      // {0} = accepted, {1} = total proposals
+      "review": "{0} of {1} proposals accepted"
+    }
+  },
+
+  "views": {
+    // Create Views from Zones — the first consumer of the zone library.
+    "title": "Create Views from Zones",
+    "runLabel": "Create the views →",
+
+    "steps": {
+      "S1": "Zones",
+      "S2": "Views",
+      "S3": "Review"
+    },
+
+    "noLibrary": "This project has no zones yet. Use Discover Zones or the Zone Manager first.",
+    "noViewsOnLevels": "The selected levels define no views. Add one to a level in the Zone Manager — every area on that level then inherits it.",
+    "noHandler": "The view run handler is unavailable.",
+
+    "layoutHint": "Optional — pick a sheet size to reuse the scale already solved into its placements. Without one, each view's own scale is used.",
+    "noLayout": "(no sheet size)",
+
+    // {0} = number of views the run intends to create
+    "plannedCount": "{0} view(s) will be created.",
+    // {0} = comma-separated view names
+    "patternWarn": "These views have no {{SheetSize}} token in their name pattern: {0}. That is fine for one sheet size, but generating a second would try to reuse the same view names, and a view name must be unique.",
+    // {0} = comma-separated area names
+    "noExtentsWarn": "These areas have no resolved extents and their views will be uncropped: {0}.",
+
+    "reviewNote": "Views are skipped, never overwritten, when one of that name already exists.",
+
+    "summary": {
+      // {0} = cells selected
+      "zones": "{0} zone(s) selected",
+      // {0} = views selected
+      "views": "{0} view(s) selected",
+      // {0} = planned view count
+      "planned": "{0} view(s) planned"
+    }
+  },
+
+  "sheets": {
+    // Build Sheets from Zones — the end of the chain.
+    "title": "Build Sheets from Zones",
+    "runLabel": "Build the sheets →",
+
+    "steps": {
+      "S1": "Levels",
+      "S2": "Sheet sizes",
+      "S3": "Views",
+      "S4": "Review"
+    },
+
+    "noLevels": "This project has no zone levels. Use Discover Zones or the Zone Manager first.",
+    "noLayouts": "No sheet sizes are defined. Add a layout in the Zone Manager.",
+    "noViewsOnLevels": "The selected levels define no views. Add one to a level in the Zone Manager.",
+    "noHandler": "The sheet run handler is unavailable.",
+
+    // {0} = number of sheets the run intends to create
+    "plannedCount": "{0} sheet(s) will be created.",
+    // {0} = comma-separated layout names
+    "noGroupsWarn": "These sheet sizes have no groups, so they will produce no sheets: {0}.",
+    // {0} = count of area/sheet-size pairs with no stored placement
+    "noPlacementWarn": "{0} area(s) have no stored placement for their sheet size. Their views will be left wherever Revit centres them rather than at the recorded position — solve placements in the Zone Manager first.",
+
+    "reviewNote": "Views are located by name and never created here. Run Create Views from Zones first, or sheets will come out empty.",
+
+    "summary": {
+      "levels":  "{0} level(s)",
+      "layouts": "{0} sheet size(s)",
+      "views": "{0} view(s)",
+      "planned": "{0} sheet(s) planned"
+    }
+  },
+
+  "keyplan": {
+    // Key Plans from Zones — one locator legend per area.
+    "title": "Key Plans from Zones",
+    "runLabel": "Create the key plans →",
+
+    "steps": {
+      "S1": "Source & scale",
+      "S2": "Graphics",
+      "S3": "Areas",
+      "S4": "Review"
+    },
+
+    "seedHint": "Pick a legend to duplicate. Revit has no API to create a legend, so each key plan starts as a copy of one that already exists — the same reason the Scope Box Creator needs a seed box.",
+    "noLegends": "This project has no legend views. Create one legend by hand first, then run this.",
+    "noSeedPicked": "No seed legend picked",
+    "sourceHint": "Which model supplies the slab edges. The architectural link is the usual source.",
+    "hostDoc": "(host document)",
+    "levelHint": "Which level's slab becomes the outline.",
+    "noLevels": "This project has no zone levels yet.",
+    "noAreas": "This project has no zone areas yet.",
+    "noHandler": "The key plan run handler is unavailable.",
+
+    // ── Scale ──
+    "scaleHint": "The scale every key plan legend is created at — this is what decides whether it fits the corner of the sheet you are putting it on.",
+
+    // ── Fill graphics: ONE override for the whole run ──
+    "fillHint": "The highlight's pattern and colour. One setting for every key plan this run creates — it is written onto a filled region type this tool owns, so no existing project type is restyled.",
+    "fillPattern": "Fill pattern",
+    "fillColour": "Fill colour",
+    "fillSolid": "Solid fill",
+    "noPatterns": "This project has no drafting fill patterns, so only the solid fill is available.",
+
+    // ── Trimming ──
+    "trimHint": "What the highlight is cut back to. Trimming can split it into several pieces — an area spanning a courtyard comes back as two — and each piece is drawn as its own filled region.",
+    "trimToOutline": "Trim the highlight to the building outline",
+    "useMatchlines": "Read matchlines from a model",
+    "matchlineSource": "Matchlines from",
+    "showMatchlines": "Draw the matchlines on the key plan",
+    "trimToMatchlines": "Trim the highlight at the matchlines",
+    "matchlineLimit": "Matchlines are matched to the level by name and read from the plan views they were drawn in. A straight or L-shaped matchline trims exactly; an L whose corner faces away from the area is cut back further than it should be.",
+
+    // {0} = number of key plans
+    "plannedCount": "{0} key plan(s) will be created.",
+    // {0} = comma-separated area names
+    "noExtentsWarn": "These areas have no resolved extents, so nothing will be highlighted on their key plans: {0}.",
+
+    "reviewNote": "Each key plan is a legend, so one per area can be placed on every sheet that documents that area.",
+
+    "summary": {
+      // {0} = seed legend name, {1} = level name, {2} = scale label
+      "source": "from '{0}', outline on {1}, at {2}",
+      // {0} = area count
+      "areas": "{0} area(s)",
+      "trimOutline": "trimmed to the building",
+      "matchlines": "matchlines"
+    }
+  },
+
+  "log": {
+    // Run-log lines. Every one is user-facing output, so none are hardcoded.
+    // {0} = area name, {1} = box name
+    "boxMissing": "Area '{0}': scope box '{1}' is not in this document — the area is left in place but cannot be used until it is re-pointed.",
+    // {0} = area, {1} = box, {2} = drift ft
+    "boxResized": "Area '{0}': scope box '{1}' has been resized since it was adopted (largest edge difference {2}').",
+    "boxResizedPlaced": " Sheet placements already exist for this area, so re-adopting will move where its views land.",
+    // {0} matched, {1} resized, {2} missing, {3} total
+    "boxSummary": "Scope box check: {0} unchanged, {1} resized, {2} missing across {3} area(s).",
+    "noBoxes": "No scope boxes found in this document.",
+    "noTitleBlocks": "No title block types found in this document.",
+    // {0} = title block name
+    "titleBlockNoSize": "Title block '{0}' does not declare a sheet size — placements for it must be measured from a real sheet.",
+    // {0} = layout name
+    "noDrawingArea": "Layout '{0}': could not determine a drawing area. Placements for it cannot be solved.",
+    "areaEstimated": "Layout '{0}': drawing area estimated from the title block's declared size — no placed sheet was available to measure.",
+    // {0} = layout, {1} = group, {2} = scale, {3} = short X in, {4} = short Y in
+    "groupOverflow": "Layout '{0}', group '{1}': the areas do not fit the drawing area even at {2} (short by {3}\" × {4}\").",
+    // {0} = layout, {1} = group, {2} = area A, {3} = area B, {4} = w in, {5} = h in
+    "groupOverlap": "Layout '{0}', group '{1}': '{2}' and '{3}' overlap by {4}\" × {5}\" on the sheet.",
+    // {0} = area name
+    "noExtents": "Area '{0}': no extents resolved yet — it cannot be placed. Adopt or solve its extents first.",
+    // {0} = area, {1} = sheet number
+    "keptCaptured": "Area '{0}': keeping the placement captured from sheet {1} rather than replacing it with a solved one.",
+    // {0} solved, {1} kept, {2} skipped, {3} overflowing
+    "solveSummary": "Layout '{0}': {1} placement(s) solved, {2} captured one(s) kept, {3} skipped, {4} group(s) overflowing.",
+    // {0} = area, {1} = sheet, {2} = scale label
+    "captured": "Captured the placement of '{0}' from sheet {1} at {2}.",
+    // {0} = view name, {1} = plane label, {2} = reason
+    "viewRangeBadLevel": "'{0}': {1} references a level that does not exist here ({2}). The view range was NOT changed.",
+    "viewRangeInvalid": "'{0}': the view's view range is not valid ({1}). The view range was NOT changed.",
+    "viewRangeRefused": "'{0}': Revit refused the view range.",
+    // {0} = view name
+    "viewRangeUnvalidated": "'{0}': could not validate the view range; applying it anyway.",
+    // {0} = view name, {1} = view scale label, {2} = placement scale label
+    "scaleMismatch": "'{0}' is at {1} but its placement was authored at {2}. It will register on the stored anchor, but the drawing will not be the size the placement assumed.",
+    // {0} = layout, {1..4} = sizes
+    "titleBlockChanged": "Layout '{0}': the title block is now {1}\" × {2}\" but placements were stored against {3}\" × {4}\". Stored placements will not land where they did before.",
+    // Name-collision pre-check. {0} = the duplicated name, {1} = how many want it.
+    "nameCollision": "{1} views would be named '{0}'. A view name must be unique in Revit — add {{SheetSize}} to the pattern so each sheet size gets its own name.",
+    "nameCollisionAbort": "Nothing was created: {0} name collision(s) would have failed mid-run."
+  }
+}

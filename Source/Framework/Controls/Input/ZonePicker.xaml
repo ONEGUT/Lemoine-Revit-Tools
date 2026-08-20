@@ -1,0 +1,56 @@
+<UserControl
+    x:Class="LemoineTools.Framework.Controls.ZonePicker"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <Border x:Name="_outer" BorderThickness="1" CornerRadius="{DynamicResource LemoineRadius_MD}" MinHeight="150">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <!-- Search row: full width, inside the border, above the tree -->
+            <Grid Grid.Row="0" Margin="8,8,8,6">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Grid Grid.Column="0">
+                    <TextBox x:Name="_searchBox" VerticalContentAlignment="Center" />
+                    <TextBlock x:Name="_searchHint"
+                               Margin="9,0,0,0"
+                               VerticalAlignment="Center"
+                               FontStyle="Italic"
+                               IsHitTestVisible="False" />
+                </Grid>
+                <StackPanel x:Name="_searchActions"
+                            Grid.Column="1"
+                            Orientation="Horizontal"
+                            VerticalAlignment="Center"
+                            Margin="6,0,0,0" />
+            </Grid>
+
+            <!-- Summary strip: how many cells are selected, and a Select-all / Clear pair -->
+            <Border x:Name="_summaryBar" Grid.Row="1" BorderThickness="0,1,0,1" Padding="8,5">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="_summaryText" Grid.Column="0" VerticalAlignment="Center" />
+                    <StackPanel x:Name="_summaryActions" Grid.Column="1" Orientation="Horizontal" />
+                </Grid>
+            </Border>
+
+            <!-- Tree: Building > Level > Area, or Building > Area > Level -->
+            <ScrollViewer x:Name="_treeScroll" Grid.Row="2"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled"
+                          Padding="6,6,6,4">
+                <StackPanel x:Name="_treeStack" />
+            </ScrollViewer>
+        </Grid>
+    </Border>
+</UserControl>
