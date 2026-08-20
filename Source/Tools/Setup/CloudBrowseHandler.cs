@@ -141,6 +141,13 @@ namespace LemoineTools.Tools.Setup
                     return null;
                 }
 
+                try { item.IsWorkshared = doc.IsWorkshared; }
+                catch (Exception ex)
+                {
+                    // Leave it null — unknown, so the row shows no workshared badge at all.
+                    DiagnosticsLog.Swallowed("CloudBrowse: read IsWorkshared", ex);
+                }
+
                 item.Detail = AppStrings.T("cloudPicker.detail.open");
                 return item;
             }

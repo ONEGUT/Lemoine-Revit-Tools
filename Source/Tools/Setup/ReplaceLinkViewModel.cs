@@ -361,7 +361,7 @@ namespace LemoineTools.Tools.Setup
 
             if (row.IsCloudTarget && row.CloudModel != null)
             {
-                content.Children.Add(Mono(row.CloudModel.FolderPath));
+                content.Children.Add(Mono(row.CloudModel.Detail));
 
                 var meta = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0) };
                 meta.Children.Add(Badge(AppStrings.T("replaceLink.labels.badgeCloud"), "LemoineAccent"));
@@ -373,7 +373,9 @@ namespace LemoineTools.Tools.Setup
                 ver.Margin = new Thickness(6, 0, 0, 0);
                 meta.Children.Add(ver);
 
-                if (row.CloudModel.IsWorkshared)
+                // Tri-state: only badge it when the flag was actually read. Unknown shows
+                // nothing rather than implying "not workshared".
+                if (row.CloudModel.IsWorkshared == true)
                 {
                     var ws = Badge(AppStrings.T("replaceLink.labels.verWorkshared"), "LemoineTextDim");
                     ws.Margin = new Thickness(6, 0, 0, 0);

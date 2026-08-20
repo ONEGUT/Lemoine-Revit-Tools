@@ -55,6 +55,12 @@ namespace LemoineTools.Tools.Setup
         /// <summary>Free-text note about where this entry came from, shown under the row.</summary>
         public string Detail { get; set; } = "";
 
+        /// <summary>Whether the model is workshared — <c>null</c> when it could not be read.
+        /// Only an OPEN document exposes this publicly (<c>Document.IsWorkshared</c>); for a
+        /// link or a typed GUID it is genuinely unknown, and a badge guessed from "cloud models
+        /// are usually workshared" would read as fact. Null means: show nothing.</summary>
+        public bool? IsWorkshared { get; set; }
+
         public bool IsUsable => HasGuids || SourceTypeId != 0;
     }
 
