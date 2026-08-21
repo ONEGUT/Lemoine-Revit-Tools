@@ -38,13 +38,16 @@ Today a level is a *number* — an elevation that cuts space horizontally.
 The request makes a level a *bucket* — a named row that owns a set of appended
 models, chosen by hand from a dropdown. Everything elevation-driven goes away:
 
-| Removed | Reason |
+| Old behaviour | Becomes |
 |---|---|
-| `DiscoverLevels` elevation inference | levels no longer carry an elevation |
-| `BuildBands` / `FloorBand` | no Z bands — a level's contents are its assigned models |
-| `HideSetFor` + `ItemZ` + `GatherItemZ` | hide is decided by model membership, not geometry |
-| `StraddleRule` (keep-overlapping vs by-centroid) | nothing straddles a model boundary |
-| `UnitSuffix` / `FmtZ` elevation display | no elevations shown |
+| `BuildBands` / `FloorBand` (N levels → N−1 derived bands) | **removed** — each level row carries its own explicit `Bottom`/`Top`, no derivation |
+| `DiscoverLevels` elevation inference | **kept** — pre-fills each row's band on "Rescan levels" |
+| `GatherItemZ` / `ItemZ` / `HideSetFor` | **kept** — now an *optional per-level trim* layered on top of the model assignment |
+| `StraddleRule` | **kept** — decides what happens to an item crossing the band edge |
+| `UnitSuffix` / `FmtZ` | **kept** — elevation display on the row |
+
+The primary hide is still model membership; the Z trim is a second, optional pass
+*within* the assigned models.
 
 The assignment is **many-to-many**: one model can be assigned to several levels
 (a shared core/shell model belongs to every floor), and one level can hold
@@ -221,6 +224,71 @@ assigned to it"). Say if you'd rather keep the old name.
 me if you were seeing something specific — e.g. the output folder defaulting to
 an ACC Desktop-synced folder, or Navisworks' own Publish dialog appearing — and
 I'll target that instead of treating the item as already satisfied.
+
+## Cutting geometry at levels — what Navisworks can and cannot do
+
+Confirmed with the user after the first mockup. **Navisworks cannot cut geometry.**
+
+1. **No cut/boolean/split API exists.** Navisworks is a review aggregator; scene
+   geometry is baked, triangulated and read-only. `Autodesk.Navisworks.Api`
+   exposes `ModelItem.BoundingBox()` and visibility, but nothing that modifies a
+   solid or authors new geometry into the scene.
+2. **Section planes do not survive the export.** Clipping planes give a visual
+   cut, but Autodesk documents that `NwdExportOptions.ExcludeHiddenItems` does
+   **not** drop section-clipped items — they stay in the tree, whole, in the
+   written NWD. This is why the original Floor Splitter plan reads
+   "**Hide, don't clip**". A clip yields a picture, never a smaller file.
+
+### What is possible — element-granular Z trim (CHOSEN)
+
+`SetHidden` accepts any `ModelItem`, not just a model root, so items *inside* an
+assigned model can be filtered by Z extent:
+
+- A riser modelled as **per-storey segments** (most MEP — pipes break at
+  fittings) distributes across levels correctly.
+- A column or shaft modelled as **one full-height solid** is a single item: it
+  can be kept or dropped, never halved. `StraddleRule` decides which.
+
+So the trim is honest about its granularity: it is element-level, not
+geometry-level. It is **optional per level**, so a shared site/context model can
+still be included whole.
+
+### Clipped viewpoint per level (CHOSEN)
+
+Each level's NWD also gets a saved viewpoint carrying clipping planes at the
+level's band, so the file *opens* looking cut. Stated plainly in the UI and the
+run log: the geometry is still in the file and a viewer can switch the clip off —
+it is presentation, not separation. ⚠ needs a Windows check that clip state
+persists into the exported NWD and is restored by the saved viewpoint.
+
+### For a true geometric cut — do it upstream in Revit
+
+`Split Elements by Levels` (Modify panel, `SplitByLevelEventHandler` →
+`SplitElementsShared.SplitByLevel`) already splits walls, columns and MEP curves
+at selected level elevations, because Revit *can* modify geometry. Followed by
+Bulk Export's NWC output, that produces genuinely cut per-level models. It only
+covers Revit-authored content — IFC/DWG/point clouds in the federation cannot be
+cut by anything in this toolchain.
+
+## Level row — revised shape
+
+The row gains an expand caret (the house idiom for per-parent detail) so the
+optional elevation work never clutters the scannable list:
+
+```
+[caret] [name]  [models dropdown]  [remove]
+   └ expanded:
+     Elevation band   Bottom [ 12.00 ] ft   Top [ 24.00 ] ft
+     [ ] Trim assigned models to this band
+```
+
+`Rescan levels` pre-fills name *and* band (band = this level's elevation to the
+next level's; the topmost row is left open-ended). Bands are explicit per row —
+the old "N levels → N−1 floors" derivation is gone, since it made the last row's
+meaning ambiguous.
+
+Step 2 gains the straddle rule (shown only when at least one row has trim on) and
+a "Save a clipped viewpoint per level" toggle.
 
 ## Base branch — CONFIRMED
 
