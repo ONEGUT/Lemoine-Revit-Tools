@@ -19,8 +19,53 @@ namespace LemoineNavisworks
         private static readonly Dictionary<Type, StepFlowWindow> _open =
             new Dictionary<Type, StepFlowWindow>();
 
+        private static bool _bootstrapped;
+
+        /// <summary>
+        /// Host startup that Revit does in App.OnStartup and this add-in has no equivalent for.
+        /// Runs once, before the first window is built.
+        ///
+        /// StepFlowWindow applies the theme and control styles itself, so only two things are
+        /// missing here:
+        ///   • AppStrings — without the load, every AppStrings.T() falls back to the key literal
+        ///     and the UI renders as "navis.levelModels.title" instead of "Level Models".
+        ///   • ToolReloadBridge — Revit installs a marshaller that hops the rebuild onto its main
+        ///     thread via an ExternalEvent. Navisworks plugin code already runs on the main STA
+        ///     thread with the API callable, so the factory is invoked directly.
+        /// </summary>
+        private static void EnsureBootstrapped()
+        {
+            if (_bootstrapped) return;
+            _bootstrapped = true;
+
+            try { AppStrings.Load(AppSettings.Instance.Language); }
+            catch (Exception ex)
+            {
+                // Not fatal: lookups fall back to English and then to the key literal, which is
+                // visible in the UI — but it must be traceable rather than a mystery.
+                DiagnosticsLog.Error("NavisToolWindow: load AppStrings", ex);
+            }
+
+            try { LegacyFileCleanup.RunOnce(); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("NavisToolWindow: legacy file cleanup", ex); }
+
+            ToolReloadBridge.Marshal = (factory, onBuilt) =>
+            {
+                IStepFlowTool? rebuilt = null;
+                try { rebuilt = factory(); }
+                catch (Exception ex)
+                {
+                    // The bridge's contract: the host logs WHY before handing back null, so the
+                    // window can report "reload failed" without swallowing the cause.
+                    DiagnosticsLog.Error("NavisToolWindow: rebuild tool for reload", ex);
+                }
+                onBuilt(rebuilt);
+            };
+        }
+
         public static void Open(IStepFlowTool tool)
         {
+            EnsureBootstrapped();
             var key = tool.GetType();
 
             if (_open.TryGetValue(key, out var existing) && existing != null)

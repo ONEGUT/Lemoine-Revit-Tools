@@ -263,9 +263,13 @@ namespace LemoineNavisworks.LevelModels
 
         /// <summary>Items to hide for one level: everything in a model the level does not own,
         /// plus — when the level trims — items in an owned model that fall outside its band.</summary>
+        // ownedModelIndices is a HashSet, not IReadOnlyCollection, on purpose: through the
+        // interface `Contains` would bind to the LINQ extension and run a LINEAR scan for every
+        // one of potentially hundreds of thousands of items. The concrete type binds to the O(1)
+        // member instead.
         public static List<ModelItem> HideSetFor(
             LevelDef level,
-            IReadOnlyCollection<int> ownedModelIndices,
+            HashSet<int> ownedModelIndices,
             IReadOnlyList<ModelItem> allRoots,
             IReadOnlyList<ItemZ> items,
             StraddleRule rule)

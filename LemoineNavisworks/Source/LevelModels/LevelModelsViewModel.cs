@@ -603,6 +603,7 @@ namespace LemoineNavisworks.LevelModels
             if (anyTrim)
             {
                 pushLog(AppStrings.T("navis.levelModels.log.scanning"), "info");
+                PumpUi();
                 try { items = NavisLevelModels.GatherItemZ(doc); }
                 catch (Exception ex)
                 {
@@ -620,8 +621,11 @@ namespace LemoineNavisworks.LevelModels
                                          NavisLevelModels.ProbeFailures), "warn");
             }
 
-            var touched = new List<NavisItem>(roots);
-            if (anyTrim) touched.AddRange(items.Select(z => z.Item));
+            // Projected once, not per level: rebuilding this for every level allocated a fresh
+            // list of every geometry item in the federation each time round the loop.
+            var allItems  = anyTrim ? items.Select(z => z.Item).ToList() : new List<NavisItem>();
+            var touched   = new List<NavisItem>(roots);
+            touched.AddRange(allItems);
             var wasHidden = NavisLevelModels.CurrentlyHidden(touched);
 
             pushLog(AppStrings.T("navis.levelModels.log.start", targets.Count, folder), "info");
@@ -640,7 +644,7 @@ namespace LemoineNavisworks.LevelModels
                     }
 
                     var lv = targets[i];
-                    var outcome = ExportLevel(doc, lv, byKey, roots, items, folder, pushLog);
+                    var outcome = ExportLevel(doc, lv, byKey, roots, items, allItems, folder, pushLog);
 
                     if (outcome.Written)
                     {
@@ -656,6 +660,7 @@ namespace LemoineNavisworks.LevelModels
                     }
 
                     onProgress((int)((i + 1) * 100.0 / targets.Count), pass, fail, skip);
+                    PumpUi();
                 }
             }
             catch (Exception ex)
@@ -669,6 +674,7 @@ namespace LemoineNavisworks.LevelModels
                 RestoreVisibility(doc, touched, wasHidden, pushLog);
                 if (_clip) NavisLevelModels.ClearClip(doc);
                 items.Clear();
+                allItems.Clear();
                 touched.Clear();
                 wasHidden.Clear();
             }
@@ -679,7 +685,7 @@ namespace LemoineNavisworks.LevelModels
 
         private LevelOutcome ExportLevel(
             NavisDoc doc, LevelDef lv, Dictionary<string, int> byKey,
-            List<NavisItem> roots, List<ItemZ> items, string folder,
+            List<NavisItem> roots, List<ItemZ> items, List<NavisItem> allItems, string folder,
             Action<string, string> pushLog)
         {
             var outcome = new LevelOutcome
@@ -701,7 +707,7 @@ namespace LemoineNavisworks.LevelModels
 
                 // Reveal everything first so the previous level's hides never leak into this one.
                 NavisLevelModels.SetHidden(doc, roots, false);
-                if (outcome.Trimmed) NavisLevelModels.SetHidden(doc, items.Select(z => z.Item).ToList(), false);
+                if (allItems.Count > 0) NavisLevelModels.SetHidden(doc, allItems, false);
                 NavisLevelModels.SetHidden(doc, hide, true);
 
                 if (_viewpoints)
@@ -856,5 +862,29 @@ namespace LemoineNavisworks.LevelModels
         }
 
         private static FrameworkElement Gap() => new Border { Height = 8 };
+
+        /// <summary>Lets the window repaint and deliver clicks in the middle of a run.
+        ///
+        /// Navisworks runs plugin code on the SAME thread that owns the tool window, so this
+        /// synchronous export loop blocks that dispatcher: every progress/log callback queues
+        /// behind us and nothing appears until the run ends — and, worse, the Cancel button can
+        /// never be clicked, which would make the RunState.CancelRequested check in the loop
+        /// unreachable. Draining the queue at Background priority once per level fixes both.
+        ///
+        /// Revit tools need none of this: their ExternalEvent handler runs on Revit's main thread
+        /// while the window has a dispatcher of its own, so callbacks paint as they arrive.
+        ///
+        /// Re-entrancy is bounded because StepFlowWindow disables the step controls for the
+        /// duration of a run — Cancel and Reset are the only live buttons, which is the point.</summary>
+        private static void PumpUi()
+        {
+            try
+            {
+                var d = System.Windows.Threading.Dispatcher.CurrentDispatcher;
+                if (d.HasShutdownStarted || d.HasShutdownFinished) return;
+                d.Invoke(new Action(() => { }), System.Windows.Threading.DispatcherPriority.Background);
+            }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("LevelModels: pump UI thread", ex); }
+        }
     }
 }
