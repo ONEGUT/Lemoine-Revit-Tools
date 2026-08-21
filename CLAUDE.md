@@ -625,6 +625,52 @@ Revit 2024 runs .NET Framework 4.8; Revit 2025, 2026, and 2027 all run .NET 8. B
 
 **`LemoineTools.csproj` is a root-level SDK-style project, so its default `**\*` globs sweep every subfolder — including sibling sub-projects' `obj\` output.** Each sibling project (`LemoinePreview`, `LemoineNavisworks`, `LemoineTools.PdfGeometry`, any future one) must be `Remove`-excluded from `Compile`/`Page`/`None`/`EmbeddedResource`, or MSBuild compiles its generated `*.AssemblyAttributes.cs` (→ **CS0579** duplicate `TargetFrameworkAttribute`, sometimes for *both* net48 and net8 targets) and its XAML `*.g.cs` (→ **CS0102** duplicate `_root`/`_outer` field). Keep the exclusion **unconditional**: an untracked `obj\` folder survives a branch switch, so a sibling project that lives only on another branch can still poison this build locally.
 
+### Navisworks add-in (`LemoineNavisworks`)
+
+The Navisworks tools are a **separate assembly** (`net48`, x64) that LINKS the shared
+`Source\Framework\**` tree rather than duplicating it, plus `Strings\` and the icon font.
+It is in `LemoineTools.sln` so it can be edited and built from Visual Studio, but it is
+deliberately **excluded from Build Solution** — its `.Build.0` entries are removed from the
+sln's `ProjectConfigurationPlatforms` and only `.ActiveCfg` remains.
+
+**Never re-add `.Build.0` for it.** The Navisworks API DLL is not in the repo (`libs-navis/`
+holds only a README, and the DLLs are licensed), so on any machine without Navisworks
+installed the project cannot compile — and with `.Build.0` present that failure blocks every
+ordinary Build/F5 of the *Revit* plugin, which has nothing to do with Navisworks. Build it
+on demand instead: right-click the project → Build, or
+`dotnet build LemoineNavisworks\LemoineNavisworks.csproj`.
+
+**`NETSDK1004` "assets file … `LemoineNavisworks\obj\project.assets.json` not found"** means the
+project has simply never been restored in that working copy (it is new, or the solution was
+open across the pull). Run `dotnet restore LemoineNavisworks\LemoineNavisworks.csproj`, or
+Solution Explorer → right-click the solution → Restore NuGet Packages. This is *not* the
+`Directory.Build.props` redirect: that only applies to the year-suffixed Configurations, and
+this project builds under the bare `Debug`/`Release`.
+
+Three shared-framework seams exist so `StepFlowWindow` can serve both hosts — keep them:
+- `RevitFailureCapture` is a **partial class**: the host-agnostic half (`BeginRun`, dedup state)
+  compiles into both, and `RevitFailureCapture.Revit.cs` (the Revit-typed event handlers) is
+  excluded from the Navisworks build.
+- `ToolReloadBridge` replaces the old direct `App.ReloadHandler`/`ReloadEvent` call. Each host
+  installs its own marshaller at startup (Revit: an ExternalEvent hop; Navisworks: a direct call,
+  since plugin code already runs on the main STA thread). **`Source\Framework\**` must contain no
+  `App.` reference** — that is what keeps it host-neutral.
+- `ThemePalette`'s icon-font pack URI reads `Assembly.GetExecutingAssembly().GetName().Name`
+  rather than hardcoding `LemoineTools`; hardcoded, it resolves to nothing in the Navisworks
+  assembly and every glyph renders as a box.
+
+`NavisToolWindow.EnsureBootstrapped()` does what `App.OnStartup` does for Revit: **loads
+`AppStrings`** (without it every `AppStrings.T()` falls back to the key literal and the UI reads
+`navis.levelModels.title`), runs `LegacyFileCleanup`, and installs the reload marshaller.
+`StepFlowWindow` applies the theme itself, so that needs no host bootstrap.
+
+**Navisworks runs plugin code on the SAME thread that owns the tool window**, so a synchronous
+`Run()` blocks that dispatcher: progress/log callbacks queue and never paint, and the Cancel
+button cannot be clicked at all — which makes any `RunState.CancelRequested` check unreachable.
+A bulk Navisworks run must drain the queue between items
+(`Dispatcher.CurrentDispatcher.Invoke(() => {}, DispatcherPriority.Background)`). Revit tools
+need none of this: their handler runs on Revit's main thread while the window has its own.
+
 **Deleting a sibling project from the repo does NOT let you drop its exclusion.** `git rm` removes the tracked sources but leaves the untracked `obj\` on every existing clone, so the glob still finds its `AssemblyInfo.cs`/`AssemblyAttributes.cs` and the build dies with CS0579 the next time someone pulls. This happened with `LemoinePreview`: the folder was deleted for the WPF-only distribution and its exclusion removed as "no longer needed" — the next Windows build failed on `LemoinePreview\obj\Release\net48\`. The exclusion for a deleted sibling stays **forever**.
 
 ---
