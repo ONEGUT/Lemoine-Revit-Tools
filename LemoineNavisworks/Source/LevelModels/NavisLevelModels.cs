@@ -159,7 +159,7 @@ namespace LemoineNavisworks.LevelModels
                 {
                     foreach (DataProperty p in cat.Properties)
                     {
-                        string pd = p.DisplayName ?? p.Name?.Name ?? "";               // ⚠ verify (DataProperty.DisplayName / Name.Name)
+                        string pd = p.DisplayName ?? p.Name ?? "";                     // DataProperty.Name is itself a string (confirmed on a Windows/Revit run — the guessed .Name.Name chain does not compile)
                         if (pd.Equals("Level", StringComparison.OrdinalIgnoreCase))
                         {
                             string v = p.Value?.ToDisplayString();                     // ⚠ verify (VariantData.ToDisplayString())
@@ -310,7 +310,7 @@ namespace LemoineNavisworks.LevelModels
         {
             try
             {
-                if (clip && level.HasBand) ApplyClip(doc, level.Bottom, level.Top);
+                if (clip && level.HasBand) ApplyClip(doc, level.Bottom, level.Top, log);
 
                 Viewpoint vp = doc.CurrentViewpoint.ToViewpoint();                       // ⚠ verify
                 var sv = new SavedViewpoint(vp) { DisplayName = name };                  // ⚠ verify
@@ -325,44 +325,37 @@ namespace LemoineNavisworks.LevelModels
             }
         }
 
-        /// <summary>Enables a pair of horizontal clipping planes at the band edges. Wrapped
-        /// separately from the viewpoint save so a clipping-API mismatch costs the clip only, not
-        /// the viewpoint. ⚠ The whole body needs a Windows/Navisworks-2026 check.</summary>
-        private static void ApplyClip(Document doc, double bottom, double top)
-        {
-            try
-            {
-                Viewpoint vp = doc.CurrentViewpoint.ToViewpoint();                       // ⚠ verify
-                var planes = vp.GetClippingPlanes();                                     // ⚠ verify (Viewpoint.GetClippingPlanes)
-                if (planes == null || planes.Count < 2) return;
+        // KNOWN UNIMPLEMENTED — clipping planes.
+        //
+        // An earlier draft called Viewpoint.GetClippingPlanes()/SetClippingPlanes() and a
+        // ClippingPlaneAlignment/ClippingPlaneState pair of enums. A real compile against
+        // Navisworks 2026's Autodesk.Navisworks.Api proved every one of those names fictional —
+        // CS1061 on both methods, CS0103 on both enums. Unlike RevitAPI.dll (vendored in libs\ and
+        // readable with dnfile per CLAUDE.md's Research Discipline), no Navisworks API DLL exists
+        // in this repo to decode real metadata from, so a second guess at the surface (e.g. trying
+        // the legacy ComApi bridge / InwOpState10 COM interfaces) would carry the same risk of
+        // shipping more fictional calls with no way to verify them from this environment.
+        //
+        // ApplyClip is therefore a documented no-op: it logs once per run (never silently) so the
+        // "clip that viewpoint" toggle is never a Bulk-Export-Hidden-Line-Views-style option that
+        // reaches nowhere without saying so. The viewpoint itself still saves via SaveViewpoint —
+        // only the clip is skipped.
+        //
+        // TO UNBLOCK: paste the Viewpoint class's real members (Visual Studio Object Browser, F12
+        // "Go to Definition", or ILSpy/dotPeek on Autodesk.Navisworks.Api.dll) — search for "Clip" —
+        // or drop the DLL into libs-navis\ so it can be decoded directly.
+        private static bool _clipWarned;
 
-                // Plane 0 cuts away everything below the band, plane 1 everything above it.
-                planes[0].Alignment = ClippingPlaneAlignment.AlignZUp;                   // ⚠ verify (enum + member)
-                planes[0].Distance  = bottom;
-                planes[0].State     = ClippingPlaneState.Enabled;                        // ⚠ verify
-                planes[1].Alignment = ClippingPlaneAlignment.AlignZDown;                 // ⚠ verify
-                planes[1].Distance  = -top;
-                planes[1].State     = ClippingPlaneState.Enabled;
-                vp.SetClippingPlanes(planes);                                            // ⚠ verify
-                doc.CurrentViewpoint.CopyFrom(vp);                                       // ⚠ verify
-            }
-            catch (Exception ex) { DiagnosticsLog.Swallowed("LevelModels: apply clip planes", ex); }
+        private static void ApplyClip(Document doc, double bottom, double top, Action<string, string>? log)
+        {
+            if (_clipWarned) return;
+            _clipWarned = true;
+            DiagnosticsLog.Warn("LevelModels", "Clipping planes are not implemented (no confirmed API surface) — viewpoints save without a clip.");
+            log?.Invoke(AppStrings.T("navis.levelModels.log.clipNotImplemented"), "warn");
         }
 
-        /// <summary>Turns every clipping plane off again, so the run leaves the live view alone.</summary>
-        public static void ClearClip(Document doc)
-        {
-            try
-            {
-                Viewpoint vp = doc.CurrentViewpoint.ToViewpoint();
-                var planes = vp.GetClippingPlanes();
-                if (planes == null) return;
-                foreach (var p in planes) p.State = ClippingPlaneState.Disabled;         // ⚠ verify
-                vp.SetClippingPlanes(planes);
-                doc.CurrentViewpoint.CopyFrom(vp);
-            }
-            catch (Exception ex) { DiagnosticsLog.Swallowed("LevelModels: clear clip planes", ex); }
-        }
+        /// <summary>Resets the once-per-run clip warning so the next run reports again.</summary>
+        public static void ClearClip(Document doc) => _clipWarned = false;
 
         // ── Export ───────────────────────────────────────────────────────────
 

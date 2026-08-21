@@ -54,12 +54,12 @@
     "optViewpoint":     "Save a viewpoint per level",
     "optViewpointDesc": "For review before or after export",
     "optClip":          "Clip that viewpoint to the level's band",
-    "optClipDesc":      "Each NWD opens sectioned to the band",
+    "optClipDesc":      "Not implemented yet — logs a warning and saves the viewpoint uncut",
     "optXrefs":         "Embed referenced files",
     "optXrefsDesc":     "Bake xrefs into each NWD",
     "optProps":         "Keep object properties",
     "optPropsDesc":     "Off = smaller files, no property data",
-    "clipNote":         "A clipped viewpoint is presentation only — the clipped geometry is still inside the NWD and a viewer can switch the clip off. Only hiding and trimming keep geometry out of the file."
+    "clipNote":         "Clipping is not implemented yet, so this toggle currently only logs a warning and saves an uncut viewpoint. A clip would be presentation only regardless — the clipped geometry stays inside the NWD and a viewer can switch it off. Only hiding and trimming keep geometry out of the file."
   },
 
   "s3": {
@@ -101,6 +101,7 @@
     "start":          "Exporting {0} level(s) to {1}",
     "viewpointHint":  "Viewpoints record the per-level hide state only if Options ▸ Interface ▸ Viewpoint Defaults ▸ “Save Hide/Required Attributes” is enabled.",
     "viewpointFailed":"Could not save viewpoint “{0}” — the export itself is unaffected.",
+    "clipNotImplemented":"Clip is not implemented yet — the viewpoint saves without one.",
     "wrote":          "{0}: {1} model(s) → {2}",
     "failed":         "{0}: export failed → {1} ({2})",
     "exportRefused":  "Navisworks refused the export (TryExportToNwd returned false).",
