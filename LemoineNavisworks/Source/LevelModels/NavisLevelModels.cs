@@ -343,19 +343,24 @@ namespace LemoineNavisworks.LevelModels
         // that exists. The real surface is a single mutable object:
         //
         //   Viewpoint.ClipPlanes : ClipPlaneSet
-        //     .Mode          : ClipPlaneSetMode   (Planes | Box)
-        //     .Box           : BoundingBox3D      (the active volume when Mode == Box)
-        //     .BoxTransform  : Transform3D        (frame the Box is expressed in)
-        //     .Enabled       : bool
+        //     .Mode          : ClipPlaneSetMode   (Planes | Box)         — get/set, confirmed
+        //     .Box           : BoundingBox3D      (the active volume when Mode == Box) — get/set, confirmed
+        //     .BoxTransform  : Transform3D        (frame the Box is expressed in)      — GET-ONLY, confirmed
+        //     .Enabled       : bool                                     — get/set, confirmed
         //
-        // Box mode is used with a box that is tight on Z (the level's band) and enormous on X/Y,
-        // so the visible effect is a horizontal band cut without needing the model's real X/Y
-        // extent. BoxTransform is set to identity explicitly rather than trusting whatever a fresh
-        // ClipPlaneSet defaults to, since an unexpected rotation/offset there would silently skew
-        // the box. This compiles against confirmed members throughout; what is NOT independently
-        // confirmed (no live Navisworks to render it) is that Box mode reads exactly as "clip only
-        // outside the box", so treat the visual result as ⚠ verify on a real Windows run even
-        // though every call in it is real.
+        // A first pass also tried to assign BoxTransform to force identity (no rotation/offset).
+        // That does not compile — CS0200, "cannot be assigned to, it is read only" — confirmed by
+        // decoding ClipPlaneSet's methods: only get_BoxTransform/GetBoxTransform exist, no setter
+        // anywhere. So BoxTransform is left alone entirely; whatever frame a fresh ClipPlaneSet
+        // reports is out of this code's control, and Box's coordinates are supplied assuming that
+        // frame is identity (world space). Box mode is used with a box tight on Z (the level's
+        // band) and enormous on X/Y, so the visible effect is a horizontal band cut without
+        // needing the model's real X/Y extent. This compiles against confirmed members throughout;
+        // what is NOT independently confirmed (no live Navisworks to render it) is that Box mode
+        // reads exactly as "clip only outside the box" AND that BoxTransform is in fact identity —
+        // treat the visual result as ⚠ verify on a real Windows run even though every call in it
+        // is real. If the clip renders skewed/rotated, that read-only transform is the first thing
+        // to inspect (log its Translation/Linear via CurrentPlane or a diagnostic dump).
         //
         // Bottom/Top being in the wrong order would silently produce an inverted or empty box —
         // guard it rather than pass whatever the caller has.
@@ -373,7 +378,6 @@ namespace LemoineNavisworks.LevelModels
 
                 Viewpoint vp = doc.CurrentViewpoint.ToViewpoint();
                 ClipPlaneSet clip = vp.ClipPlanes;
-                clip.BoxTransform = new Transform3D(); // identity — no rotation/offset on the box
                 clip.Box = new BoundingBox3D(
                     new Point3D(-ClipPlaneHorizontalExtent, -ClipPlaneHorizontalExtent, bottom),
                     new Point3D( ClipPlaneHorizontalExtent,  ClipPlaneHorizontalExtent, top));
