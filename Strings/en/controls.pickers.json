@@ -84,5 +84,16 @@
     "freeTextHint": "Press Enter to add typed value",
     "noMatchesFreeText": "No matches — press Enter to add",
     "noMatches": "No matches"
+  },
+  // MultiSelectDropdown — fixed-height row picker that opens a checkbox list.
+  // Used where a repeated row needs a multi-pick without growing taller (Navisworks
+  // Level Models assigns models per level this way).
+  "multiSelectDropdown": {
+    "more": ", +{0}",                                          // {0} = names beyond the first three
+    "all": "All",                                              // bulk toggle, no search active
+    "allMatches": "All {0} matches",                           // {0} = visible matches; scoped to them only
+    "count": "{0} / {1}",                                      // {0} = selected visible, {1} = visible
+    "noItems": "Nothing to choose from.",                      // the source list itself is empty
+    "noMatches": "No items match “{0}”."                       // {0} = the typed query
   }
 }

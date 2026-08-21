@@ -1287,27 +1287,27 @@ namespace LemoineTools.Framework
         // ═══════════════════════════════════════ RELOAD ═══════════════════════
         // Rebuilds the entire window from a fresh tool instance — equivalent to closing and
         // reopening the tool, clearing every selection and re-reading the model's options — but
-        // keeps this window open with no flash. The re-capture must run on Revit's main thread
-        // (the tool reads the document), so the work is marshalled through App.ReloadEvent; the
-        // resulting tool is handed back here on this window's dispatcher via ApplyReloadedTool.
+        // keeps this window open with no flash. The re-capture has to run wherever the host
+        // allows model reads, so it goes through ToolReloadBridge (an ExternalEvent under Revit,
+        // a direct call under Navisworks); the resulting tool is handed back here on this
+        // window's dispatcher via ApplyReloadedTool.
         private void ReloadWindow()
         {
             if (_reloadFactory == null || _isRunning) return;
-            if (App.ReloadHandler == null || App.ReloadEvent == null)
+            if (!ToolReloadBridge.IsAvailable)
             {
                 // Reload infrastructure isn't registered — degrade to a soft reset rather than
                 // silently doing nothing.
-                DiagnosticsLog.Warn("StepFlowWindow reload", "App.ReloadEvent is not registered; falling back to Reset.");
+                DiagnosticsLog.Warn("StepFlowWindow reload", "ToolReloadBridge has no marshaller; falling back to Reset.");
                 ResetAll();
                 return;
             }
 
             _resetBtn.IsEnabled = false;
             _resetBtn.Content   = "Reloading…";
-            App.ReloadHandler!.Enqueue(
+            ToolReloadBridge.Rebuild(
                 _reloadFactory!,
                 tool => { var w = _sink.Win; if (w != null) w.SafeBeginInvoke(() => w.ApplyReloadedTool(tool)); });
-            App.ReloadEvent!.Raise();
         }
 
         // Swaps in the freshly-built tool and rebuilds the chrome in place. Runs on the UI thread.

@@ -222,6 +222,16 @@ namespace LemoineTools
             ReloadHandler = new Framework.ReloadHandler();
             ReloadEvent   = ExternalEvent.Create(ReloadHandler);
 
+            // StepFlowWindow is shared with the Navisworks add-in, so it reaches Reload through
+            // ToolReloadBridge rather than referencing App directly. Under Revit the rebuild has
+            // to hop to the main thread (the tool re-reads the document), which is exactly what
+            // the ExternalEvent above is for.
+            Framework.ToolReloadBridge.Marshal = (factory, onBuilt) =>
+            {
+                ReloadHandler!.Enqueue(factory, onBuilt);
+                ReloadEvent!.Raise();
+            };
+
             // Commits trade / legend / clash libraries into the document. Named
             // ProjectLibrary*, not Project*, so it is not mistaken for the Ceiling Grid
             // projection handler below.

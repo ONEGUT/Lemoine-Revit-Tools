@@ -1,0 +1,145 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Navisworks 2026 hosts plugins on .NET Framework 4.8 (same as Revit 2024),
+         NOT .NET 8. A net8 assembly crashes the Navisworks plugin loader at startup. -->
+    <TargetFramework>net48</TargetFramework>
+    <AssemblyName>LemoineNavisworks</AssemblyName>
+    <RootNamespace>LemoineNavisworks</RootNamespace>
+    <PlatformTarget>x64</PlatformTarget>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <OutputType>Library</OutputType>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+
+    <!--
+      Navisworks install dir: try Manage 2026, then 2025; otherwise fall back to a
+      vendored libs-navis\ folder (mirrors how LemoineTools.csproj resolves the
+      Revit API). The fallback lets the project author/restore without Navisworks
+      installed, but a real build needs the API DLL present.
+    -->
+    <NavisDir Condition="Exists('C:\Program Files\Autodesk\Navisworks Manage 2026')">C:\Program Files\Autodesk\Navisworks Manage 2026</NavisDir>
+    <NavisDir Condition="'$(NavisDir)' == '' and Exists('C:\Program Files\Autodesk\Navisworks Manage 2025')">C:\Program Files\Autodesk\Navisworks Manage 2025</NavisDir>
+    <NavisDir Condition="'$(NavisDir)' == ''">$(MSBuildThisFileDirectory)..\libs-navis</NavisDir>
+  </PropertyGroup>
+
+  <!-- Navisworks .NET API (AddInPlugin base classes + document/model API live here). -->
+  <ItemGroup>
+    <Reference Include="Autodesk.Navisworks.Api">
+      <HintPath>$(NavisDir)\Autodesk.Navisworks.Api.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!--
+    Shared Lemoine UI framework — LINKED in place from the Revit project tree so there
+    is no duplicated source. These files compile into THIS assembly
+    (LemoineNavisworks); the Revit project compiles the same files into its own.
+
+    Only Source\Framework\ is linked. The tools themselves live in Source\Tools\ and are
+    Revit-specific, so unlike the old navisworks-floor-splitter branch (where framework
+    and tools shared one folder) no per-tool Remove list is needed here.
+  -->
+  <ItemGroup>
+    <Compile Include="..\Source\Framework\**\*.cs" Link="Framework\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Page Include="..\Source\Framework\**\*.xaml" Link="Framework\%(RecursiveDir)%(Filename)%(Extension)">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+
+    <!--
+      Revit-coupled framework pieces — excluded because they reference the Revit API
+      (directly or transitively), which this host does not have. The list is the
+      transitive closure: every remaining linked file was verified to contain no
+      "Autodesk.Revit" reference and no reference to a type declared only below.
+
+      StepFlowWindow itself deliberately stays IN: its two former Revit dependencies were
+      removed so the same window serves both hosts —
+        • RevitFailureCapture was split into a host-agnostic half (kept) and
+          RevitFailureCapture.Revit.cs (excluded here);
+        • the App.ReloadHandler/ReloadEvent call became ToolReloadBridge, whose marshaller
+          each host installs at startup.
+    -->
+    <Compile Remove="..\Source\Framework\DocumentKey.cs" />
+    <Compile Remove="..\Source\Framework\DocScopedValue.cs" />
+    <Compile Remove="..\Source\Framework\PickerViewGuard.cs" />
+    <Compile Remove="..\Source\Framework\ReloadHandler.cs" />
+    <Compile Remove="..\Source\Framework\RevitFailureCapture.Revit.cs" />
+
+    <!-- Tools Overview: captures live Revit samples, and its window/catalog follow it. -->
+    <Compile Remove="..\Source\Framework\ToolsOverviewSampleCapture.cs" />
+    <Compile Remove="..\Source\Framework\OverviewSamples.cs" />
+    <Compile Remove="..\Source\Framework\OverviewDemoTool.cs" />
+    <Compile Remove="..\Source\Framework\ToolsOverviewCatalog.cs" />
+    <Compile Remove="..\Source\Framework\ToolsOverviewDemos.cs" />
+    <Compile Remove="..\Source\Framework\ToolsOverviewWindow.xaml.cs" />
+    <Page    Remove="..\Source\Framework\ToolsOverviewWindow.xaml" />
+
+    <!-- Revit-only settings shell (reads DocumentKey / per-tool Revit options). -->
+    <Compile Remove="..\Source\Framework\GlobalSettingsWindow.*.cs" />
+    <Compile Remove="..\Source\Framework\GlobalSettingsWindow.xaml.cs" />
+    <Page    Remove="..\Source\Framework\GlobalSettingsWindow.xaml" />
+
+    <!-- Naming/token subsystem binds Revit parameters end to end. -->
+    <Compile Remove="..\Source\Framework\Naming\**\*.cs" />
+    <Compile Remove="..\Source\Framework\Controls\Input\TokenInput.cs" />
+
+    <!-- Project libraries persist into the .rvt via Extensible Storage. -->
+    <Compile Remove="..\Source\Framework\Project\**\*.cs" />
+
+    <!-- Legend builder is a Revit drafting-view tool's UI; nothing here uses it. -->
+    <Compile Remove="..\Source\Framework\Controls\Legend\**\*.cs" />
+    <Page    Remove="..\Source\Framework\Controls\Legend\**\*.xaml" />
+  </ItemGroup>
+
+  <!--
+    Icon font embedded as a WPF <Resource>. The Link path MUST match the logical path the
+    Revit project uses (Source\Resources\Fonts\...) so the pack URI ThemePalette builds
+    ("./Source/Resources/Fonts/IcoMoonFree.ttf#IcoMoon-Free") resolves here too. That URI's
+    assembly half is read from the executing assembly at runtime, so it is correct in both.
+  -->
+  <ItemGroup>
+    <Resource Include="..\Source\Resources\Fonts\IcoMoonFree.ttf" Link="Source\Resources\Fonts\IcoMoonFree.ttf" />
+  </ItemGroup>
+
+  <!--
+    Localized user-facing text. AppStrings resolves Strings\<culture>\*.json relative to
+    Assembly.GetExecutingAssembly().Location, so the folder has to sit next to
+    LemoineNavisworks.dll in the Plugins folder — not just next to the Revit add-in.
+  -->
+  <ItemGroup>
+    <None Include="..\Strings\**\*.json" Link="Strings\%(RecursiveDir)%(Filename)%(Extension)">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <!--
+    Auto-deploy to the per-user Navisworks 2026 Plugins folder after every build, so you
+    just restart Navisworks to pick up changes (no admin needed).
+
+    Navisworks' rule is strict: the DLL must sit in a subfolder whose name EXACTLY equals
+    the assembly base name ($(AssemblyName) = LemoineNavisworks), else it silently won't load.
+
+    Guarded to no-op on machines without Navisworks 2026 (CI, Revit-only devs).
+  -->
+  <Target Name="DeployToNavisworks2026" AfterTargets="Build"
+          Condition="Exists('$(APPDATA)\Autodesk\Navisworks Manage 2026') or Exists('C:\Program Files\Autodesk\Navisworks Manage 2026')">
+    <PropertyGroup>
+      <NavisPluginDir>$(APPDATA)\Autodesk\Navisworks Manage 2026\Plugins\$(AssemblyName)\</NavisPluginDir>
+    </PropertyGroup>
+    <ItemGroup>
+      <_NavisDeploy Include="$(TargetPath)" />
+      <_NavisDeploy Include="$(TargetDir)$(AssemblyName).pdb"       Condition="Exists('$(TargetDir)$(AssemblyName).pdb')" />
+      <_NavisStrings Include="$(TargetDir)Strings\**\*.json" />
+    </ItemGroup>
+    <MakeDir Directories="$(NavisPluginDir)" />
+    <Copy SourceFiles="@(_NavisDeploy)" DestinationFolder="$(NavisPluginDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(_NavisStrings)" DestinationFiles="@(_NavisStrings->'$(NavisPluginDir)Strings\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+    <Message Importance="high" Text="Deployed $(AssemblyName) -&gt; $(NavisPluginDir)" />
+  </Target>
+
+</Project>

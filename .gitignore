@@ -30,3 +30,6 @@ installer/publish-version.generated.isi
 # Python cache (devtools scripts)
 __pycache__/
 *.pyc
+
+# Navisworks API DLLs (licensed — resolve from the install dir, do not commit)
+libs-navis/*.dll

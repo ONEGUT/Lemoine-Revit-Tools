@@ -1,0 +1,112 @@
+// navis.levelModels.json — Level Models (Navisworks add-in): export one NWD per
+// level holding only the models assigned to that level.
+// Files: LemoineNavisworks/Source/LevelModels/LevelModelsViewModel.cs, NavisLevelModels.cs.
+// Keys are addressed as "navis.levelModels.<section>.<key>".
+//
+// NOTE — deliberately left in code (not externalized):
+//  - Filename pattern tokens "{level}" / "{model}" are logic tokens fed to string.Replace.
+//  - Caret/check glyphs (▶ ▼ ✓) and char.ConvertFromUtf32(0xE74D) per CLAUDE.md convention.
+//  - DiagnosticsLog.* context strings are developer diagnostics, out of scope.
+{
+  "title":    "Level Models",
+  "runLabel": "Export Level NWDs →",
+
+  "steps": {
+    "S1": "Levels & models",
+    "S2": "Output",
+    "S3": "Run"
+  },
+
+  "unnamedLevel": "(unnamed level)",
+
+  "s1": {
+    "intro":            "Each level exports one NWD holding only the models you assign to it — everything else is hidden before the export. Open a row to trim its models to an elevation band.",
+    "discovered":       "Found {0} level(s) in the model. Names and elevations are editable.",
+    "discoveredNone":   "No “Level” property found in these models — add levels manually below.",
+    "probeFailures":    "{0} item(s) could not be measured; see diagnostics.log.",
+    "noDocument":       "No model open. Open your federated NWF/NWD and reopen this tool.",
+    "noModels":         "This document has no appended models, so there is nothing to assign.",
+    "noLevels":         "No levels yet — use “+ Add level” to create one.",
+    "colLevel":         "Level",
+    "colModels":        "Models",
+    "pickModels":       "Select models…",
+    "pickerAccessible": "Models assigned to {0}",                 // {0} = level name
+    "removeLevel":      "Remove this level",
+    "rescan":           "Rescan levels",
+    "addLevel":         "+ Add level",
+    "newLevelName":     "Level {0}",                              // {0} = next row number
+    "bandLabel":        "Elevation band",
+    "bottom":           "Bottom",
+    "top":              "Top",
+    "trim":             "Trim assigned models to this band",
+    "trimNote":         "Hides whole elements outside the band. Navisworks cannot cut a solid — a one-piece full-height riser is kept or dropped, never halved."
+  },
+
+  "s2": {
+    "folder":           "Output folder",
+    "folderDialog":     "Choose a folder for the level NWDs",
+    "localOnly":        "Written straight to this folder as ordinary files — nothing is uploaded.",
+    "pattern":          "Filename pattern",
+    "patternTokens":    "Tokens: {level} = level name, {model} = source model name. “.nwd” is added automatically.",
+    "straddle":         "Elements crossing a band edge",
+    "straddleKeep":     "Keep on both levels",
+    "straddleCentroid": "Assign each element to one level (by centre)",
+    "optViewpoint":     "Save a viewpoint per level",
+    "optViewpointDesc": "For review before or after export",
+    "optClip":          "Clip that viewpoint to the level's band",
+    "optClipDesc":      "Each NWD opens sectioned to the band",
+    "optXrefs":         "Embed referenced files",
+    "optXrefsDesc":     "Bake xrefs into each NWD",
+    "optProps":         "Keep object properties",
+    "optPropsDesc":     "Off = smaller files, no property data",
+    "clipNote":         "A clipped viewpoint is presentation only — the clipped geometry is still inside the NWD and a viewer can switch the clip off. Only hiding and trimming keep geometry out of the file."
+  },
+
+  "s3": {
+    "nothing":     "Nothing to export yet — assign at least one model to a level on step 1.",
+    "head":        "{0} level NWD(s) will be written to: {1}",   // {1} = folder or noFolder
+    "noFolder":    "(no folder chosen)",
+    "modelCount":  "{0} model(s)",
+    "withBand":    ", trimmed {0} → {1}"                          // {0}/{1} = band edges with unit
+  },
+
+  "warn": {
+    "head":             "{0} warnings.",
+    "headOne":          "1 warning.",
+    "andMore":          "…and {0} more.",
+    "levelNoModels":    "{0} has no models — it will be skipped.",
+    "modelUnassigned":  "{0} is assigned to no level — it will never be exported.",
+    "trimNoBand":       "{0} has trim on but no band (top must be above bottom) — it will not trim.",
+    "duplicateFile":    "{0} would be written by {1} levels — they would overwrite each other."
+  },
+
+  "summary": {
+    "s1":     "{0} level(s) · {1} of {2} models assigned",
+    "s2":     "{0} level(s) → {1}",
+    "s2None": "No output folder",
+    "s3":     "{0} NWD(s)"
+  },
+
+  "log": {
+    "noDocument":     "No model open — nothing to export.",
+    "noLevels":       "No level has any models assigned.",
+    "noFolder":       "Choose an output folder first.",
+    "badFolder":      "Output folder “{0}” is not a usable path: {1}",
+    "folderFailed":   "Could not create output folder “{0}”: {1}",
+    "folder":         "Writing to {0}",
+    "scanning":       "Reading geometry extents for the elevation trim…",
+    "scanned":        "Measured {0} geometry item(s).",
+    "scanFailed":     "Could not read geometry extents: {0}",
+    "probeFailures":  "{0} item(s) could not be measured and are treated as outside every band — see diagnostics.log.",
+    "start":          "Exporting {0} level(s) to {1}",
+    "viewpointHint":  "Viewpoints record the per-level hide state only if Options ▸ Interface ▸ Viewpoint Defaults ▸ “Save Hide/Required Attributes” is enabled.",
+    "viewpointFailed":"Could not save viewpoint “{0}” — the export itself is unaffected.",
+    "wrote":          "{0}: {1} model(s) → {2}",
+    "failed":         "{0}: export failed → {1} ({2})",
+    "exportRefused":  "Navisworks refused the export (TryExportToNwd returned false).",
+    "stopped":        "Stopped by user — {0} of {1} levels exported; the files written so far are kept.",
+    "aborted":        "Run aborted: {0}",
+    "restoreFailed":  "Could not restore the model's original visibility — some models may still be hidden. Undo, or reload the file, before continuing.",
+    "done":           "Done — {0} exported, {1} failed."
+  }
+}

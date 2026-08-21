@@ -120,8 +120,16 @@ namespace LemoineTools.Framework
         // ─────────────────────────────────────────────────────────────────
         // Shared icon font — same for every theme
         // ─────────────────────────────────────────────────────────────────
+        // The base URI names the assembly the font resource is compiled INTO, which is not
+        // always LemoineTools: this file is linked into the Navisworks add-in too, and a
+        // hardcoded "/LemoineTools;component/" resolves to nothing there (the icon font silently
+        // falls back and every glyph renders as a box). Read the executing assembly's own simple
+        // name so the URI is correct in whichever assembly is running. The Link path in each
+        // .csproj must keep the logical path below identical in both.
         private static readonly FontFamily _iconFont = new FontFamily(
-            new Uri("pack://application:,,,/LemoineTools;component/"),
+            new Uri("pack://application:,,,/"
+                    + System.Reflection.Assembly.GetExecutingAssembly().GetName().Name
+                    + ";component/"),
             "./Source/Resources/Fonts/IcoMoonFree.ttf#IcoMoon-Free");
 
         // ─────────────────────────────────────────────────────────────────

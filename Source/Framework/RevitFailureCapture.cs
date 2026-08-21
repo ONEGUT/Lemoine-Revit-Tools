@@ -1,9 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using Autodesk.Revit.DB;
-using Autodesk.Revit.DB.Events;
-using Autodesk.Revit.UI.Events;
 
 namespace LemoineTools.Framework
 {
@@ -25,8 +21,14 @@ namespace LemoineTools.Framework
     //                 now renders ON TOP of the tool window because StepFlowWindow
     //                 owns itself to Revit's main window, so the user can resolve it.
     //   • Dialogs   → logged (not auto-dismissed) so the user sees what appeared.
+    //
+    // SPLIT ACROSS TWO FILES. This half is Revit-free so it can compile into the
+    // Navisworks add-in, which links the same Source/Framework tree but has no
+    // Revit API to reference; the Revit event handlers live in
+    // RevitFailureCapture.Revit.cs, which that project excludes. StepFlowWindow
+    // only ever calls BeginRun(), so the shared window compiles in either host.
     // =========================================================================
-    public static class RevitFailureCapture
+    public static partial class RevitFailureCapture
     {
         // Per-run de-dup so a repeated warning text isn't logged on every regen.
         private static readonly HashSet<string> _seen = new HashSet<string>(StringComparer.Ordinal);
@@ -38,78 +40,11 @@ namespace LemoineTools.Framework
             lock (_gate) _seen.Clear();
         }
 
-        // ── Transaction failures ─────────────────────────────────────────────
-        public static void OnFailuresProcessing(object? sender, FailuresProcessingEventArgs e)
+        /// <summary>Logs <paramref name="line"/> to the run's Output log the FIRST time it is
+        /// seen this run, and reports whether it was new. Shared by the Revit handlers.</summary>
+        private static bool NoteOnce(string line)
         {
-            if (!RunLogSink.IsActive) return;
-
-            FailuresAccessor fa;
-            try { fa = e.GetFailuresAccessor(); }
-            catch (Exception ex) { DiagnosticsLog.Swallowed("RevitFailureCapture: get accessor", ex); return; }
-
-            IList<FailureMessageAccessor> messages;
-            try { messages = fa.GetFailureMessages(); }
-            catch (Exception ex) { DiagnosticsLog.Swallowed("RevitFailureCapture: get messages", ex); return; }
-
-            foreach (var msg in messages.ToList())
-            {
-                FailureSeverity sev;
-                try { sev = msg.GetSeverity(); }
-                catch (Exception ex) { DiagnosticsLog.Swallowed("RevitFailureCapture: severity", ex); sev = FailureSeverity.Warning; }
-
-                string desc;
-                try { desc = msg.GetDescriptionText(); }
-                catch (Exception ex) { DiagnosticsLog.Swallowed("RevitFailureCapture: description", ex); desc = "(unreadable failure)"; }
-
-                bool isWarning = sev == FailureSeverity.Warning;
-                string line = $"Revit {(isWarning ? "warning" : "error")}: {desc}";
-
-                bool firstTime;
-                lock (_gate) firstTime = _seen.Add(line);
-                if (firstTime)
-                {
-                    RunLogSink.Push(line, isWarning ? "warn" : "fail");
-                    if (isWarning) DiagnosticsLog.Warn("RevitFailure", desc);
-                    else           DiagnosticsLog.Error("RevitFailure", new Exception(desc));
-                }
-
-                if (isWarning)
-                {
-                    // Resolve the warning so Revit does not pop its dialog for it.
-                    try { fa.DeleteWarning(msg); }
-                    catch (Exception ex) { DiagnosticsLog.Swallowed("RevitFailureCapture: delete warning", ex); }
-                }
-                // Errors are left in place: Revit shows its (now on-top) error dialog and the
-                // user decides. We do not silently swallow real errors.
-            }
-
-            // Continue with Revit's default processing for whatever remains (errors). Warnings
-            // we deleted are gone, so no warning dialog appears.
-            try { e.SetProcessingResult(FailureProcessingResult.Continue); }
-            catch (Exception ex) { DiagnosticsLog.Swallowed("RevitFailureCapture: set result", ex); }
-        }
-
-        // ── Modal dialogs (TaskDialogs etc.) ─────────────────────────────────
-        public static void OnDialogBoxShowing(object? sender, DialogBoxShowingEventArgs e)
-        {
-            if (!RunLogSink.IsActive) return;
-
-            string detail;
-            if (e is TaskDialogShowingEventArgs td)
-            {
-                string id = SafeId(() => td.DialogId);
-                string message = "";
-                try { message = td.Message ?? ""; } catch (Exception ex) { DiagnosticsLog.Swallowed("RevitFailureCapture: dialog message", ex); }
-                detail = string.IsNullOrWhiteSpace(message) ? id : $"{id} — {message}";
-            }
-            else
-            {
-                detail = SafeId(() => e.DialogId);
-            }
-
-            if (string.IsNullOrWhiteSpace(detail)) detail = "(unnamed dialog)";
-            RunLogSink.Push($"Revit dialog: {detail}", "warn");
-            // Not dismissed — it shows on top of the tool window (window owner = Revit main).
+            lock (_gate) return _seen.Add(line);
         }
 
         private static string SafeId(Func<string> get)
