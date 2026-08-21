@@ -126,10 +126,6 @@
       "label": "Build Sheets",
       "tip":   "Build sheets from zones — one sheet per level per sheet size per group, with every view placed at the exact position recorded for it. Composite groups put several views of one level on one sheet."
     },
-    "zoneKeyPlan": {
-      "label": "Key Plans",
-      "tip":   "Create one key plan legend per area — the building outline from slab edges with that area highlighted. Legends can sit on many sheets, so one per area serves every sheet documenting it. Requires an existing legend to duplicate: Revit has no API to create one."
-    },
     "zoneManager": {
       "label": "Zone Manager",
       "tip":   "Define and manage project zones — the building's levels and areas, their scope boxes, the view ranges and scales used to draw them, and the exact position each area occupies on each sheet size. Stored in the model, so the whole team shares one library."

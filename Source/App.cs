@@ -57,6 +57,8 @@ namespace LemoineTools
         internal static ExternalEvent?                                   ZoneOpenViewsEvent    { get; private set; }
         internal static LemoineTools.Tools.Zones.ZoneOpenSheetsEventHandler? ZoneOpenSheetsHandler { get; private set; }
         internal static ExternalEvent?                                   ZoneOpenSheetsEvent   { get; private set; }
+        internal static LemoineTools.Tools.Zones.ZoneOpenKeyPlanEventHandler? ZoneOpenKeyPlanHandler { get; private set; }
+        internal static ExternalEvent?                                   ZoneOpenKeyPlanEvent  { get; private set; }
         internal static LemoineTools.Tools.Zones.ZoneViewsRunHandler?     ZoneViewsRunHandler     { get; private set; }
         internal static ExternalEvent?                                    ZoneViewsRunEvent       { get; private set; }
         internal static LemoineTools.Tools.Zones.ZoneSheetsRunHandler?    ZoneSheetsRunHandler    { get; private set; }
@@ -291,6 +293,8 @@ namespace LemoineTools
             ZoneOpenViewsEvent      = ExternalEvent.Create(ZoneOpenViewsHandler);
             ZoneOpenSheetsHandler   = new LemoineTools.Tools.Zones.ZoneOpenSheetsEventHandler();
             ZoneOpenSheetsEvent     = ExternalEvent.Create(ZoneOpenSheetsHandler);
+            ZoneOpenKeyPlanHandler  = new LemoineTools.Tools.Zones.ZoneOpenKeyPlanEventHandler();
+            ZoneOpenKeyPlanEvent    = ExternalEvent.Create(ZoneOpenKeyPlanHandler);
             ZoneViewsRunHandler     = new LemoineTools.Tools.Zones.ZoneViewsRunHandler();
             ZoneViewsRunEvent       = ExternalEvent.Create(ZoneViewsRunHandler);
             ZoneSheetsRunHandler    = new LemoineTools.Tools.Zones.ZoneSheetsRunHandler();
@@ -659,14 +663,9 @@ namespace LemoineTools
                 Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE7C3)),
             });
 
-            zonesBtn?.AddPushButton(new PushButtonData(
-                "LT_ZoneKeyPlan", L.T("ribbon.buttons.zoneKeyPlan.label"), dll,
-                "LemoineTools.Commands.ZoneKeyPlanCommand")
-            {
-                ToolTip    = L.T("ribbon.buttons.zoneKeyPlan.tip"),
-                LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE81D)),  // Map
-                Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE81D)),
-            });
+            // Key Plans deliberately has NO ribbon button — like Discover Zones, it is opened
+            // from inside the Zone Manager (its "Key Plans" toolbar button). ZoneKeyPlanCommand
+            // stays registered as the launcher target for that button's ExternalEvent.
 
             // Scope Boxes pulldown — Creator now; the Manager joins here when it lands.
             var scopeBoxPulldown = new PulldownButtonData("LT_ScopeBoxes", L.T("ribbon.buttons.scopeBoxes.label"))

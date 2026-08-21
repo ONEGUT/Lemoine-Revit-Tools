@@ -47,4 +47,25 @@ namespace LemoineTools.Tools.Zones
             }
         }
     }
+
+    /// <summary>
+    /// Opens "Key Plans from Zones" from the Zone Manager's toolbar. Key Plans has no ribbon
+    /// button of its own — like Discover, it is reached only through the manager it belongs to.
+    /// </summary>
+    public class ZoneOpenKeyPlanEventHandler : IExternalEventHandler
+    {
+        public string GetName() => "LemoineTools.Tools.Zones.ZoneOpenKeyPlanEventHandler";
+
+        public void Execute(UIApplication app)
+        {
+            try
+            {
+                ZoneKeyPlanCommand.Open(app);
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Error("ZoneOpenKeyPlan: failed to open Key Plans from Zones", ex);
+            }
+        }
+    }
 }

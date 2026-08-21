@@ -61,6 +61,14 @@ namespace LemoineTools.Tools.Zones.Windows
             }
             else b.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
 
+            // _toolbarBorder drags the window on any UNHANDLED MouseLeftButtonDown that
+            // bubbles up to it. Every button here lives inside that subtree, so without this,
+            // a click's Down bubbles past the button (which only listens for Up) and starts
+            // Window.DragMove() — a blocking native move/drag that swallows the matching Up
+            // and eats the click. Marking Down handled here, before it bubbles, is what makes
+            // toolbar buttons register on the first click instead of needing a lucky fast one.
+            b.PreviewMouseLeftButtonDown += (s, e) => e.Handled = true;
+
             if (!enabled)
             {
                 b.ToolTip = AppStrings.T("zones.manager.flows.needExtents");
@@ -99,6 +107,8 @@ namespace LemoineTools.Tools.Zones.Windows
                 // Without this the button responds only where the glyph's ink is.
                 Background = Brushes.Transparent,
             };
+            // Same DragMove-eats-the-click guard as MakeFlowButton — see the comment there.
+            b.PreviewMouseLeftButtonDown += (s, e) => e.Handled = true;
             b.MouseLeftButtonUp += (s, e) => { Close(); e.Handled = true; };
             return b;
         }
@@ -112,6 +122,10 @@ namespace LemoineTools.Tools.Zones.Windows
         private void OnBuildSheets()
             => LaunchFlow(App.ZoneOpenSheetsEvent, "Build Sheets",
                           AppStrings.T("zones.manager.status.openingSheets"));
+
+        private void OnKeyPlans()
+            => LaunchFlow(App.ZoneOpenKeyPlanEvent, "Key Plans",
+                          AppStrings.T("zones.manager.status.openingKeyPlans"));
 
         /// <summary>
         /// Saves, then hands off to Revit's main thread.

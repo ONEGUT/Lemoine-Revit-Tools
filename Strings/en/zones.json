@@ -47,6 +47,7 @@
       "discover": "Discover",
       "createViews": "Create Views",
       "buildSheets": "Build Sheets",
+      "keyPlans": "Key Plans",
       "needExtents": "Available once at least one area has resolved extents."
     },
 
@@ -190,6 +191,7 @@
       "openingDiscover": "Opening Discover Zones…",
       "openingViews": "Opening Create Views from Zones…",
       "openingSheets": "Opening Build Sheets from Zones…",
+      "openingKeyPlans": "Opening Key Plans from Zones…",
       "flowUnavailable": "That flow is unavailable — its event handler is not registered.",
       "saveFailed": "The zone library could not be saved; nothing was opened.",
       "oneBuilding": "This project has only one building.",

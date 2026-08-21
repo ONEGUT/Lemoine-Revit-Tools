@@ -426,6 +426,10 @@ namespace LemoineTools.Tools.Zones.Windows
                 AppStrings.T("zones.manager.flows.buildSheets"), OnBuildSheets,
                 accent: false, enabled: !_flowBusy && anyExtents));
 
+            _toolbarActions.Children.Add(MakeFlowButton(
+                AppStrings.T("zones.manager.flows.keyPlans"), OnKeyPlans,
+                accent: false, enabled: !_flowBusy && anyExtents));
+
             var sep = new Border
             {
                 Width  = 1,
