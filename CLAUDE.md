@@ -164,6 +164,23 @@ Before implementing any workflow, check whether it is practical:
 
 Always read the relevant source files before recommending or writing code. Never generate implementation from memory when the actual file is available.
 
+**The same applies to Navisworks — `devtools/navis_dump.py` is the tool.** No Navisworks
+API DLL ships in this repo (`libs-navis/README.md` explains why and where to get one), so
+guessing member names for `Autodesk.Navisworks.Api` from memory is exactly the same risk as
+string-searching `RevitAPI.dll`, and it has already cost a full guess-then-recompile round trip:
+an entire clipping-plane implementation (`Viewpoint.GetClippingPlanes`/`SetClippingPlanes`,
+a `ClippingPlaneAlignment`/`ClippingPlaneState` enum pair) turned out to be completely fictional —
+CS1061 on both methods, CS0103 on both enums, confirmed on a real Windows build. The real surface
+was a single `Viewpoint.ClipPlanes : ClipPlaneSet` object with `Mode`/`Box`/`BoxTransform`/`Enabled`,
+nothing like the guess. When a copy of `Autodesk.Navisworks.Api.dll` is available (dropped into
+`libs-navis/` — it is git-ignored, licensed, never committed), decode it the same way:
+`python3 devtools/navis_dump.py "Api.Viewpoint"` walks `TypeDef` → `PropertyMap`/`MethodList` and
+hand-decodes each signature blob per ECMA-335 §II.23.2, printing real names, property types, and
+method parameter/return types scoped to their declaring type. Confirming a member's existence this
+way still doesn't confirm its *runtime behavior* (e.g. whether `ClipPlaneSetMode.Box` renders as
+"clip outside, keep inside" — metadata can't say) — that residual gap is smaller and worth tagging
+`⚠ verify` at the call site, but it is categorically different from a name being fictional.
+
 **Never confirm a Revit API member by string-searching `RevitAPI.dll`.** A name present in the assembly may belong to a different type entirely — that is exactly how a call to a non-existent `DatumPlane.RemoveLeader` reached a build (the string is in the DLL; the method is on another class). Read the type's real metadata, or check the signature against a known-good call site. The same applies to *signatures*, not just names: `AddLeader` returns the `Leader` it creates, which a name-only check cannot tell you.
 
 **How to read that metadata here:** the project can't be built on Linux and the environment ships no `ildasm` / `dotnet` / Mono, so parse the assembly's metadata tables directly — `pip install dnfile`, open `libs/RevitAPI.dll`, then walk `TypeDef` → `PropertyMap` → `Property` (and `MethodList`) to get names **scoped to their declaring type**, which is exactly what a string search cannot give you. Decode the property signature blob (`PROPERTY` flag → param count → type, where `0x11`/`0x12` is a `TypeDefOrRef` coded index) to get each member's real *type* as well as its name. This is how `PDFExportOptions.AlwaysUseRaster` (`bool`) and `.ExportQuality` (`PDFExportQualityType`) were confirmed to exist — and how the absence of `PDFExportOptions.HiddenLineViews` was proven rather than guessed.

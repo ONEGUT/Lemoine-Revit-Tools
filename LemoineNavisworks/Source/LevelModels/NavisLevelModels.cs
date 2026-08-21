@@ -31,10 +31,18 @@ namespace LemoineNavisworks.LevelModels
     // REQUIRES the Navisworks 2026 .NET API — NwdExportOptions / TryExportToNwd and
     // ExcludeHiddenItems do not exist before 2026.
     //
-    // This project cannot be built or run on Linux and no Navisworks API DLL is
-    // vendored, so calls that still need a Windows/Navisworks-2026 check carry a
-    // "⚠ verify" tag. Every one of them is wrapped so a wrong guess degrades to a
-    // logged warning rather than an unhandled throw.
+    // Every member this file calls has been confirmed against a real
+    // Autodesk.Navisworks.Api.dll (2026) by decoding its metadata tables with dnfile —
+    // the same technique CLAUDE.md's Research Discipline prescribes for RevitAPI.dll,
+    // via devtools/navis_dump.py. This project still cannot be BUILT or RUN on Linux
+    // (no Navisworks host, no dnfile-confirmable runtime behavior), so two things
+    // remain genuinely unverified despite every name/signature being real, and stay
+    // tagged "⚠ verify" at their call sites rather than the whole file:
+    //   • whether DocumentModels.SetHidden on a model ROOT item cascades to its
+    //     descendants (the whole-model hide optimization depends on it);
+    //   • whether ClipPlaneSet.Mode = Box actually renders as "clip outside the box,
+    //     unclipped inside" (see ApplyClip).
+    // Both degrade to a logged warning rather than an unhandled throw if wrong.
     // =========================================================================
     internal static class NavisLevelModels
     {
@@ -77,7 +85,7 @@ namespace LemoineNavisworks.LevelModels
                 {
                     Model m = doc.Models[i];
                     string file = "";
-                    try { file = m.FileName ?? ""; }                                  // ⚠ verify (Model.FileName)
+                    try { file = m.FileName ?? ""; }                                  // Model.FileName — confirmed
                     catch (Exception ex) { DiagnosticsLog.Swallowed("LevelModels: model filename", ex); }
 
                     mr.SourceFile  = string.IsNullOrWhiteSpace(file) ? "" : Path.GetFileName(file);
@@ -107,7 +115,7 @@ namespace LemoineNavisworks.LevelModels
         {
             try
             {
-                string rn = m.RootItem?.DisplayName ?? "";                             // ⚠ verify (ModelItem.DisplayName)
+                string rn = m.RootItem?.DisplayName ?? "";                             // ModelItem.DisplayName — confirmed
                 if (!string.IsNullOrWhiteSpace(rn)) return rn.Trim();
             }
             catch (Exception ex) { DiagnosticsLog.Swallowed("LevelModels: root item name", ex); }
@@ -162,7 +170,7 @@ namespace LemoineNavisworks.LevelModels
                         string pd = p.DisplayName ?? p.Name ?? "";                     // DataProperty.Name is itself a string (confirmed on a Windows/Revit run — the guessed .Name.Name chain does not compile)
                         if (pd.Equals("Level", StringComparison.OrdinalIgnoreCase))
                         {
-                            string v = p.Value?.ToDisplayString();                     // ⚠ verify (VariantData.ToDisplayString())
+                            string v = p.Value?.ToDisplayString();                     // VariantData.ToDisplayString() — confirmed
                             if (!string.IsNullOrWhiteSpace(v)) return v.Trim();
                         }
                     }
@@ -193,7 +201,7 @@ namespace LemoineNavisworks.LevelModels
         private static IEnumerable<ModelItem> Descendants(Model model)
         {
             IEnumerable<ModelItem> seq;
-            try { seq = model.RootItem.DescendantsAndSelf; }                            // ⚠ verify (traversal)
+            try { seq = model.RootItem.DescendantsAndSelf; }                            // ModelItem.DescendantsAndSelf : IEnumerable<ModelItem> — confirmed
             catch (Exception ex)
             {
                 DiagnosticsLog.Swallowed("LevelModels: descend model", ex);
@@ -204,7 +212,7 @@ namespace LemoineNavisworks.LevelModels
 
         private static bool SafeHasGeometry(ModelItem item)
         {
-            try { return item.HasGeometry; }                                            // ⚠ verify (ModelItem.HasGeometry)
+            try { return item.HasGeometry; }                                            // ModelItem.HasGeometry — confirmed
             catch (Exception ex) { NoteProbeFailure("LevelModels: HasGeometry", ex); return false; }
         }
 
@@ -213,7 +221,7 @@ namespace LemoineNavisworks.LevelModels
             minZ = 0; maxZ = 0;
             try
             {
-                BoundingBox3D bb = item.BoundingBox();                                  // ⚠ verify (ModelItem.BoundingBox())
+                BoundingBox3D bb = item.BoundingBox();                                  // ModelItem.BoundingBox() — confirmed
                 if (bb == null) return false;
                 minZ = bb.Min.Z; maxZ = bb.Max.Z;
                 return true;
@@ -241,9 +249,12 @@ namespace LemoineNavisworks.LevelModels
             if (doc == null || items == null || items.Count == 0) return;
             try
             {
-                var col = new ModelItemCollection();                                     // ⚠ verify
-                col.AddRange(items);
-                doc.Models.SetHidden(col, hidden);                                       // ⚠ verify (DocumentModels.SetHidden) — assumed to cascade to descendants
+                // DocumentModels.SetHidden(IEnumerable<ModelItem>, bool) — confirmed via
+                // libs-navis dnfile decode, no ModelItemCollection wrapper needed. ⚠ verify:
+                // whether hiding a model's ROOT item (the whole-model hide optimization this file
+                // relies on) cascades to its descendants is scene-graph BEHAVIOR, not something a
+                // metadata decode can confirm — needs a real Navisworks run.
+                doc.Models.SetHidden(items, hidden);
             }
             catch (Exception ex) { DiagnosticsLog.Error("LevelModels: SetHidden", ex); throw; }
         }
@@ -255,7 +266,7 @@ namespace LemoineNavisworks.LevelModels
             var hidden = new List<ModelItem>();
             foreach (var it in items.OrEmpty())
             {
-                try { if (it.IsHidden) hidden.Add(it); }                                 // ⚠ verify (ModelItem.IsHidden)
+                try { if (it.IsHidden) hidden.Add(it); }                                 // ModelItem.IsHidden — confirmed
                 catch (Exception ex) { DiagnosticsLog.Swallowed("LevelModels: IsHidden", ex); }
             }
             return hidden;
@@ -312,9 +323,9 @@ namespace LemoineNavisworks.LevelModels
             {
                 if (clip && level.HasBand) ApplyClip(doc, level.Bottom, level.Top, log);
 
-                Viewpoint vp = doc.CurrentViewpoint.ToViewpoint();                       // ⚠ verify
-                var sv = new SavedViewpoint(vp) { DisplayName = name };                  // ⚠ verify
-                doc.SavedViewpoints.AddCopy(sv);                                         // ⚠ verify
+                Viewpoint vp = doc.CurrentViewpoint.ToViewpoint();                       // confirmed
+                var sv = new SavedViewpoint(vp) { DisplayName = name };                  // SavedViewpoint(Viewpoint) + inherited SavedItem.DisplayName — confirmed
+                doc.SavedViewpoints.AddCopy(sv);                                         // AddCopy(SavedItem) — confirmed (SavedViewpoint : SavedItem)
                 return true;
             }
             catch (Exception ex)
@@ -325,37 +336,69 @@ namespace LemoineNavisworks.LevelModels
             }
         }
 
-        // KNOWN UNIMPLEMENTED — clipping planes.
+        // Clipping planes — real API confirmed by decoding libs-navis\Autodesk.Navisworks.Api.dll
+        // with the same dnfile metadata-table approach CLAUDE.md prescribes for RevitAPI.dll (see
+        // Research Discipline). An earlier draft guessed Viewpoint.GetClippingPlanes() /
+        // SetClippingPlanes() and a ClippingPlaneAlignment/ClippingPlaneState enum pair; none of
+        // that exists. The real surface is a single mutable object:
         //
-        // An earlier draft called Viewpoint.GetClippingPlanes()/SetClippingPlanes() and a
-        // ClippingPlaneAlignment/ClippingPlaneState pair of enums. A real compile against
-        // Navisworks 2026's Autodesk.Navisworks.Api proved every one of those names fictional —
-        // CS1061 on both methods, CS0103 on both enums. Unlike RevitAPI.dll (vendored in libs\ and
-        // readable with dnfile per CLAUDE.md's Research Discipline), no Navisworks API DLL exists
-        // in this repo to decode real metadata from, so a second guess at the surface (e.g. trying
-        // the legacy ComApi bridge / InwOpState10 COM interfaces) would carry the same risk of
-        // shipping more fictional calls with no way to verify them from this environment.
+        //   Viewpoint.ClipPlanes : ClipPlaneSet
+        //     .Mode          : ClipPlaneSetMode   (Planes | Box)
+        //     .Box           : BoundingBox3D      (the active volume when Mode == Box)
+        //     .BoxTransform  : Transform3D        (frame the Box is expressed in)
+        //     .Enabled       : bool
         //
-        // ApplyClip is therefore a documented no-op: it logs once per run (never silently) so the
-        // "clip that viewpoint" toggle is never a Bulk-Export-Hidden-Line-Views-style option that
-        // reaches nowhere without saying so. The viewpoint itself still saves via SaveViewpoint —
-        // only the clip is skipped.
+        // Box mode is used with a box that is tight on Z (the level's band) and enormous on X/Y,
+        // so the visible effect is a horizontal band cut without needing the model's real X/Y
+        // extent. BoxTransform is set to identity explicitly rather than trusting whatever a fresh
+        // ClipPlaneSet defaults to, since an unexpected rotation/offset there would silently skew
+        // the box. This compiles against confirmed members throughout; what is NOT independently
+        // confirmed (no live Navisworks to render it) is that Box mode reads exactly as "clip only
+        // outside the box", so treat the visual result as ⚠ verify on a real Windows run even
+        // though every call in it is real.
         //
-        // TO UNBLOCK: paste the Viewpoint class's real members (Visual Studio Object Browser, F12
-        // "Go to Definition", or ILSpy/dotPeek on Autodesk.Navisworks.Api.dll) — search for "Clip" —
-        // or drop the DLL into libs-navis\ so it can be decoded directly.
-        private static bool _clipWarned;
+        // Bottom/Top being in the wrong order would silently produce an inverted or empty box —
+        // guard it rather than pass whatever the caller has.
+        private const double ClipPlaneHorizontalExtent = 1_000_000; // matches the level-band stepper's own ±range
 
-        private static void ApplyClip(Document doc, double bottom, double top, Action<string, string>? log)
+        private static void ApplyClip(Document doc, double bottom, double top, Action<string, string> log)
         {
-            if (_clipWarned) return;
-            _clipWarned = true;
-            DiagnosticsLog.Warn("LevelModels", "Clipping planes are not implemented (no confirmed API surface) — viewpoints save without a clip.");
-            log?.Invoke(AppStrings.T("navis.levelModels.log.clipNotImplemented"), "warn");
+            try
+            {
+                if (top <= bottom)
+                {
+                    log?.Invoke(AppStrings.T("navis.levelModels.log.clipBadBand"), "warn");
+                    return;
+                }
+
+                Viewpoint vp = doc.CurrentViewpoint.ToViewpoint();
+                ClipPlaneSet clip = vp.ClipPlanes;
+                clip.BoxTransform = new Transform3D(); // identity — no rotation/offset on the box
+                clip.Box = new BoundingBox3D(
+                    new Point3D(-ClipPlaneHorizontalExtent, -ClipPlaneHorizontalExtent, bottom),
+                    new Point3D( ClipPlaneHorizontalExtent,  ClipPlaneHorizontalExtent, top));
+                clip.Mode    = ClipPlaneSetMode.Box;
+                clip.Enabled = true;
+                doc.CurrentViewpoint.CopyFrom(vp);
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Error("LevelModels: apply clip planes", ex);
+                log?.Invoke(AppStrings.T("navis.levelModels.log.clipFailed"), "warn");
+            }
         }
 
-        /// <summary>Resets the once-per-run clip warning so the next run reports again.</summary>
-        public static void ClearClip(Document doc) => _clipWarned = false;
+        /// <summary>Disables the clip so the run leaves the live view unclipped afterwards.</summary>
+        public static void ClearClip(Document doc)
+        {
+            try
+            {
+                Viewpoint vp = doc.CurrentViewpoint.ToViewpoint();
+                vp.ClipPlanes.Enabled = false;
+                doc.CurrentViewpoint.CopyFrom(vp);
+            }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("LevelModels: clear clip planes", ex); }
+        }
 
         // ── Export ───────────────────────────────────────────────────────────
 
@@ -365,13 +408,13 @@ namespace LemoineNavisworks.LevelModels
         {
             try
             {
-                var opts = new NwdExportOptions                                          // ⚠ 2026-only API
+                var opts = new NwdExportOptions                                          // confirmed — 2026-only API per Autodesk's own docs, not present before
                 {
                     ExcludeHiddenItems          = true,
                     EmbedXrefs                  = embedXrefs,
                     PreventObjectPropertyExport = !keepProps,
                 };
-                bool ok = doc.TryExportToNwd(path, opts);                                // ⚠ 2026-only API
+                bool ok = doc.TryExportToNwd(path, opts);                                // confirmed — 2026-only API per Autodesk's own docs, not present before
                 return ok ? "" : AppStrings.T("navis.levelModels.log.exportRefused");
             }
             catch (Exception ex)
@@ -387,7 +430,7 @@ namespace LemoineNavisworks.LevelModels
         {
             try
             {
-                switch (doc.Units)                                                       // ⚠ verify (Document.Units enum)
+                switch (doc.Units)                                                       // Document.Units — confirmed (member names match; underlying ints differ from an earlier guess but C# switches by name)
                 {
                     case Units.Feet:        return "ft";
                     case Units.Inches:      return "in";

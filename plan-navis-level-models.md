@@ -303,16 +303,35 @@ in — drags an ~80-commit merge across the `Source/Lemoine` → `Source/Framewo
 rename, touching every file in the shared framework for no benefit, since the
 tool's logic is being replaced anyway.
 
-## Cannot be verified here
+## Cannot be verified here — UPDATE: API surface now confirmed via a real DLL
 
-This project cannot build on Linux, and there is no Navisworks API DLL in the
-repo (`libs-navis/` holds only a README). The following stay tagged
-`⚠ verify` in the source and need a Windows / Navisworks 2026 run:
+The user provided a real `Autodesk.Navisworks.Api.dll` (2026) mid-build, after the
+first Windows compile surfaced that the original clipping-plane guess
+(`Viewpoint.GetClippingPlanes`/`SetClippingPlanes`, a `ClippingPlaneAlignment`/
+`ClippingPlaneState` enum pair) was entirely fictional — CS1061/CS0103 on every
+member. It is now vendored locally at `libs-navis/Autodesk.Navisworks.Api.dll`
+(git-ignored, licensed, never committed) and decoded with `devtools/navis_dump.py`
+— a small script that walks the assembly's `TypeDef` → `PropertyMap`/`MethodList`
+tables and hand-decodes each signature blob per ECMA-335 §II.23.2, the same
+technique CLAUDE.md's Research Discipline prescribes for `RevitAPI.dll`.
 
-- `NwdExportOptions` member names and `TryExportToNwd`'s return contract.
-- Whether `doc.Models.SetHidden` on a model **root item** cascades to its
+Every member `NavisLevelModels.cs` calls is now confirmed to exist with the
+right name and type. The real clip surface turned out to be a single mutable
+`Viewpoint.ClipPlanes : ClipPlaneSet` object (`.Mode`/`.Box`/`.BoxTransform`/
+`.Enabled`), nothing like the guess — implemented against that instead.
+
+What metadata-decoding **cannot** confirm is runtime *behavior* (only that a
+member exists, with what signature) — two genuine gaps remain, both wrapped to
+degrade to a logged warning rather than an unhandled throw, and need a real
+Windows / Navisworks 2026 run:
+
+- Whether `DocumentModels.SetHidden` on a model **root item** cascades to its
   descendants (the per-model hide optimisation depends on it).
-- `Model.DisplayName` / source-filename properties used to label the dropdown.
+- Whether `ClipPlaneSetMode.Box` actually renders as "clip outside the box,
+  keep what's inside" (see `ApplyClip` in `NavisLevelModels.cs`).
+
+Also still open, unrelated to the API-surface question:
+
 - That `Strings\en\*.json` deploys next to `LemoineNavisworks.dll` so
   `AppStrings` resolves (it reads `Assembly.GetExecutingAssembly().Location`).
 - Saved viewpoints only record the hide state when Options ▸ Interface ▸

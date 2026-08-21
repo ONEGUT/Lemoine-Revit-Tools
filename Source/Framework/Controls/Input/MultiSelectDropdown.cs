@@ -153,7 +153,10 @@ namespace LemoineTools.Framework.Controls
             _field.SetResourceReference(Border.PaddingProperty,      "LemoineTh_InputPad");
             _field.SetResourceReference(Border.MinHeightProperty,    "LemoineH_Input");
             _field.Cursor = Cursors.Hand;
-            _field.MouseLeftButtonUp += (s, e) => { e.Handled = true; TogglePopup(); };
+            // Opens only — never toggles closed. A click on _field while the popup is already
+            // open (e.g. an imprecise click meant for the search box just below it) must not
+            // silently close it out from under the user; dismissal is LostFocus-driven only.
+            _field.MouseLeftButtonUp += (s, e) => { e.Handled = true; OpenPopup(); };
             outer.Children.Add(_field);
 
             // Parented deliberately: a Popup built loose sits outside the logical tree, so
@@ -196,12 +199,6 @@ namespace LemoineTools.Framework.Controls
         }
 
         // ── Popup ─────────────────────────────────────────────────────────────
-
-        private void TogglePopup()
-        {
-            if (_popup?.IsOpen == true) ClosePopup();
-            else                        OpenPopup();
-        }
 
         private Popup BuildPopup()
         {
@@ -277,6 +274,7 @@ namespace LemoineTools.Framework.Controls
         private void OpenPopup()
         {
             if (_popup == null || _searchBox == null) return;
+            if (_popup.IsOpen) { RefocusSearchBox(); return; }   // already open — don't wipe the query
 
             _suppress = true;
             _searchBox.Text = "";
@@ -286,7 +284,7 @@ namespace LemoineTools.Framework.Controls
             _popup.IsOpen = true;
             _caret.Text   = "▲";
             _field.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
-            _searchBox.Focus();
+            RefocusSearchBox();
 
             // A Popup takes no Win32 activation, so WM_MOUSEWHEEL can be delivered to the MAIN
             // window instead of the popup's hwnd — the "scrolls down but not up" bug. Redirect at
@@ -294,6 +292,16 @@ namespace LemoineTools.Framework.Controls
             if (_wheelOwner != null) _wheelOwner.PreviewMouseWheel -= OnOwnerPreviewMouseWheel;
             _wheelOwner = Window.GetWindow(this);
             if (_wheelOwner != null) _wheelOwner.PreviewMouseWheel += OnOwnerPreviewMouseWheel;
+        }
+
+        private void RefocusSearchBox()
+        {
+            var box = _searchBox;
+            if (box == null) return;
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (box.IsVisible) { box.Focus(); Keyboard.Focus(box); }
+            }), System.Windows.Threading.DispatcherPriority.Loaded);
         }
 
         private void ClosePopup()
