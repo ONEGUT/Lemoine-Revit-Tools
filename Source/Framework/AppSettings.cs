@@ -165,6 +165,10 @@ namespace LemoineTools.Framework
             // ── Font sizes ────────────────────────────────────────────────────
             r["LemoineFS_SM"]      = Math.Round(10.5 * sc, 1);
             r["LemoineFS_XS"]      = r["LemoineFS_SM"];   // XS removed — alias to SM
+            // Meta: the 9.5px tier the Zone Manager's elevations, pills, chips and legend
+            // labels sit on. Deliberately NOT folded into XS — that is aliased to SM, and
+            // re-pointing it would move text in every other window.
+            r["LemoineFS_Meta"]    = Math.Round( 9.5 * sc, 1);
             r["LemoineFS_MD"]      = Math.Round(12.0 * sc, 1);
             r["LemoineFS_LG"]      = Math.Round(13.0 * sc, 1);
             r["LemoineFS_XL"]      = Math.Round(15.0 * sc, 1);
@@ -194,6 +198,7 @@ namespace LemoineTools.Framework
             r["LemoineRadius_MD"]   = new System.Windows.CornerRadius(4);
             r["LemoineRadius_Chip"] = new System.Windows.CornerRadius(10);
             r["LemoineRadius_Card"] = new System.Windows.CornerRadius(10);
+            r["LemoineRadius_Window"] = new System.Windows.CornerRadius(8);
 
             // ── Thickness resources ───────────────────────────────────────────
             r["LemoineTh_ToolbarMar"]   = Th(14, 0, 14, 0);

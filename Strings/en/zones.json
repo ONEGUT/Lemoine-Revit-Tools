@@ -32,11 +32,103 @@
     // {0} = document title
     "subtitle": "{0}",
 
-    // Tree node type labels, shown as the row's meta or the detail card heading.
+    // Node type labels, shown as the properties header's type pill or a ghost breadcrumb.
     "node": {
       "building": "Building",
       "level": "Level",
+      "area": "Area",
+      "view": "View",
+      "sheetSize": "Sheet size",
       "sheets": "Sheets"
+    },
+
+    // The three generation flows, in the toolbar. Each opens its own step-flow window.
+    "flows": {
+      "discover": "Discover",
+      "createViews": "Create Views",
+      "buildSheets": "Build Sheets",
+      "needExtents": "Available once at least one area has resolved extents."
+    },
+
+    // The navigator column.
+    "nav": {
+      "levels": "Levels",
+      "sheets": "Sheets",
+      "noBuilding": "No building",
+      "noZones": "No zones defined yet.",
+      "noSheetSizes": "No sheet sizes yet.",
+      // {0} = the group's sheet suffix
+      "groupLabel": "Group {0}",
+      "groupUnnamed": "Group"
+    },
+
+    // The canvas: breadcrumb toggle, in-drawing labels, overlay chips.
+    "canvas": {
+      "plan": "Plan",
+      "sheet": "Sheet",
+      // {0} width ft, {1} depth ft — the in-plan dimension label and hover readout
+      "dims": "{0}' × {1}'",
+      // {0} = scale denominator, {1} = level name
+      "scaleChip": "1 : {0} · {1}",
+      // Shown when the launch capture found no slab outline for the level being drawn.
+      "noOutline": "no building outline captured"
+    },
+
+    // Canvas legend — one row per line weight, so each mark's meaning is stated.
+    "legend": {
+      "outline": "building outline",
+      "extents": "resolved extents",
+      "scopeBox": "scope box",
+      "matchline": "matchline",
+      "anchor": "anchor",
+      "placedView": "placed view",
+      "drawingArea": "drawing area"
+    },
+
+    // Sheet mode.
+    "sheet": {
+      // {0} width, {1} height, both already formatted with their unit
+      "drawingArea": "drawing area {0} × {1}",
+      "keyPlan": "key plan",
+      // {0} = x, {1} = y, both formatted in inches
+      "at": "sheet {0}, {1}",
+      // {0} = area name, {1} = view definition name
+      "viewLabel": "{0} — {1}",
+      // {0} = the remaining space, formatted
+      "slack": "{0} slack",
+      "fits": "fits",
+      "overflows": "overflows",
+      "unsolved": "not solved",
+      // {0} = an imperial scale label such as 1/8"
+      "scaleImperial": "{0} = 1'-0\"",
+      // {0} = scale denominator
+      "scaleRatio": "1 : {0}"
+    },
+
+    // The properties pane.
+    "props": {
+      "readFromModel": "Read from the model",
+      "scopeBoxes": "Scope boxes",
+      "titleBlocks": "Title block types",
+      "hostLevels": "Host levels",
+      "linkedModels": "Linked models",
+      "capturedNote": "Captured when this window opened. Discover proposes zones from these.",
+      // {0} = the level the views come from
+      "viewsFrom": "Views — from {0}",
+      "inherited": "inherited",
+      // {0} = number of overridden fields
+      "overridden": "overridden · {0}",
+      "onSheets": "On sheets",
+      // {0} = sheet size name, {1} = group label
+      "sheetGroup": "{0} · {1}",
+      "placed": "placed",
+      "notPlaced": "not placed",
+      "onNoSheets": "This area is not in any sheet group yet.",
+      "boxResizedTitle": "Scope box resized",
+      // {0} = largest edge difference, in feet
+      "boxResized": "Largest edge difference {0}'. Extents re-adopted — no sheet placements existed for this area.",
+      "boxResizedPlaced": "Largest edge difference {0}'. Extents re-adopted — this area has stored placements, so its views will move on the sheet.",
+      "boxMissingTitle": "Scope box missing"
     },
 
     "actions": {
@@ -96,12 +188,26 @@
     "status": {
       "reloaded": "Reloaded after Discover.",
       "openingDiscover": "Opening Discover Zones…",
-      "discoverUnavailable": "Discover is unavailable — the event handler is not registered.",
-      "saveFailed": "The zone library could not be saved; Discover was not opened."
+      "openingViews": "Opening Create Views from Zones…",
+      "openingSheets": "Opening Build Sheets from Zones…",
+      "flowUnavailable": "That flow is unavailable — its event handler is not registered.",
+      "saveFailed": "The zone library could not be saved; nothing was opened.",
+      "oneBuilding": "This project has only one building.",
+      // {0} = placements. The chip's standing line once there is something to report.
+      "savedInModel": "{0} placements · saved in the model"
     },
 
-    // Footer status. {0} = zones, {1} = sheet sizes, {2} = placements
-    "statusLine": "{0} zones · {1} sheet sizes · {2} placements · saved in the model",
+    // The floating status chip's empty-library line. {0} = zones, {1} = sheet sizes, {2} = placements
+    "statusLine": "{0} zones · {1} sheet sizes · {2} placements",
+
+    // The empty state, on a project that has never run Discover.
+    "empty": {
+      "title": "No zones in this project yet",
+      "body": "Discover reads levels and scope boxes from a linked model and proposes a structure. It only adds and updates — it never deletes a zone, so anything authored by hand is safe.",
+      "discover": "Discover zones",
+      "byHand": "Build by hand",
+      "footnote": "Create Views and Build Sheets stay disabled until at least one area has resolved extents."
+    },
 
     "area": {
       "section": "Area",

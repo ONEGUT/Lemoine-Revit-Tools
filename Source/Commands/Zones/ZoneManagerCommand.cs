@@ -98,6 +98,12 @@ namespace LemoineTools.Commands
                     $"({withBounds} with readable bounds), {levelNames.Count} level(s) for the Zone Manager.");
             }
 
+            // Per-level building outlines. The window has no Revit access, so if it is not
+            // captured here it can never be drawn — and this is the SAME ZoneSlabOutline path
+            // the key plan uses, so the plan on screen and the plan in a title block are
+            // produced by one collector rather than two that can disagree.
+            var snapshot = CaptureGeometry(doc, scopeBoxes.Count, titleBlocks.Count, levelNames.Count);
+
             string docTitle = doc?.Title ?? "";
 
             var ready = new ManualResetEventSlim(false);
@@ -105,7 +111,7 @@ namespace LemoineTools.Commands
 
             var thread = new Thread(() =>
             {
-                win = new ZoneManagerWindow(docTitle, titleBlocks, scopeBoxes, levelNames);
+                win = new ZoneManagerWindow(docTitle, titleBlocks, scopeBoxes, levelNames, snapshot);
                 win.Closed += (s, e) =>
                 {
                     _window = null;
@@ -122,6 +128,114 @@ namespace LemoineTools.Commands
             ready.Wait();
             _window = win;
             return Result.Succeeded;
+        }
+
+        /// <summary>
+        /// Reads one slab outline per zone level, on Revit's main thread.
+        ///
+        /// Cost is one collection per zone level at window open. A level whose outline cannot be
+        /// read is recorded with no rings rather than skipped — the canvas then draws that
+        /// level's areas over an empty surface, which is the documented contract, instead of
+        /// showing a blank pane with nothing to explain it.
+        /// </summary>
+        private static ZoneGeometrySnapshot CaptureGeometry(Document? doc,
+                                                            int scopeBoxCount, int titleBlockCount, int levelCount)
+        {
+            var snap = new ZoneGeometrySnapshot();
+            if (doc == null) return snap;
+
+            var links = new List<RevitLinkInstance>();
+            try
+            {
+                links = new FilteredElementCollector(doc)
+                    .OfClass(typeof(RevitLinkInstance)).Cast<RevitLinkInstance>().ToList();
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Error("ZoneManagerCommand: collect link instances", ex);
+            }
+
+            snap.Counts = new ZoneGeometrySnapshot.ModelCounts
+            {
+                ScopeBoxes      = scopeBoxCount,
+                TitleBlockTypes = titleBlockCount,
+                HostLevels      = levelCount,
+                LinkedModels    = links.Count,
+            };
+
+            var lib = ZoneSettings.Instance.Library;
+            int drawn = 0;
+
+            foreach (var level in lib.Levels)
+            {
+                if (level == null || string.IsNullOrEmpty(level.Id)) continue;
+
+                string levelName = !string.IsNullOrEmpty(level.HostLevelName) ? level.HostLevelName : level.Name;
+
+                // The level remembers which document Discover read it from. Cross-document
+                // identity is the document NAME here, the same rule the rest of the zone model
+                // follows; an unresolved key falls back to the host rather than drawing nothing.
+                Document srcDoc = doc;
+                Transform tf    = Transform.Identity;
+
+                if (!string.IsNullOrEmpty(level.SourceLinkKey))
+                {
+                    foreach (var li in links)
+                    {
+                        Document? ld = null;
+                        try { ld = li.GetLinkDocument(); }
+                        catch (Exception ex) { DiagnosticsLog.Swallowed("ZoneManagerCommand: read link document", ex); }
+
+                        if (ld == null) continue;
+                        if (!string.Equals(ld.Title, level.SourceLinkKey, StringComparison.OrdinalIgnoreCase)) continue;
+
+                        srcDoc = ld;
+                        try { tf = li.GetTotalTransform(); }
+                        catch (Exception ex) { DiagnosticsLog.Swallowed("ZoneManagerCommand: link transform", ex); }
+                        break;
+                    }
+                }
+
+                var entry = new ZoneGeometrySnapshot.LevelOutline
+                {
+                    LevelId = level.Id,
+                    HostLevelName = levelName,
+                };
+
+                try
+                {
+                    var res = ZoneSlabOutline.Collect(srcDoc, tf, levelName);
+                    entry.From = res.From.ToString();
+
+                    if (res.Ok)
+                    {
+                        foreach (var ring in res.Rings)
+                        {
+                            var pts = new List<ZoneGeometrySnapshot.PlanPoint>();
+                            foreach (var p in ring.Points) pts.Add(new ZoneGeometrySnapshot.PlanPoint(p.X, p.Y));
+                            if (pts.Count >= 3) entry.Rings.Add(pts);
+                        }
+                        entry.MinX = res.MinX; entry.MinY = res.MinY;
+                        entry.MaxX = res.MaxX; entry.MaxY = res.MaxY;
+                        if (entry.Rings.Count > 0) drawn++;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // One unreadable level must not cost the window every other level's plan.
+                    DiagnosticsLog.Error($"ZoneManagerCommand: outline for level '{levelName}'", ex);
+                }
+
+                snap.Levels[level.Id] = entry;
+            }
+
+            // Stated even at zero: a silent empty capture is indistinguishable from a collector
+            // that is simply broken, and that silence has hidden real bugs before.
+            DiagnosticsLog.Info("ZoneManagerCommand",
+                $"Captured {drawn} building outline(s) across {lib.Levels.Count} zone level(s) " +
+                $"and {links.Count} linked model(s) for the Zone Manager canvas.");
+
+            return snap;
         }
     }
 }

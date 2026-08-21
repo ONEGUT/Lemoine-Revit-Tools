@@ -49,6 +49,14 @@ namespace LemoineTools
         // Opens Zone Discover from inside the Zone Manager (main-thread window setup).
         internal static LemoineTools.Tools.Zones.ZoneOpenDiscoverEventHandler? ZoneOpenDiscoverHandler { get; private set; }
         internal static ExternalEvent?                                    ZoneOpenDiscoverEvent   { get; private set; }
+
+        // The Zone Manager's other two flow buttons. Each needs its own ExternalEvent for the
+        // same reason Discover does: the window runs on its own STA thread with no document,
+        // and every one of these launchers reads the model to set itself up.
+        internal static LemoineTools.Tools.Zones.ZoneOpenViewsEventHandler?  ZoneOpenViewsHandler  { get; private set; }
+        internal static ExternalEvent?                                   ZoneOpenViewsEvent    { get; private set; }
+        internal static LemoineTools.Tools.Zones.ZoneOpenSheetsEventHandler? ZoneOpenSheetsHandler { get; private set; }
+        internal static ExternalEvent?                                   ZoneOpenSheetsEvent   { get; private set; }
         internal static LemoineTools.Tools.Zones.ZoneViewsRunHandler?     ZoneViewsRunHandler     { get; private set; }
         internal static ExternalEvent?                                    ZoneViewsRunEvent       { get; private set; }
         internal static LemoineTools.Tools.Zones.ZoneSheetsRunHandler?    ZoneSheetsRunHandler    { get; private set; }
@@ -279,6 +287,10 @@ namespace LemoineTools
             ZoneDiscoverRunEvent    = ExternalEvent.Create(ZoneDiscoverRunHandler);
             ZoneOpenDiscoverHandler = new LemoineTools.Tools.Zones.ZoneOpenDiscoverEventHandler();
             ZoneOpenDiscoverEvent   = ExternalEvent.Create(ZoneOpenDiscoverHandler);
+            ZoneOpenViewsHandler    = new LemoineTools.Tools.Zones.ZoneOpenViewsEventHandler();
+            ZoneOpenViewsEvent      = ExternalEvent.Create(ZoneOpenViewsHandler);
+            ZoneOpenSheetsHandler   = new LemoineTools.Tools.Zones.ZoneOpenSheetsEventHandler();
+            ZoneOpenSheetsEvent     = ExternalEvent.Create(ZoneOpenSheetsHandler);
             ZoneViewsRunHandler     = new LemoineTools.Tools.Zones.ZoneViewsRunHandler();
             ZoneViewsRunEvent       = ExternalEvent.Create(ZoneViewsRunHandler);
             ZoneSheetsRunHandler    = new LemoineTools.Tools.Zones.ZoneSheetsRunHandler();

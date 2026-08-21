@@ -21,7 +21,18 @@ namespace LemoineTools.Commands
 
         public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
         {
-            var doc = commandData?.Application?.ActiveUIDocument?.Document;
+            Open(commandData?.Application);
+            return Result.Succeeded;
+        }
+
+        /// <summary>
+        /// Opens (or re-activates) the window. MUST be called on Revit's main thread — it reads
+        /// the active document. Same shape as ZoneDiscoverCommand.Open, and for the same reason:
+        /// the Zone Manager's toolbar launches this through an ExternalEvent.
+        /// </summary>
+        public static void Open(UIApplication? uiApp)
+        {
+            var doc = uiApp?.ActiveUIDocument?.Document;
 
             DocumentKey.SetCurrent(doc);
             LemoineTools.Framework.Project.ProjectLibraries.LoadForDocument(doc);
@@ -35,7 +46,7 @@ namespace LemoineTools.Commands
                         if (_window.IsVisible) _window.Activate();
                         else _window = null;
                     });
-                    if (_window != null) return Result.Succeeded;
+                    if (_window != null) return;
                 }
                 catch (Exception ex)
                 {
@@ -69,7 +80,6 @@ namespace LemoineTools.Commands
 
             ready.Wait();
             _window = win;
-            return Result.Succeeded;
         }
     }
 }

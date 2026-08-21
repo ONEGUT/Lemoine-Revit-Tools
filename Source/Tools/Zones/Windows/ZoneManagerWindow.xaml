@@ -10,107 +10,132 @@
     WindowStyle="None"
     ResizeMode="CanResizeWithGrip"
     AllowsTransparency="False"
-    ShowInTaskbar="True">
+    ShowInTaskbar="True"
+    UseLayoutRounding="True"
+    TextOptions.TextFormattingMode="Display">
 
     <shell:WindowChrome.WindowChrome>
         <shell:WindowChrome CaptionHeight="0" ResizeBorderThickness="8"
                             GlassFrameThickness="0" UseAeroCaptionButtons="False" />
     </shell:WindowChrome.WindowChrome>
 
-    <Border x:Name="_outerBorder" BorderThickness="1" ClipToBounds="True">
+    <!-- 8px outer radius, contents clipped to it — the Auto Filters / Legend Creation chrome. -->
+    <Border x:Name="_outerBorder" BorderThickness="1" ClipToBounds="True"
+            CornerRadius="{DynamicResource LemoineRadius_Window}">
         <Grid x:Name="_root">
             <Grid.RowDefinitions>
-                <RowDefinition Height="40" />
-                <RowDefinition Height="*"  />
-                <RowDefinition Height="44" />
+                <RowDefinition x:Name="_toolbarRow" Height="38" />
+                <RowDefinition Height="*" />
             </Grid.RowDefinitions>
 
-            <!-- Toolbar: title + document, close on the right -->
-            <Border x:Name="_toolbarBorder" Grid.Row="0" ClipToBounds="True" BorderThickness="0,0,0,1">
-                <Grid Margin="12,0">
+            <!-- ── Toolbar: gear, title, document, then the three flow buttons and close.
+                 There is NO footer bar; status lives in the floating chip below. -->
+            <Border x:Name="_toolbarBorder" Grid.Row="0" ClipToBounds="True">
+                <Grid x:Name="_toolbarGrid">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
                     <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock x:Name="_gearText" VerticalAlignment="Center" />
                         <TextBlock x:Name="_titleText" VerticalAlignment="Center" />
-                        <TextBlock x:Name="_docText" VerticalAlignment="Center" Margin="10,0,0,0" />
+                        <TextBlock x:Name="_docText" VerticalAlignment="Center" />
                     </StackPanel>
                     <StackPanel x:Name="_toolbarActions" Grid.Column="2"
                                 Orientation="Horizontal" VerticalAlignment="Center" />
                 </Grid>
             </Border>
 
-            <!-- Content: rail | splitter | detail -->
             <Grid Grid.Row="1">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition x:Name="_railCol" Width="300" MinWidth="220" MaxWidth="460" />
-                    <ColumnDefinition Width="6" />
-                    <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
+                <!-- ── Content: 180 navigator | * canvas | 5 splitter | 300 properties.
+                     The canvas column is the one that absorbs a splitter drag. -->
+                <Grid x:Name="_contentGrid">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition x:Name="_navCol"    Width="180" />
+                        <ColumnDefinition x:Name="_canvasCol" Width="*" MinWidth="360" />
+                        <ColumnDefinition x:Name="_splitCol"  Width="5" />
+                        <ColumnDefinition x:Name="_propsCol"  Width="300" MinWidth="260" />
+                    </Grid.ColumnDefinitions>
 
-                <!-- Rail: search | zone tree | row actions.
-                     The tab strip is gone: buildings, levels, areas, their views and the sheet
-                     sets are ONE tree now, so what belongs to what is visible rather than
-                     inferred from which tab you happen to be on. -->
-                <Border x:Name="_railBorder" Grid.Column="0" BorderThickness="0,0,1,0">
-                    <Grid Margin="10">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="*" />
-                            <RowDefinition Height="Auto" />
-                        </Grid.RowDefinitions>
+                    <!-- ── Navigator: building selector | divider | list | docked footer.
+                         Two levels deep only — levels with their areas, sheet sizes with
+                         their groups. View definitions live in the properties pane. -->
+                    <Border x:Name="_navBorder" Grid.Column="0">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
 
-                        <Grid Grid.Row="0" Margin="0,0,0,8">
-                            <TextBox x:Name="_searchBox" VerticalContentAlignment="Center" />
-                            <TextBlock x:Name="_searchHint" Margin="9,0,0,0"
-                                       VerticalAlignment="Center" FontStyle="Italic"
-                                       IsHitTestVisible="False" />
-                        </Grid>
+                            <ContentControl x:Name="_buildingSlot" Grid.Row="0" />
+                            <Border x:Name="_navDivider" Grid.Row="1" Height="1" />
 
-                        <Border x:Name="_listBorder" Grid.Row="1" BorderThickness="1"
-                                CornerRadius="{DynamicResource LemoineRadius_SM}">
-                            <ScrollViewer x:Name="_listScroll"
+                            <ScrollViewer x:Name="_listScroll" Grid.Row="2"
                                           VerticalScrollBarVisibility="Auto"
-                                          HorizontalScrollBarVisibility="Disabled"
-                                          Padding="0,5">
+                                          HorizontalScrollBarVisibility="Disabled">
                                 <StackPanel x:Name="_listStack" />
                             </ScrollViewer>
-                        </Border>
 
-                        <StackPanel x:Name="_railActions" Grid.Row="2"
-                                    Orientation="Horizontal" Margin="0,8,0,0" />
-                    </Grid>
-                </Border>
+                            <Border x:Name="_navFooterBorder" Grid.Row="3" BorderThickness="0,1,0,0">
+                                <StackPanel x:Name="_navFooter" Orientation="Horizontal" />
+                            </Border>
+                        </Grid>
+                    </Border>
 
-                <GridSplitter Grid.Column="1" Width="6"
-                              HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
-                              Background="Transparent"
-                              ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"
-                              ShowsPreview="False" />
+                    <!-- ── Canvas: 31px breadcrumb + Plan|Sheet toggle, then the drawing.
+                         Overlays (legend, scale chips, empty state) sit in _planHost on
+                         top of the canvas itself. -->
+                    <Border x:Name="_canvasBorder" Grid.Column="1" BorderThickness="1,0,0,0">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition x:Name="_crumbRow" Height="31" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
 
-                <ScrollViewer x:Name="_detailScroll" Grid.Column="2"
-                              VerticalScrollBarVisibility="Auto"
-                              HorizontalScrollBarVisibility="Disabled"
-                              Padding="16,12">
-                    <StackPanel x:Name="_detailStack" />
-                </ScrollViewer>
-            </Grid>
+                            <Border x:Name="_crumbBorder" Grid.Row="0" ClipToBounds="True"
+                                    BorderThickness="0,0,0,1">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel x:Name="_crumbPanel" Grid.Column="0"
+                                                Orientation="Horizontal" VerticalAlignment="Center" />
+                                    <StackPanel x:Name="_crumbRight" Grid.Column="2"
+                                                Orientation="Horizontal" VerticalAlignment="Center" />
+                                </Grid>
+                            </Border>
 
-            <!-- Footer: status left, actions right -->
-            <Border x:Name="_footerBorder" Grid.Row="2" ClipToBounds="True" BorderThickness="0,1,0,0">
-                <Grid Margin="12,0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock x:Name="_statusText" Grid.Column="0" VerticalAlignment="Center" />
-                    <StackPanel x:Name="_footerActions" Grid.Column="2"
-                                Orientation="Horizontal" VerticalAlignment="Center" />
+                            <Grid x:Name="_planHost" Grid.Row="1" ClipToBounds="True" />
+                        </Grid>
+                    </Border>
+
+                    <GridSplitter x:Name="_splitter" Grid.Column="2" Width="5"
+                                  HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                                  Background="Transparent" Cursor="SizeWE"
+                                  ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"
+                                  ShowsPreview="False" />
+
+                    <!-- ── Properties: header, cards, field grids. The bottom padding that
+                         clears the floating chip is applied in code (ApplyFloatingInset). -->
+                    <Border x:Name="_propsBorder" Grid.Column="3" BorderThickness="1,0,0,0">
+                        <ScrollViewer x:Name="_propsScroll"
+                                      VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Disabled">
+                            <StackPanel x:Name="_detailStack" />
+                        </ScrollViewer>
+                    </Border>
                 </Grid>
-            </Border>
+
+                <!-- Floating bottom-right status chip — replaces the old footer status text. -->
+                <ContentControl x:Name="_floatingSlot"
+                                HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                                Panel.ZIndex="50" Margin="0,0,16,16" />
+            </Grid>
         </Grid>
     </Border>
 </Window>

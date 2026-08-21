@@ -56,19 +56,64 @@ namespace LemoineTools.Tools.Zones.Windows
         private const string KindSheetSet   = "sheetset";
         private const string KindSheetGroup = "group";
 
-        private string _query = "";
+        /// <summary>What the canvas is drawing.</summary>
+        internal enum CanvasMode { Plan, Sheet }
 
-        /// <summary>Selected node key ("kind:id" / "kind:parent/child"), "" for none.</summary>
+        /// <summary>
+        /// Selected node key ("kind:id" / "kind:parent/child"), "" for none.
+        ///
+        /// ONE field, and everything reads it: the navigator highlight, the breadcrumb tail, the
+        /// canvas selection state and the whole properties pane. Clicking an area on the plan and
+        /// clicking its navigator row cannot disagree, because there is nothing to keep in sync.
+        /// </summary>
         private string _selected = "";
 
-        /// <summary>Expanded node keys. Buildings and the sheet root start open.</summary>
-        private readonly HashSet<string> _expanded = new HashSet<string>(StringComparer.Ordinal);
-        private bool _expansionSeeded;
+        /// <summary>Which building the navigator is showing. "" means the first one.</summary>
+        private string _activeBuildingId = "";
+
+        /// <summary>Which level's areas the navigator expands and the canvas draws.</summary>
+        private string _activeLevelId = "";
+
+        /// <summary>Which sheet size's groups the navigator expands.</summary>
+        private string _activeSheetSetId = "";
+
+        private CanvasMode _mode = CanvasMode.Plan;
+
+        /// <summary>True while a step flow is open — all three flow buttons are disabled.</summary>
+        private bool _flowBusy;
 
         private readonly string _docTitle;
         private readonly List<ZoneTitleBlocks.TitleBlockType> _titleBlocks;
         private readonly List<ZoneScopeBoxSync.BoxInfo> _scopeBoxes;
         private readonly List<string> _hostLevelNames;
+
+        /// <summary>
+        /// The building as captured at launch. Immutable for this window's lifetime — the
+        /// window has no Revit access, so this is the only picture of the model it will ever get.
+        /// </summary>
+        private readonly ZoneGeometrySnapshot _snapshot;
+
+        /// <summary>
+        /// What the launch-time scope box reconcile found, per area id. This is what the
+        /// "scope box resized" warning card reads: the card is driven by measured state and
+        /// disappears when a re-adopt makes the drift go away, never by being dismissed.
+        /// </summary>
+        private readonly Dictionary<string, ScopeBoxDrift> _boxDrift =
+            new Dictionary<string, ScopeBoxDrift>(StringComparer.Ordinal);
+
+        /// <summary>Areas naming a scope box this document does not contain.</summary>
+        private readonly HashSet<string> _missingBoxAreas = new HashSet<string>(StringComparer.Ordinal);
+
+        /// <summary>A scope box that changed size since the area adopted it.</summary>
+        internal sealed class ScopeBoxDrift
+        {
+            public double DriftFt      { get; set; }
+            public bool   HadPlacements{ get; set; }
+        }
+
+        private ZonePlanCanvas? _canvas;
+        private Border?    _statusChip;
+        private TextBlock? _statusChipText;
 
         /// <summary>Set once the Discover window has been asked to open, so re-entry reloads.</summary>
         private bool _discoverLaunched;
@@ -79,12 +124,14 @@ namespace LemoineTools.Tools.Zones.Windows
             string? docTitle = null,
             List<ZoneTitleBlocks.TitleBlockType>? titleBlocks = null,
             List<ZoneScopeBoxSync.BoxInfo>? scopeBoxes = null,
-            List<string>? hostLevelNames = null)
+            List<string>? hostLevelNames = null,
+            ZoneGeometrySnapshot? snapshot = null)
         {
             _docTitle       = docTitle ?? "";
             _titleBlocks    = titleBlocks    ?? new List<ZoneTitleBlocks.TitleBlockType>();
             _scopeBoxes     = scopeBoxes     ?? new List<ZoneScopeBoxSync.BoxInfo>();
             _hostLevelNames = hostLevelNames ?? new List<string>();
+            _snapshot       = snapshot       ?? new ZoneGeometrySnapshot();
 
             InitializeComponent();
             Loaded    += OnLoaded;
@@ -126,6 +173,7 @@ namespace LemoineTools.Tools.Zones.Windows
             {
                 AppSettings.Instance.ApplyScaleTo(Resources);
                 ControlStyles.InjectInto(Resources, scrollBarWidth: 8);
+                ApplyMetrics();
                 Rebuild();
             }));
         }
@@ -137,31 +185,34 @@ namespace LemoineTools.Tools.Zones.Windows
             Background = AppSettings.Instance.ActiveTheme.PageBg;
             ApplyChrome();
 
+            var st = AppSettings.Instance;
+
+            // Segoe MDL2 settings gear, by codepoint — a literal glyph in source is unmatchable
+            // by the Edit tool, so every glyph in this window is written this way.
+            _gearText.Text = char.ConvertFromUtf32(0x2699);
+            _gearText.Margin = st.Th(0, 0, 9, 0);
+            _gearText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextSub");
+            _gearText.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_LG");
+
             _titleText.Text = AppStrings.T("zones.manager.title");
             _titleText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
             _titleText.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_LG");
             _titleText.FontWeight = FontWeights.SemiBold;
 
-            _docText.Text = _docTitle;
+            _docText.Text   = _docTitle;
+            _docText.Margin = st.Th(11, 0, 0, 0);
+            _docText.FontFamily = st.ActiveTheme.MonoFont;
             _docText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             _docText.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
 
-            _searchHint.Text = AppStrings.T("zones.picker.searchHint");
-            _searchHint.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            _searchHint.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            _searchBox.SetResourceReference(WpfTextBox.FontSizeProperty,   "LemoineFS_SM");
-            _searchBox.TextChanged += (s, ev) =>
-            {
-                _query = (_searchBox.Text ?? "").Trim();
-                _searchHint.Visibility = string.IsNullOrEmpty(_query) ? WpfVisibility.Visible : WpfVisibility.Collapsed;
-                RebuildTree();
-            };
+            ApplyMetrics();
 
-            _statusText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            _statusText.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            BuildFloatingStatus();
+            BuildCanvas();
 
             // Dragging the toolbar moves the window — WindowStyle=None means no OS caption.
-            _toolbarBorder.Background = Brushes.Transparent;
+            // No Brushes.Transparent needed: ApplyChrome gives the bar a solid background, and
+            // a solid brush is hit-testable across its whole bounds.
             _toolbarBorder.MouseLeftButtonDown += (s, ev) =>
             {
                 if (ev.ClickCount == 1) { try { DragMove(); } catch (Exception ex) { DiagnosticsLog.Swallowed("ZoneManagerWindow: DragMove", ex); } }
@@ -172,8 +223,6 @@ namespace LemoineTools.Tools.Zones.Windows
             // "unresolved" for a box that is sitting right there in the document.
             AdoptScopeBoxExtents(announce: true);
 
-            BuildToolbarActions();
-            BuildFooterActions();
             Rebuild();
         }
 
@@ -189,6 +238,7 @@ namespace LemoineTools.Tools.Zones.Windows
         {
             if (!_discoverLaunched) return;
             _discoverLaunched = false;
+            _flowBusy = false;
 
             try
             {
@@ -196,7 +246,8 @@ namespace LemoineTools.Tools.Zones.Windows
                 // rather than leaving them reading "unresolved" until something else touches them.
                 AdoptScopeBoxExtents(announce: false);
                 _selected = "";
-                _expansionSeeded = false;
+                _activeLevelId = "";
+                _activeSheetSetId = "";
                 Rebuild();
                 FlashStatus(AppStrings.T("zones.manager.status.reloaded"));
             }
@@ -222,17 +273,49 @@ namespace LemoineTools.Tools.Zones.Windows
             base.OnClosed(e);
         }
 
+        /// <summary>
+        /// The scale-dependent chrome sizes. XAML carries the design values as defaults; these
+        /// re-apply them at the user's UI scale, and again whenever that scale changes.
+        /// </summary>
+        private void ApplyMetrics()
+        {
+            var st = AppSettings.Instance;
+            _toolbarGrid.Margin = st.Th(12, 0, 12, 0);
+            _toolbarRow.Height  = new GridLength(st.ToolbarHeight);
+            _crumbRow.Height    = new GridLength(st.S(31));
+            _navCol.Width       = new GridLength(st.S(180));
+            _propsCol.Width     = new GridLength(st.S(300));
+            _canvasCol.MinWidth = st.S(360);
+            _propsCol.MinWidth  = st.S(260);
+            _splitCol.Width     = new GridLength(st.S(5));
+            _splitter.Width     = st.S(5);
+            ApplyFloatingInset(_floatingSlot.ActualHeight);
+
+            // The empty state is built once and cached; its metrics are baked in at that point,
+            // so a scale change has to throw it away or it keeps the old scale's sizes.
+            _emptyStateHost?.Children.Clear();
+        }
+
         private void ApplyChrome()
         {
-            _root.SetResourceReference(WpfGrid.BackgroundProperty,    "LemoineBg");
-            _outerBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-            _toolbarBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-            _footerBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineSurface");
-            _footerBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-            _railBorder.SetResourceReference(Border.BackgroundProperty,    "LemoineSurface");
-            _railBorder.SetResourceReference(Border.BorderBrushProperty,   "LemoineBorder");
-            _listBorder.SetResourceReference(Border.BackgroundProperty,    "LemoineBg");
-            _listBorder.SetResourceReference(Border.BorderBrushProperty,   "LemoineBorder");
+            _root.SetResourceReference(WpfGrid.BackgroundProperty,        "LemoinePageBg");
+            _outerBorder.SetResourceReference(Border.BorderBrushProperty,  "LemoineBorder");
+            _toolbarBorder.SetResourceReference(Border.BackgroundProperty, "LemoineBg");
+
+            _navBorder.SetResourceReference(Border.BackgroundProperty,       "LemoineSurface");
+            _navDivider.SetResourceReference(Border.BackgroundProperty,      "LemoineBorder");
+            _navFooterBorder.SetResourceReference(Border.BackgroundProperty, "LemoineSurface");
+            _navFooterBorder.SetResourceReference(Border.BorderBrushProperty,"LemoineBorder");
+
+            _canvasBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineBg");
+            _canvasBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            _crumbBorder.SetResourceReference(Border.BorderBrushProperty,  "LemoineBorder");
+            // The plan surface is the darkest tier — the drawing sits on the window colour,
+            // not on the panel colour around it.
+            _planHost.SetResourceReference(WpfGrid.BackgroundProperty,     "LemoinePageBg");
+
+            _propsBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineSurface");
+            _propsBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
         }
 
         // ── Scope box reconciliation ──────────────────────────────────────────
@@ -256,6 +339,11 @@ namespace LemoineTools.Tools.Zones.Windows
 
             int resolved = 0, moved = 0, missing = 0;
 
+            // Rebuilt from scratch on every reconcile: an area whose box no longer drifts must
+            // lose its warning, and a stale entry would keep the card on screen forever.
+            _boxDrift.Clear();
+            _missingBoxAreas.Clear();
+
             foreach (var area in Lib.Areas)
             {
                 if (area == null) continue;
@@ -265,6 +353,7 @@ namespace LemoineTools.Tools.Zones.Windows
                 if (!byName.TryGetValue(area.ScopeBoxName, out var box))
                 {
                     missing++;
+                    _missingBoxAreas.Add(area.Id);
                     // The area is never deleted — the library outlives any one box.
                     DiagnosticsLog.Warn("ZoneManagerWindow",
                         $"Area '{area.Name}' adopts scope box '{area.ScopeBoxName}', which is not in this " +
@@ -292,6 +381,7 @@ namespace LemoineTools.Tools.Zones.Windows
 
                 ZoneScopeBoxSync.AdoptExtents(area, box);
                 moved++;
+                _boxDrift[area.Id] = new ScopeBoxDrift { DriftFt = drift, HadPlacements = hadPlacements };
                 DiagnosticsLog.Warn("ZoneManagerWindow",
                     $"Area '{area.Name}': scope box '{area.ScopeBoxName}' was resized " +
                     $"(largest edge difference {drift:0.##}'). Extents re-adopted automatically" +
@@ -311,19 +401,42 @@ namespace LemoineTools.Tools.Zones.Windows
         }
 
         // ── Chrome actions ────────────────────────────────────────────────────
+        /// <summary>
+        /// The three generation flows, then close.
+        ///
+        /// Create Views and Build Sheets stay DISABLED until at least one area has resolved
+        /// extents — there is nothing for either to generate from before that, and the empty
+        /// state says so rather than letting the user press a button that cannot work.
+        /// </summary>
         private void BuildToolbarActions()
         {
             _toolbarActions.Children.Clear();
-            _toolbarActions.Children.Add(MakeButton(AppStrings.T("zones.manager.actions.discover"), OnDiscover));
-            _toolbarActions.Children.Add(MakeButton(AppStrings.T("zones.manager.close"), Close, accent: false));
-        }
 
-        private void BuildFooterActions()
-        {
-            _footerActions.Children.Clear();
-            _footerActions.Children.Add(MakeButton(AppStrings.T("zones.manager.actions.resolvePlacements"),
-                                                   OnResolvePlacements, accent: false));
-            _footerActions.Children.Add(MakeButton(AppStrings.T("zones.manager.close"), Close, accent: true));
+            bool anyExtents = Lib.Areas.Any(a => a.HasExtents);
+
+            _toolbarActions.Children.Add(MakeFlowButton(
+                AppStrings.T("zones.manager.flows.discover"), OnDiscover,
+                accent: true, enabled: !_flowBusy));
+
+            _toolbarActions.Children.Add(MakeFlowButton(
+                AppStrings.T("zones.manager.flows.createViews"), OnCreateViews,
+                accent: false, enabled: !_flowBusy && anyExtents));
+
+            _toolbarActions.Children.Add(MakeFlowButton(
+                AppStrings.T("zones.manager.flows.buildSheets"), OnBuildSheets,
+                accent: false, enabled: !_flowBusy && anyExtents));
+
+            var sep = new Border
+            {
+                Width  = 1,
+                Height = AppSettings.Instance.S(13),
+                Margin = AppSettings.Instance.Th(8, 0, 8, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            sep.SetResourceReference(Border.BackgroundProperty, "LemoineBorder");
+            _toolbarActions.Children.Add(sep);
+
+            _toolbarActions.Children.Add(MakeCloseButton());
         }
 
         /// <summary>
@@ -332,309 +445,57 @@ namespace LemoineTools.Tools.Zones.Windows
         /// enumerates link instances and this thread has no document.
         /// </summary>
         private void OnDiscover()
+            => LaunchFlow(App.ZoneOpenDiscoverEvent, "Discover",
+                          AppStrings.T("zones.manager.status.openingDiscover"));
+
+        // ── Floating status chip ──────────────────────────────────────────────
+        //
+        // Replaces the old footer status text. Same construction as Auto Filters', including
+        // the bottom inset it reserves in the properties pane so the last card can never hide
+        // behind it.
+        private void BuildFloatingStatus()
         {
-            try { ZoneSettings.Save(); }
-            catch (Exception ex)
-            {
-                DiagnosticsLog.Error("ZoneManagerWindow: save before Discover", ex);
-                FlashStatus(AppStrings.T("zones.manager.status.saveFailed"));
-                return;
-            }
+            _statusChip = ControlStyles.BuildStatusChip(out _statusChipText);
+            _statusChip.HorizontalAlignment = HorizontalAlignment.Right;
+            _statusChip.VerticalAlignment   = VerticalAlignment.Bottom;
+            _floatingSlot.Content = _statusChip;
 
-            var evt = App.ZoneOpenDiscoverEvent;
-            if (evt == null)
-            {
-                DiagnosticsLog.Warn("ZoneManagerWindow", "Discover unavailable: event handler not registered.");
-                FlashStatus(AppStrings.T("zones.manager.status.discoverUnavailable"));
-                return;
-            }
-
-            _discoverLaunched = true;
-            evt.Raise();
-            FlashStatus(AppStrings.T("zones.manager.status.openingDiscover"));
+            _floatingSlot.SizeChanged += (s, e) => ApplyFloatingInset(e.NewSize.Height);
+            ApplyFloatingInset(_floatingSlot.ActualHeight);
         }
 
+        /// <summary>Reserves the chip's height at the bottom of the properties pane.</summary>
+        private void ApplyFloatingInset(double chipHeight)
+        {
+            double inset = Math.Max(0, chipHeight) + AppSettings.Instance.S(16);
+            _propsBorder.Padding = new Thickness(
+                AppSettings.Instance.S(13), AppSettings.Instance.S(12),
+                AppSettings.Instance.S(13), inset);
+        }
+
+        /// <summary>
+        /// Writes a transient message to the chip. Unlike Auto Filters' version this does NOT
+        /// self-clear on a timer: the chip is this window's only status surface, so it falls
+        /// back to the standing count line rather than going blank.
+        /// </summary>
         private void FlashStatus(string text)
         {
-            _statusText.Text = text;
+            if (_statusChipText == null) return;
+            _statusChipText.Text = text;
+            if (_statusChip != null) _statusChip.Visibility = WpfVisibility.Visible;
         }
 
         // ── Rebuild ───────────────────────────────────────────────────────────
         private void Rebuild()
         {
             RebuildTree();
+            RebuildDetail();
+            RepaintCanvas();
+            BuildToolbarActions();
+            BuildNavFooter();
             UpdateStatus();
         }
 
-        private bool Matches(params string?[] fields)
-        {
-            if (string.IsNullOrEmpty(_query)) return true;
-            foreach (var f in fields)
-                if (!string.IsNullOrEmpty(f) && f!.IndexOf(_query, StringComparison.OrdinalIgnoreCase) >= 0)
-                    return true;
-            return false;
-        }
-
-        private static string Key(string kind, string id) => kind + ":" + id;
-        private static string Key(string kind, string parentId, string childId)
-            => kind + ":" + parentId + "/" + childId;
-
-        private bool IsExpanded(string key) => _expanded.Contains(key);
-
-        private void Toggle(string key)
-        {
-            if (!_expanded.Remove(key)) _expanded.Add(key);
-            RebuildTree();
-        }
-
-        // ── The tree ──────────────────────────────────────────────────────────
-        private void RebuildTree()
-        {
-            _listStack.Children.Clear();
-            _railActions.Children.Clear();
-
-            if (!_expansionSeeded)
-            {
-                // Buildings and the sheet root open by default; deeper levels stay closed so a
-                // large project does not open as one enormous list.
-                foreach (var b in Lib.Buildings) _expanded.Add(Key(KindBuilding, b.Id));
-                _expanded.Add(Key(KindSheetRoot, ""));
-                _expansionSeeded = true;
-            }
-
-            bool searching = !string.IsNullOrEmpty(_query);
-            int rows = 0;
-
-            var buildings = Lib.Buildings.OrderBy(b => b.SortIndex)
-                                         .ThenBy(b => b.Name, NaturalOrderComparer.OrdinalIgnoreCase)
-                                         .ToList();
-
-            foreach (var b in buildings)
-                rows += AddBuildingNode(b, searching);
-
-            // Levels and areas whose building was deleted would otherwise vanish from the UI
-            // while still living in the library. They are shown under an explicit orphan header.
-            rows += AddOrphans(searching);
-
-            if (buildings.Count == 0 && rows == 0 && !searching)
-                _listStack.Children.Add(MakeEmptyRow(AppStrings.T("zones.picker.emptyLibrary")));
-
-            AddSheetRoot(searching);
-
-            // Root-level creation: the only + with no parent row to hang from.
-            _listStack.Children.Add(MakeAddRow(AppStrings.T("zones.manager.actions.addBuilding"),
-                                               indent: 0, onAdd: AddBuilding));
-
-            if (searching && rows == 0)
-                _listStack.Children.Add(MakeEmptyRow(AppStrings.T("zones.manager.noMatches")));
-
-            _railActions.Children.Add(MakeButton(AppStrings.T("zones.manager.actions.delete"), DeleteSelected));
-
-            RebuildDetail();
-        }
-
-        private int AddBuildingNode(ZoneBuilding b, bool searching)
-        {
-            string key = Key(KindBuilding, b.Id);
-
-            var levels = Lib.Levels.Where(l => (l.BuildingId ?? "") == b.Id)
-                                   .OrderBy(l => l.SortIndex).ThenBy(l => l.ElevationFt).ToList();
-
-            // While searching, a branch is shown when it or anything under it matches.
-            bool self = Matches(b.Name, b.Code);
-            var childRows = new List<UIElement>();
-            int matched = 0;
-
-            bool open = searching || IsExpanded(key);
-            if (open)
-            {
-                foreach (var lv in levels)
-                {
-                    var built = BuildLevelNode(lv, searching, out int m);
-                    matched += m;
-                    if (m > 0 || !searching) childRows.AddRange(built);
-                }
-            }
-
-            if (searching && !self && matched == 0) return 0;
-
-            _listStack.Children.Add(MakeNodeRow(
-                key, b.Name, AppStrings.T("zones.manager.node.building"),
-                indent: 0, hasChildren: true, expanded: open,
-                addLabel: AppStrings.T("zones.manager.actions.addLevel"),
-                onAdd: () => AddLevel(b.Id)));
-
-            foreach (var r in childRows) _listStack.Children.Add(r);
-
-            if (open)
-                _listStack.Children.Add(MakeAddRow(AppStrings.T("zones.manager.actions.addLevel"),
-                                                   indent: 1, onAdd: () => AddLevel(b.Id)));
-
-            return 1 + matched;
-        }
-
-        private List<UIElement> BuildLevelNode(ZoneLevel lv, bool searching, out int matched)
-        {
-            var rows = new List<UIElement>();
-            string key = Key(KindLevel, lv.Id);
-            bool self = Matches(lv.Name, lv.Code, lv.HostLevelName);
-            matched = self ? 1 : 0;
-
-            var areas = Lib.Areas
-                .Where(a => Lib.AreaAppliesTo(a, lv))
-                .OrderBy(a => a.SortIndex)
-                .ThenBy(a => a.Name, NaturalOrderComparer.OrdinalIgnoreCase)
-                .ToList();
-
-            bool open = searching || IsExpanded(key);
-            var child = new List<UIElement>();
-
-            if (open)
-            {
-                // The level's OWN view definitions — the seed every area under it inherits.
-                foreach (var v in (lv.ViewDefs ?? new List<ZoneViewDef>()).OrderBy(v => v.SortIndex))
-                {
-                    if (searching && !Matches(v.Name, v.Kind)) continue;
-                    if (searching) matched++;
-                    child.Add(MakeNodeRow(
-                        Key(KindViewDef, lv.Id, v.Id), v.Name, v.Kind,
-                        indent: 2, hasChildren: false, expanded: false));
-                }
-                child.Add(MakeAddRow(AppStrings.T("zones.manager.actions.addView"),
-                                     indent: 2, onAdd: () => AddViewDef(lv)));
-
-                foreach (var a in areas)
-                {
-                    var built = BuildAreaNode(lv, a, searching, out int m);
-                    matched += m;
-                    if (m > 0 || !searching) child.AddRange(built);
-                }
-
-                child.Add(MakeAddRow(AppStrings.T("zones.manager.actions.addArea"),
-                                     indent: 2, onAdd: () => AddArea(lv)));
-            }
-
-            if (searching && matched == 0) return rows;
-
-            rows.Add(MakeNodeRow(
-                key, lv.Name, $"{lv.ElevationFt:0.##}'",
-                indent: 1, hasChildren: true, expanded: open,
-                addLabel: AppStrings.T("zones.manager.actions.addArea"),
-                onAdd: () => AddArea(lv)));
-            rows.AddRange(child);
-            return rows;
-        }
-
-        private List<UIElement> BuildAreaNode(ZoneLevel lv, ZoneArea a, bool searching, out int matched)
-        {
-            var rows = new List<UIElement>();
-            string key = Key(KindArea, a.Id);
-            bool self = Matches(a.Name, a.Code, a.ScopeBoxName);
-            matched = self ? 1 : 0;
-
-            bool open = IsExpanded(key) && !searching;
-            var child = new List<UIElement>();
-
-            if (open)
-            {
-                // The same views as the level, seen through this area's overrides.
-                foreach (var v in (lv.ViewDefs ?? new List<ZoneViewDef>()).OrderBy(v => v.SortIndex))
-                {
-                    var ov = Lib.OverrideFor(a, v.Id);
-                    int n = ov?.OverriddenFields?.Count ?? 0;
-                    string meta = n > 0
-                        ? AppStrings.T("zones.manager.view.overriddenN", n)
-                        : AppStrings.T("zones.manager.view.inherited");
-                    child.Add(MakeNodeRow(
-                        Key(KindAreaView, a.Id, v.Id), v.Name, meta,
-                        indent: 3, hasChildren: false, expanded: false));
-                }
-                if ((lv.ViewDefs?.Count ?? 0) == 0)
-                    child.Add(MakeEmptyRow(AppStrings.T("zones.manager.view.noneOnLevel"), indent: 3));
-            }
-
-            if (searching && matched == 0) return rows;
-
-            rows.Add(MakeNodeRow(
-                key, a.Name, a.HasExtents ? $"{a.WidthFt:0.#}' × {a.DepthFt:0.#}'" : a.ScopeBoxName,
-                indent: 2, hasChildren: true, expanded: open));
-            rows.AddRange(child);
-            return rows;
-        }
-
-        /// <summary>
-        /// Levels and areas whose building no longer exists. They are in the library, so they
-        /// are shown — a record that is invisible but still saved is exactly the kind of thing
-        /// that reads as data loss.
-        /// </summary>
-        private int AddOrphans(bool searching)
-        {
-            var ids = new HashSet<string>(Lib.Buildings.Select(b => b.Id), StringComparer.Ordinal);
-            var orphanLevels = Lib.Levels
-                .Where(l => string.IsNullOrEmpty(l.BuildingId) || !ids.Contains(l.BuildingId))
-                .Where(l => Matches(l.Name, l.Code))
-                .OrderBy(l => l.ElevationFt).ToList();
-
-            if (orphanLevels.Count == 0) return 0;
-
-            _listStack.Children.Add(MakeGroupHeader(AppStrings.T("zones.picker.unassigned")));
-            foreach (var lv in orphanLevels)
-                _listStack.Children.Add(MakeNodeRow(
-                    Key(KindLevel, lv.Id), lv.Name, $"{lv.ElevationFt:0.##}'",
-                    indent: 1, hasChildren: false, expanded: false));
-            return orphanLevels.Count;
-        }
-
-        private void AddSheetRoot(bool searching)
-        {
-            string key = Key(KindSheetRoot, "");
-            bool open = searching || IsExpanded(key);
-
-            _listStack.Children.Add(MakeNodeRow(
-                key, AppStrings.T("zones.manager.node.sheets"), Lib.SheetSets.Count.ToString(),
-                indent: 0, hasChildren: true, expanded: open,
-                addLabel: AppStrings.T("zones.manager.actions.addSheetSet"),
-                onAdd: AddSheetSet));
-
-            if (!open) return;
-
-            foreach (var y in Lib.SheetSets.OrderBy(y => y.SortIndex)
-                                           .ThenBy(y => y.Name, NaturalOrderComparer.OrdinalIgnoreCase))
-            {
-                if (searching && !Matches(y.Name, y.TitleBlockTypeName)) continue;
-
-                string sKey = Key(KindSheetSet, y.Id);
-                bool sOpen = searching || IsExpanded(sKey);
-
-                _listStack.Children.Add(MakeNodeRow(
-                    sKey, y.Name, y.TitleBlockTypeName,
-                    indent: 1, hasChildren: true, expanded: sOpen,
-                    addLabel: AppStrings.T("zones.manager.actions.addGroup"),
-                    onAdd: () => AddGroup(y)));
-
-                if (!sOpen) continue;
-
-                foreach (var g in (y.Groups ?? new List<ZoneSheetGroup>()).OrderBy(g => g.SortIndex))
-                {
-                    string names = g.AreaIds != null && g.AreaIds.Count > 0
-                        ? string.Join(" + ", g.AreaIds.Select(id => Lib.Area(id)?.Name
-                                                                   ?? AppStrings.T("zones.manager.layout.missingArea")))
-                        : AppStrings.T("zones.manager.layout.noAreas");
-                    _listStack.Children.Add(MakeNodeRow(
-                        Key(KindSheetGroup, y.Id, g.Id), names, g.Suffix,
-                        indent: 2, hasChildren: false, expanded: false));
-                }
-
-                _listStack.Children.Add(MakeAddRow(AppStrings.T("zones.manager.actions.addGroup"),
-                                                   indent: 2, onAdd: () => AddGroup(y)));
-            }
-
-            if (Lib.SheetSets.Count == 0)
-                _listStack.Children.Add(MakeEmptyRow(AppStrings.T("zones.manager.layout.noSets"), indent: 1));
-
-            _listStack.Children.Add(MakeAddRow(AppStrings.T("zones.manager.actions.addSheetSet"),
-                                               indent: 1, onAdd: AddSheetSet));
-        }
 
         // ── Detail pane ───────────────────────────────────────────────────────
         private void RebuildDetail()
@@ -643,7 +504,7 @@ namespace LemoineTools.Tools.Zones.Windows
 
             if (string.IsNullOrEmpty(_selected))
             {
-                _detailStack.Children.Add(MakeEmptyRow(AppStrings.T("zones.manager.pickSomething")));
+                BuildNothingSelected();
                 return;
             }
 
@@ -706,7 +567,7 @@ namespace LemoineTools.Tools.Zones.Windows
 
         private void BuildBuildingDetail(ZoneBuilding b)
         {
-            _detailStack.Children.Add(MakeHeading(b.Name));
+            _detailStack.Children.Add(PropsHeader(b.Name, AppStrings.T("zones.manager.node.building")));
 
             var card = MakeCard(AppStrings.T("zones.manager.node.building"));
             card.Children.Add(MakeTextField(AppStrings.T("zones.manager.area.name"), b.Name,
@@ -719,7 +580,7 @@ namespace LemoineTools.Tools.Zones.Windows
 
         private void BuildLevelDetail(ZoneLevel l)
         {
-            _detailStack.Children.Add(MakeHeading(l.Name));
+            _detailStack.Children.Add(PropsHeader(l.Name, AppStrings.T("zones.manager.node.level")));
 
             var card = MakeCard(AppStrings.T("zones.manager.node.level"));
             card.Children.Add(MakeTextField(AppStrings.T("zones.manager.area.name"), l.Name,
@@ -748,7 +609,12 @@ namespace LemoineTools.Tools.Zones.Windows
 
         private void BuildAreaDetail(ZoneArea a)
         {
-            _detailStack.Children.Add(MakeHeading(a.Name));
+            _detailStack.Children.Add(PropsHeader(a.Name, AppStrings.T("zones.manager.node.area")));
+
+            // Above the fields, because it is the reason the fields below it may have changed
+            // under the user. Driven by the launch reconcile, not by a flag anyone can dismiss.
+            var warn = AreaWarningCard(a);
+            if (warn != null) _detailStack.Children.Add(warn);
 
             var card = MakeCard(AppStrings.T("zones.manager.area.section"));
             card.Children.Add(MakeTextField(AppStrings.T("zones.manager.area.name"), a.Name, v => { a.Name = v; RebuildTree(); }));
@@ -801,12 +667,24 @@ namespace LemoineTools.Tools.Zones.Windows
             card.Children.Add(MakeNote(AppStrings.T("zones.manager.area.anchorNote")));
 
             _detailStack.Children.Add(WrapCard(card));
+
+            AppendAreaCards(a, LevelOf(a));
+        }
+
+        /// <summary>The level an area is being viewed on: the active one when it applies there,
+        /// else the first level the area applies to.</summary>
+        private ZoneLevel? LevelOf(ZoneArea a)
+        {
+            var active = string.IsNullOrEmpty(_activeLevelId) ? null : Lib.Level(_activeLevelId);
+            if (active != null && AreasOn(active).Any(x => x.Id == a.Id)) return active;
+
+            return Lib.Levels.FirstOrDefault(l => AreasOn(l).Any(x => x.Id == a.Id));
         }
 
         /// <summary>A view definition as the LEVEL owns it — the seed every area inherits.</summary>
         private void BuildViewDefDetail(ZoneLevel level, ZoneViewDef r)
         {
-            _detailStack.Children.Add(MakeHeading(r.Name));
+            _detailStack.Children.Add(PropsHeader(r.Name, AppStrings.T("zones.manager.node.view")));
 
             var card = MakeCard(AppStrings.T("zones.manager.viewDef.section"));
             card.Children.Add(MakeNote(AppStrings.T("zones.manager.viewDef.levelNote", level.Name)));
@@ -841,7 +719,7 @@ namespace LemoineTools.Tools.Zones.Windows
         /// </summary>
         private void BuildAreaViewDetail(ZoneArea area, ZoneViewDef baseDef)
         {
-            _detailStack.Children.Add(MakeHeading($"{area.Name} · {baseDef.Name}"));
+            _detailStack.Children.Add(PropsHeader(baseDef.Name, area.Name));
 
             var ov = Lib.OverrideFor(area, baseDef.Id);
             var effective = Lib.ResolveViewDef(null, area, baseDef);
@@ -1046,7 +924,7 @@ namespace LemoineTools.Tools.Zones.Windows
 
         private void BuildSheetSetDetail(ZoneSheetSet y)
         {
-            _detailStack.Children.Add(MakeHeading(y.Name));
+            _detailStack.Children.Add(PropsHeader(y.Name, AppStrings.T("zones.manager.node.sheetSize")));
 
             var card = MakeCard(AppStrings.T("zones.manager.layout.section"));
             card.Children.Add(MakeTextField(AppStrings.T("zones.manager.layout.name"), y.Name, v => { y.Name = v; RebuildTree(); }));
@@ -1116,7 +994,7 @@ namespace LemoineTools.Tools.Zones.Windows
                 SortIndex = Lib.Buildings.Count,
             };
             Lib.Buildings.Add(b);
-            _expanded.Add(Key(KindBuilding, b.Id));
+            _activeBuildingId = b.Id;
             _selected = Key(KindBuilding, b.Id);
             Rebuild();
         }
@@ -1132,8 +1010,8 @@ namespace LemoineTools.Tools.Zones.Windows
                 SortIndex = Lib.Levels.Count,
             };
             Lib.Levels.Add(l);
-            _expanded.Add(Key(KindBuilding, l.BuildingId));
-            _expanded.Add(Key(KindLevel, l.Id));
+            _activeBuildingId = l.BuildingId ?? "";
+            _activeLevelId    = l.Id;
             _selected = Key(KindLevel, l.Id);
             Rebuild();
         }
@@ -1154,8 +1032,7 @@ namespace LemoineTools.Tools.Zones.Windows
             };
             if (level != null) a.AppliesToLevelIds.Add(level.Id);
             Lib.Areas.Add(a);
-            if (level != null) _expanded.Add(Key(KindLevel, level.Id));
-            _expanded.Add(Key(KindArea, a.Id));
+            if (level != null) _activeLevelId = level.Id;
             _selected = Key(KindArea, a.Id);
             Rebuild();
         }
@@ -1173,7 +1050,7 @@ namespace LemoineTools.Tools.Zones.Windows
                 SortIndex = level.ViewDefs.Count,
             };
             level.ViewDefs.Add(v);
-            _expanded.Add(Key(KindLevel, level.Id));
+            _activeLevelId = level.Id;
             _selected = Key(KindViewDef, level.Id, v.Id);
             Rebuild();
         }
@@ -1187,8 +1064,7 @@ namespace LemoineTools.Tools.Zones.Windows
                 SortIndex = Lib.SheetSets.Count,
             };
             Lib.SheetSets.Add(y);
-            _expanded.Add(Key(KindSheetRoot, ""));
-            _expanded.Add(Key(KindSheetSet, y.Id));
+            _activeSheetSetId = y.Id;
             _selected = Key(KindSheetSet, y.Id);
             Rebuild();
         }
@@ -1199,8 +1075,7 @@ namespace LemoineTools.Tools.Zones.Windows
             if (sheetSet.Groups == null) sheetSet.Groups = new List<ZoneSheetGroup>();
             var g = new ZoneSheetGroup { Id = ZoneId.New(), SortIndex = sheetSet.Groups.Count };
             sheetSet.Groups.Add(g);
-            _expanded.Add(Key(KindSheetRoot, ""));
-            _expanded.Add(Key(KindSheetSet, sheetSet.Id));
+            _activeSheetSetId = sheetSet.Id;
             _selected = Key(KindSheetSet, sheetSet.Id);
             Rebuild();
         }
@@ -1347,9 +1222,27 @@ namespace LemoineTools.Tools.Zones.Windows
             Rebuild();
         }
 
+        /// <summary>
+        /// The chip's standing line. Green once there is something saved and solved, dim while
+        /// the library is still empty — so the chip reads as a state, not just a number.
+        /// </summary>
         private void UpdateStatus()
-            => _statusText.Text = AppStrings.T("zones.manager.statusLine",
-                                               Lib.Areas.Count, Lib.SheetSets.Count, Lib.Placements.Count);
+        {
+            if (_statusChipText == null || _statusChip == null) return;
+
+            bool empty = Lib.Areas.Count == 0 && Lib.SheetSets.Count == 0;
+
+            _statusChipText.Text = empty
+                ? AppStrings.T("zones.manager.statusLine",
+                               Lib.Areas.Count, Lib.SheetSets.Count, Lib.Placements.Count)
+                : AppStrings.T("zones.manager.status.savedInModel", Lib.Placements.Count);
+
+            // Never a ternary inside SetResourceReference — it resolves the string, not the key.
+            if (empty) _statusChipText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            else       _statusChipText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineGreen");
+
+            _statusChip.Visibility = WpfVisibility.Visible;
+        }
 
         // ── Group editing ─────────────────────────────────────────────────────
 
@@ -1653,15 +1546,6 @@ namespace LemoineTools.Tools.Zones.Windows
             return t;
         }
 
-        // ── Tree row builders ─────────────────────────────────────────────────
-        private UIElement MakeGroupHeader(string text)
-        {
-            var tb = new TextBlock { Text = text, Margin = new Thickness(8, 8, 0, 2), FontWeight = FontWeights.SemiBold };
-            tb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextSub");
-            tb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            return tb;
-        }
-
         private UIElement MakeEmptyRow(string text, int indent = 0)
         {
             var tb = new TextBlock
@@ -1674,162 +1558,8 @@ namespace LemoineTools.Tools.Zones.Windows
             return tb;
         }
 
-        /// <summary>
-        /// One tree row: caret | name | meta | +.
-        ///
-        /// The name label is deliberately left-aligned and shrink-to-text so it never covers the
-        /// rest of the row; the leftover space stays row background and remains clickable.
-        /// </summary>
-        private UIElement MakeNodeRow(string key, string name, string meta, int indent,
-                                      bool hasChildren, bool expanded,
-                                      string? addLabel = null, Action? onAdd = null)
-        {
-            bool sel = _selected == key;
-
-            var b = new Border
-            {
-                Padding = new Thickness(4 + indent * 14, 3, 6, 3),
-                BorderThickness = new Thickness(sel ? 2 : 0, 0, 0, 0),
-                Cursor = Cursors.Hand,
-                // Without a background only the glyphs are hit-testable, so most of the row
-                // would silently ignore clicks.
-                Background = Brushes.Transparent,
-            };
-            if (sel)
-            {
-                b.SetResourceReference(Border.BackgroundProperty,  "LemoineAccentDim");
-                b.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
-            }
-
-            var g = new WpfGrid { Background = Brushes.Transparent };
-            g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });                    // caret
-            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // name
-            g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });                    // meta
-            g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });                    // +
-
-            if (hasChildren)
-            {
-                var caret = new TextBlock
-                {
-                    // Codepoints, never literal glyphs — the Edit tool cannot match those.
-                    Text = expanded ? char.ConvertFromUtf32(0x25BE) : char.ConvertFromUtf32(0x25B8),
-                    Width = 14,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Cursor = Cursors.Hand,
-                    Background = Brushes.Transparent,
-                };
-                caret.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-                caret.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-                caret.MouseLeftButtonUp += (s, e) => { Toggle(key); e.Handled = true; };
-                WpfGrid.SetColumn(caret, 0);
-                g.Children.Add(caret);
-            }
-            else
-            {
-                var spacer = new Border { Width = 14, Background = Brushes.Transparent };
-                WpfGrid.SetColumn(spacer, 0);
-                g.Children.Add(spacer);
-            }
-
-            var t = new TextBlock
-            {
-                Text = name,
-                TextTrimming = TextTrimming.CharacterEllipsis,
-                HorizontalAlignment = HorizontalAlignment.Left,
-                VerticalAlignment = VerticalAlignment.Center,
-                Background = Brushes.Transparent,
-            };
-            t.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-            t.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            WpfGrid.SetColumn(t, 1);
-            g.Children.Add(t);
-
-            if (!string.IsNullOrEmpty(meta))
-            {
-                var m = new TextBlock
-                {
-                    Text = meta, Margin = new Thickness(6, 0, 0, 0),
-                    VerticalAlignment = VerticalAlignment.Center,
-                };
-                m.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-                m.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-                WpfGrid.SetColumn(m, 2);
-                g.Children.Add(m);
-            }
-
-            if (onAdd != null)
-            {
-                var plus = new TextBlock
-                {
-                    Text = "+",
-                    Margin = new Thickness(8, 0, 2, 0),
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Cursor = Cursors.Hand,
-                    ToolTip = addLabel,
-                    Background = Brushes.Transparent,
-                    FontWeight = FontWeights.Bold,
-                };
-                plus.SetResourceReference(TextBlock.ForegroundProperty, "LemoineAccent");
-                plus.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-                plus.MouseLeftButtonUp += (s, e) =>
-                {
-                    try { onAdd(); }
-                    catch (Exception ex) { DiagnosticsLog.Error($"ZoneManagerWindow: add under '{key}'", ex); }
-                    e.Handled = true;
-                };
-                WpfGrid.SetColumn(plus, 3);
-                g.Children.Add(plus);
-            }
-
-            b.Child = g;
-            b.MouseLeftButtonUp += (s, e) =>
-            {
-                _selected = key;
-                RebuildTree();
-            };
-            return b;
-        }
-
-        /// <summary>An explicit "+ add X" row at the end of a parent's children.</summary>
-        private UIElement MakeAddRow(string label, int indent, Action onAdd)
-        {
-            var b = new Border
-            {
-                Padding = new Thickness(18 + indent * 14, 3, 6, 3),
-                Cursor = Cursors.Hand,
-                Background = Brushes.Transparent,
-            };
-            var t = new TextBlock
-            {
-                Text = "+ " + label,
-                HorizontalAlignment = HorizontalAlignment.Left,
-                Background = Brushes.Transparent,
-            };
-            t.SetResourceReference(TextBlock.ForegroundProperty, "LemoineAccent");
-            t.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            b.Child = t;
-            b.MouseLeftButtonUp += (s, e) =>
-            {
-                try { onAdd(); }
-                catch (Exception ex) { DiagnosticsLog.Error($"ZoneManagerWindow: '{label}'", ex); }
-                e.Handled = true;
-            };
-            return b;
-        }
 
         // ── Small builders ────────────────────────────────────────────────────
-        private TextBlock MakeHeading(string text)
-        {
-            var tb = new TextBlock
-            {
-                Text = text, Margin = new Thickness(0, 0, 0, 10),
-                FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap,
-            };
-            tb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-            tb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_LG");
-            return tb;
-        }
-
         private StackPanel MakeCard(string title)
         {
             var sp = new StackPanel();
@@ -1851,19 +1581,30 @@ namespace LemoineTools.Tools.Zones.Windows
                 Margin = new Thickness(0, 0, 0, 8),
                 Child = content,
             };
-            b.SetResourceReference(Border.BackgroundProperty,  "LemoineSurface");
+            b.SetResourceReference(Border.BackgroundProperty,  "LemoineBg");
             b.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
             return b;
         }
 
+        /// <summary>
+        /// One field row: a fixed 96px label column and a star value column.
+        ///
+        /// A Grid per row rather than a StackPanel of pairs, so every label in the pane starts
+        /// at the same x — the whole point of the fixed first column.
+        /// </summary>
         private WpfGrid FieldGrid(string label)
         {
-            var g = new WpfGrid { Margin = new Thickness(0, 0, 0, 7) };
-            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(140) });
+            var g = new WpfGrid { Margin = new Thickness(0, 0, 0, AppSettings.Instance.S(7)) };
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(AppSettings.Instance.S(96)) });
             g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-            var t = new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap };
+            var t = new TextBlock
+            {
+                Text = label,
+                VerticalAlignment = VerticalAlignment.Center,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, AppSettings.Instance.S(8), 0),
+            };
             t.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextSub");
             t.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             WpfGrid.SetColumn(t, 0);
@@ -1875,7 +1616,7 @@ namespace LemoineTools.Tools.Zones.Windows
         {
             var g = FieldGrid(label);
             var box = new WpfTextBox { Text = value ?? "", VerticalContentAlignment = VerticalAlignment.Center };
-            box.SetResourceReference(WpfTextBox.FontSizeProperty, "LemoineFS_SM");
+            StyleFieldControl(box);
             box.TextChanged += (s, e) =>
             {
                 try { onChange(box.Text ?? ""); }
@@ -1889,7 +1630,7 @@ namespace LemoineTools.Tools.Zones.Windows
         private WpfTextBox MakeNumberBox(double value, Action<double> onChange)
         {
             var box = new WpfTextBox { Text = value.ToString("0.###"), VerticalContentAlignment = VerticalAlignment.Center };
-            box.SetResourceReference(WpfTextBox.FontSizeProperty, "LemoineFS_SM");
+            StyleFieldControl(box);
             box.TextChanged += (s, e) =>
             {
                 // A half-typed number ("-", "1.") is normal while editing, so a parse failure is
@@ -1916,6 +1657,7 @@ namespace LemoineTools.Tools.Zones.Windows
         {
             var g = FieldGrid(label);
             var t = new TextBlock { Text = value ?? "", VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap };
+            t.FontFamily = AppSettings.Instance.ActiveTheme.MonoFont;
             t.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             t.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             WpfGrid.SetColumn(t, 1);
@@ -1923,10 +1665,23 @@ namespace LemoineTools.Tools.Zones.Windows
             return g;
         }
 
+        /// <summary>
+        /// The design's field metrics on a house control: 24px high, monospaced.
+        ///
+        /// Property sets only — the control keeps its ControlStyles template. Redefining that
+        /// template here would fork the plugin's input styling for one window.
+        /// </summary>
+        private void StyleFieldControl(Control c)
+        {
+            c.Height     = AppSettings.Instance.S(24);
+            c.FontFamily = AppSettings.Instance.ActiveTheme.MonoFont;
+            c.SetResourceReference(Control.FontSizeProperty, "LemoineFS_SM");
+        }
+
         private ComboBox MakeCombo(string[] options, string current, Action<string> onChange)
         {
             var c = new ComboBox { VerticalContentAlignment = VerticalAlignment.Center };
-            c.SetResourceReference(ComboBox.FontSizeProperty, "LemoineFS_SM");
+            StyleFieldControl(c);
             foreach (var o in options) c.Items.Add(o);
             c.SelectedItem = options.Contains(current ?? "") ? current : (options.Length > 0 ? options[0] : null);
             c.SelectionChanged += (s, e) =>
