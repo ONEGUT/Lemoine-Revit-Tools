@@ -1,10 +1,8 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
-using System.Reflection;
 using Autodesk.Navisworks.Api;
+using Autodesk.Navisworks.Api.DocumentParts;
 using LemoineTools.Framework;
 
 namespace LemoineNavisworks.LevelModels
@@ -16,35 +14,25 @@ namespace LemoineNavisworks.LevelModels
     // ROOF OVERHANG).
     //
     // This replaces reading levels out of the selection tree. A Revit NWC does
-    // not put its levels in the tree at all — the tree walk only ever found the
-    // model's own wrapper node ("DT - Arch.rvt : 7 : location <Not Shared>") —
-    // and it survives here only as a fallback for a federation carrying no grid
-    // systems whatsoever.
+    // not put its levels in the tree at all — walking it found the model's own
+    // wrapper node ("DT - Arch.rvt : 7 : location <Not Shared>"), then 32 Revit
+    // CATEGORIES below that, and no levels at any depth. The tree walk survives
+    // only as a fallback for a federation carrying no grid systems whatsoever.
     //
-    // ── WHY THIS FILE USES REFLECTION ────────────────────────────────────────
-    // CLAUDE.md's Research Discipline forbids guessing Navisworks member names:
-    // an earlier clipping-plane implementation on this branch was invented whole
-    // from memory and cost a full Windows build to discover. The prescribed tool
-    // is devtools/navis_dump.py against a real Autodesk.Navisworks.Api.dll — but
-    // that DLL is licensed and .gitignore'd (libs-navis/*.dll), so a cloud clone
-    // of this repo never has one to decode, and the public API docs are not
-    // reachable from that environment either.
+    // Every member below is confirmed against the real Autodesk.Navisworks.Api.dll
+    // by decoding its metadata tables with devtools/navis_dump.py, per CLAUDE.md's
+    // Research Discipline:
     //
-    // Public Autodesk sources confirm the SHAPE — Document.Grids : DocumentGrids,
-    // GridSystem.Levels : GridLevelCollection, GridLevel.DisplayName, and a
-    // GridLevel elevation member. What they do NOT confirm is how the grid
-    // SYSTEMS come off DocumentGrids (Systems? GridSystems? ActiveSystem?).
+    //   Document.Grids            : DocumentParts.DocumentGrids   ← note the namespace
+    //   DocumentGrids.Systems     : GridSystemCollection
+    //   DocumentGrids.ActiveSystem: GridSystem
+    //   GridSystem.DisplayName    : string
+    //   GridSystem.Levels         : GridLevelCollection
+    //   GridLevel.DisplayName     : string
+    //   GridLevel.Elevation       : double        (document units)
     //
-    // So this reader asks the RUNTIME rather than guessing at compile time:
-    // every member is resolved by name against the live object, trying the
-    // plausible names in order, and the ones that actually resolved are recorded
-    // in LastRead.ResolvedMembers and written to diagnostics.log. That is the
-    // opposite of guessing — it cannot break the build, it works against
-    // whichever names are real, and its log names them for us.
-    //
-    // ▸ ONCE A RUN HAS LOGGED THE RESOLVED MEMBERS, replace this file with
-    //   direct typed calls. It is a bridge over an environment limitation, not
-    //   an architecture. Nothing else in the tool touches reflection.
+    // Both collections expose IEnumerator<T> GetEnumerator(), so foreach is real
+    // rather than an IList cast.
     // =========================================================================
     internal static class NavisGridLevels
     {
@@ -61,30 +49,14 @@ namespace LemoineNavisworks.LevelModels
             public int    LevelsRead;
             /// <summary>Why nothing came back, when nothing came back.</summary>
             public string Failure = "";
-            /// <summary>Which member names the runtime actually had — this is the record that lets
-            /// the reflection below be replaced with direct calls.</summary>
-            public string ResolvedMembers = "";
 
             public string Describe() =>
                 $"hasGrids={HasGrids}, systems=[{string.Join(", ", SystemNames.Take(8))}], " +
-                $"used='{UsedSystem}', levels={LevelsRead}, members=[{ResolvedMembers}]" +
+                $"used='{UsedSystem}', levels={LevelsRead}" +
                 (Failure.Length > 0 ? $", failure={Failure}" : "");
         }
 
         public static GridReport LastRead { get; private set; } = new GridReport();
-
-        // Candidate member names, most likely first. Each list is tried in order against the live
-        // object and the winner is recorded; an empty result means NONE of them existed, which the
-        // report states rather than hiding.
-        private static readonly string[] GridsOnDocument   = { "Grids", "DocumentGrids", "GridSystems" };
-        private static readonly string[] SystemsOnGrids    = { "Systems", "GridSystems", "AllSystems", "ActiveSystem", "CurrentSystem", "CurrentGridSystem" };
-        private static readonly string[] LevelsOnSystem    = { "Levels", "GridLevels", "AllLevels" };
-        private static readonly string[] NameMembers       = { "DisplayName", "Name" };
-        private static readonly string[] ElevationMembers  = { "Elevation", "Height", "Z", "Level", "Position" };
-
-        // Not thread-safe, and does not need to be: every read runs on Navisworks' main thread,
-        // marshalled there by NavisMainThread like every other document access in this tool.
-        private static readonly HashSet<string> _resolved = new HashSet<string>(StringComparer.Ordinal);
 
         // ── Public API ───────────────────────────────────────────────────────
 
@@ -92,15 +64,19 @@ namespace LemoineNavisworks.LevelModels
         /// federation carries no grids — the caller falls back to the tree walk and says so.</summary>
         public static List<string> ListSystemNames(Document doc)
         {
-            var report = BeginRead();
-            var names  = new List<string>();
-            foreach (var sys in SystemObjects(doc, report))
+            var report = new GridReport();
+            LastRead = report;
+
+            var names = new List<string>();
+            foreach (var sys in Systems(doc, report))
             {
-                string n = ReadName(sys);
+                string n = SafeName(sys);
                 if (n.Length > 0) names.Add(n);
             }
             report.SystemNames = names;
-            Finish(report);
+            if (names.Count == 0 && report.Failure.Length == 0) report.Failure = "no grid systems";
+
+            Log(report);
             return names;
         }
 
@@ -109,200 +85,147 @@ namespace LemoineNavisworks.LevelModels
         ///
         /// <para>A grid level carries a NAME and an ELEVATION and nothing else — there is no top.
         /// So <see cref="DiscoveredLevel.Top"/> is left at the elevation here, and the caller's
-        /// existing floor-to-floor pass turns each level's top into the next one's bottom. Only the
-        /// topmost level has no next, and the caller resolves that from the model's own extent.</para>
+        /// floor-to-floor pass turns each level's top into the next one's bottom. Only the topmost
+        /// level has no next, and the caller resolves that from the model's own extent.</para>
         ///
         /// <paramref name="systemName"/> empty means "the first system".
         /// </summary>
         public static List<DiscoveredLevel> ReadLevels(Document doc, string systemName)
         {
-            var report = BeginRead();
-            var found  = new List<DiscoveredLevel>();
+            var report = new GridReport();
+            LastRead = report;
 
-            double toFeet = NavisLevelModels.ToFeet(doc);
+            var found = new List<DiscoveredLevel>();
 
-            var systems = SystemObjects(doc, report).ToList();
-            report.SystemNames = systems.Select(ReadName).Where(n => n.Length > 0).ToList();
-
+            var systems = Systems(doc, report).ToList();
+            report.SystemNames = systems.Select(SafeName).Where(n => n.Length > 0).ToList();
             if (systems.Count == 0)
             {
-                report.Failure = "no grid systems";
-                Finish(report);
+                if (report.Failure.Length == 0) report.Failure = "no grid systems";
+                Log(report);
                 return found;
             }
 
-            object? chosen = null;
+            GridSystem? chosen = null;
             if (!string.IsNullOrWhiteSpace(systemName))
                 chosen = systems.FirstOrDefault(
-                    s => string.Equals(ReadName(s), systemName, StringComparison.OrdinalIgnoreCase));
-            // A named system that is no longer in the document must not silently read a different
-            // one — but an empty pick legitimately means "the first".
+                    s => string.Equals(SafeName(s), systemName, StringComparison.OrdinalIgnoreCase));
+
+            // A named system that is no longer in the document must NOT silently read a different
+            // one — that would hand the user another building's levels. An empty pick legitimately
+            // means "the first".
             if (chosen == null && string.IsNullOrWhiteSpace(systemName)) chosen = systems[0];
             if (chosen == null)
             {
                 report.Failure = $"grid system '{systemName}' is not in this document";
-                Finish(report);
+                Log(report);
                 return found;
             }
 
-            report.UsedSystem = ReadName(chosen);
+            report.UsedSystem = SafeName(chosen);
+            double toFeet = NavisLevelModels.ToFeet(doc);
 
-            foreach (var lvl in Enumerate(ReadMember(chosen, LevelsOnSystem, "GridSystem.Levels")))
+            try
             {
-                string name = ReadName(lvl);
-                if (name.Length == 0) continue;
-
-                double? elev = ReadElevation(lvl);
-                found.Add(new DiscoveredLevel
+                foreach (GridLevel lvl in chosen.Levels)                     // GridSystem.Levels — confirmed
                 {
-                    Name      = name,
-                    Elevation = (elev ?? 0) * toFeet,
-                    // No top exists on a grid level; the caller derives it floor-to-floor.
-                    Top       = (elev ?? 0) * toFeet,
-                });
+                    string name;
+                    double elevation;
+                    try
+                    {
+                        name      = (lvl.DisplayName ?? "").Trim();          // GridLevel.DisplayName — confirmed
+                        elevation = lvl.Elevation;                           // GridLevel.Elevation : double — confirmed
+                    }
+                    catch (Exception ex)
+                    {
+                        // One unreadable level must not cost the rest of the list, but it is a
+                        // missing floor in the export — never silent.
+                        DiagnosticsLog.Swallowed("LevelModels: read grid level", ex);
+                        continue;
+                    }
+                    if (name.Length == 0) continue;
+
+                    found.Add(new DiscoveredLevel
+                    {
+                        Name      = name,
+                        Elevation = elevation * toFeet,
+                        // A grid level has no ceiling; the caller derives it floor-to-floor.
+                        Top       = elevation * toFeet,
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Error("LevelModels: read grid levels", ex);
+                report.Failure = ex.Message;
             }
 
             report.LevelsRead = found.Count;
-            if (found.Count == 0) report.Failure = "the grid system reported no levels";
-            Finish(report);
+            if (found.Count == 0 && report.Failure.Length == 0)
+                report.Failure = "the grid system reported no levels";
 
+            Log(report);
             return found.OrderBy(l => l.Elevation).ToList();
         }
 
-        // ── Runtime member resolution ────────────────────────────────────────
+        // ── Internals ────────────────────────────────────────────────────────
 
-        private static GridReport BeginRead()
+        /// <summary>Every grid system in the document. Falls back to the ACTIVE system when the
+        /// collection is empty — the user's own Grids panel had one selected, so reporting none
+        /// would contradict what they are looking at.</summary>
+        private static List<GridSystem> Systems(Document doc, GridReport report)
         {
-            _resolved.Clear();
-            var report = new GridReport();
-            LastRead = report;
-            return report;
-        }
+            var list = new List<GridSystem>();
+            if (doc == null || doc.IsClear) { report.Failure = "no document"; return list; }
 
-        private static void Finish(GridReport report)
-        {
-            report.ResolvedMembers = string.Join(", ", _resolved.OrderBy(x => x, StringComparer.Ordinal));
-            // Always logged, zero result included: this line is what lets the reflection above be
-            // replaced with direct typed calls, and a silent empty read is exactly the failure this
-            // whole tool has been chasing.
-            DiagnosticsLog.Info("LevelModels: grids & levels", report.Describe());
-        }
-
-        /// <summary>The grid systems, as live objects. Handles a collection or a single active
-        /// system equally, because which of the two DocumentGrids exposes is the one thing the
-        /// public docs do not say.</summary>
-        private static IEnumerable<object> SystemObjects(Document doc, GridReport report)
-        {
-            if (doc == null || doc.IsClear) { report.Failure = "no document"; return Enumerable.Empty<object>(); }
-
-            object? grids = ReadMember(doc, GridsOnDocument, "Document.Grids");
-            if (grids == null)
+            DocumentGrids grids;
+            try { grids = doc.Grids; }                                        // Document.Grids — confirmed
+            catch (Exception ex)
             {
-                report.Failure = "this Navisworks build exposes no grids object on Document";
-                return Enumerable.Empty<object>();
+                DiagnosticsLog.Error("LevelModels: read document grids", ex);
+                report.Failure = "this document exposes no grids";
+                return list;
             }
             report.HasGrids = true;
 
-            object? systems = ReadMember(grids, SystemsOnGrids, "DocumentGrids.Systems");
-            if (systems == null)
+            try
             {
-                report.Failure = "the grids object exposes no grid systems";
-                return Enumerable.Empty<object>();
+                foreach (GridSystem sys in grids.Systems)                     // DocumentGrids.Systems — confirmed
+                    if (sys != null) list.Add(sys);
             }
-            return Enumerate(systems);
-        }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Error("LevelModels: enumerate grid systems", ex);
+                report.Failure = ex.Message;
+            }
 
-        /// <summary>Reads the first of <paramref name="candidates"/> that the live object actually
-        /// has, recording which one won. Property first, then a no-argument method — Navisworks
-        /// uses both shapes across its API.</summary>
-        private static object? ReadMember(object? target, string[] candidates, string label)
-        {
-            if (target == null) return null;
-            Type t = target.GetType();
-
-            foreach (string name in candidates)
+            if (list.Count == 0)
             {
                 try
                 {
-                    PropertyInfo? p = t.GetProperty(name,
-                        BindingFlags.Public | BindingFlags.Instance | BindingFlags.FlattenHierarchy);
-                    if (p != null && p.CanRead)
-                    {
-                        object? v = p.GetValue(target, null);
-                        if (v != null) { _resolved.Add($"{label}={name}"); return v; }
-                        continue;   // the member exists but is empty — a real answer, keep looking
-                    }
-
-                    MethodInfo? m = t.GetMethod(name,
-                        BindingFlags.Public | BindingFlags.Instance | BindingFlags.FlattenHierarchy,
-                        null, Type.EmptyTypes, null);
-                    if (m != null && m.ReturnType != typeof(void))
-                    {
-                        object? v = m.Invoke(target, null);
-                        if (v != null) { _resolved.Add($"{label}={name}()"); return v; }
-                    }
+                    var active = grids.ActiveSystem;                          // DocumentGrids.ActiveSystem — confirmed
+                    if (active != null) list.Add(active);
                 }
-                catch (Exception ex)
-                {
-                    // One candidate throwing must not stop the others being tried; the member that
-                    // does work is the answer, and a total miss is reported by the caller.
-                    DiagnosticsLog.Swallowed($"LevelModels: read {label}.{name}", ex);
-                }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("LevelModels: read active grid system", ex); }
             }
-            return null;
+
+            return list;
         }
 
-        private static IEnumerable<object> Enumerate(object? value)
+        private static string SafeName(GridSystem? sys)
         {
-            if (value == null) yield break;
-
-            // A single object (an "active system") is a collection of one — treating it as empty
-            // would silently lose the only system the document has.
-            if (value is string || !(value is IEnumerable seq)) { yield return value; yield break; }
-
-            IEnumerator it;
-            try { it = seq.GetEnumerator(); }
-            catch (Exception ex) { DiagnosticsLog.Swallowed("LevelModels: enumerate grid collection", ex); yield break; }
-
-            while (true)
-            {
-                object? current = null;
-                try { if (!it.MoveNext()) break; current = it.Current; }
-                catch (Exception ex) { DiagnosticsLog.Swallowed("LevelModels: step grid collection", ex); break; }
-                if (current != null) yield return current;
-            }
-        }
-
-        private static string ReadName(object? o)
-        {
-            object? v = ReadMember(o, NameMembers, "DisplayName");
-            return (v as string)?.Trim() ?? "";
-        }
-
-        /// <summary>A grid level's elevation in DOCUMENT units, or null when none of the candidate
-        /// members exists. A member holding a point rather than a number (a plane origin) is read
-        /// through its Z.</summary>
-        private static double? ReadElevation(object? level)
-        {
-            object? v = ReadMember(level, ElevationMembers, "GridLevel.Elevation");
-            if (v == null) return null;
-
-            if (v is double d)  return d;
-            if (v is float f)   return f;
-            if (v is decimal m) return (double)m;
-            if (v is int i)     return i;
-
-            // Not a number — try a Z off it (a Point3D-shaped member).
-            object? z = ReadMember(v, new[] { "Z" }, "GridLevel.Elevation.Z");
-            if (z is double dz) return dz;
-            if (z is float fz)  return fz;
-
-            try { return Convert.ToDouble(v, CultureInfo.InvariantCulture); }
+            if (sys == null) return "";
+            try { return (sys.DisplayName ?? "").Trim(); }                    // GridSystem.DisplayName — confirmed
             catch (Exception ex)
             {
-                DiagnosticsLog.Swallowed("LevelModels: grid level elevation is not numeric", ex);
-                return null;
+                DiagnosticsLog.Swallowed("LevelModels: grid system name", ex);
+                return "";
             }
         }
+
+        /// <summary>Always logged, zero result included: a silent empty read is indistinguishable
+        /// from a broken collector, and that silence is what hid the tree-walk bug for so long.</summary>
+        private static void Log(GridReport report) =>
+            DiagnosticsLog.Info("LevelModels: grids & levels", report.Describe());
     }
 }

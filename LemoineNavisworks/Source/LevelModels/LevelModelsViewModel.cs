@@ -508,7 +508,7 @@ namespace LemoineNavisworks.LevelModels
         }
 
         /// <summary>The S2 settings as one value for the store.</summary>
-        private LevelModelsStore.OutputSettings CurrentOutput() => new LevelModelsStore.OutputSettings
+        private LevelModelsOutput CurrentOutput() => new LevelModelsOutput
         {
             Folder     = _outFolder,
             Pattern    = _pattern,

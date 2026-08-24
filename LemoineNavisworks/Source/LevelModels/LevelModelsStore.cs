@@ -8,6 +8,77 @@ using LemoineTools.Framework;
 namespace LemoineNavisworks.LevelModels
 {
     // =========================================================================
+    // Serialized shape for LevelModelsStore.
+    //
+    // TOP-LEVEL AND PUBLIC ON PURPOSE. These were nested inside the internal
+    // LevelModelsStore, which makes their effective accessibility INTERNAL no
+    // matter that each carried the `public` keyword — and XmlSerializer refuses a
+    // type it cannot reach from outside the assembly. Because every save is inside
+    // a try/catch, that threw after File.Create had already truncated the file,
+    // leaving a ZERO-BYTE navis-level-models.xml behind: every later load then
+    // failed with "Root element is missing" and the setup never came back. That is
+    // CLAUDE.md's "XmlSerializer requires public types" rule, in its nested form.
+    // =========================================================================
+
+    [XmlRoot("NavisLevelModels")]
+    public sealed class LevelModelsStoreDto
+    {
+        [XmlElement("Document")]
+        public List<LevelModelsDocumentDto> Documents { get; set; } = new List<LevelModelsDocumentDto>();
+    }
+
+    public sealed class LevelModelsDocumentDto
+    {
+        [XmlAttribute("key")]      public string Key      { get; set; } = "";
+        [XmlAttribute("modified")] public long   Modified  { get; set; }
+        /// <summary>What the levels were read from: a grid-system name, or a model key on the
+        /// tree fallback. Named "source" since before grids existed; the kind below says which.</summary>
+        [XmlAttribute("source")]   public string SourceModel { get; set; } = "";
+        /// <summary>"Grids" or "Tree". A logic token, deliberately not externalized. Missing
+        /// (a setup saved before grids were read) deserializes to "", which the ViewModel
+        /// treats as "whatever this document supports now".</summary>
+        [XmlAttribute("sourceKind")] public string SourceKind { get; set; } = "";
+        [XmlElement("Level")]      public List<LevelModelsLevelDto> Levels { get; set; } = new List<LevelModelsLevelDto>();
+
+        /// <summary>Models that belong to every level (the every-level bucket).</summary>
+        [XmlElement("EveryLevelModel")] public List<string> EveryLevelModels { get; set; } = new List<string>();
+
+        // The OUTPUT settings. These were not stored at all, so every reopen threw away the
+        // folder, the filename pattern and all four toggles while the level list came back —
+        // which reads as "the tool didn't save my setup". Missing attributes deserialize to
+        // these defaults, so a file written by the previous version still loads.
+        [XmlAttribute("folder")]     public string OutputFolder { get; set; } = "";
+        [XmlAttribute("pattern")]    public string Pattern      { get; set; } = "";
+        [XmlAttribute("straddle")]   public string Straddle     { get; set; } = "";
+        [XmlAttribute("viewpoints")] public bool   Viewpoints   { get; set; } = true;
+        [XmlAttribute("clip")]       public bool   Clip         { get; set; } = true;
+        [XmlAttribute("xrefs")]      public bool   EmbedXrefs   { get; set; } = true;
+        [XmlAttribute("props")]      public bool   KeepProps    { get; set; } = true;
+    }
+
+    /// <summary>The output settings, carried between the store and the ViewModel as one value so
+    /// adding another does not mean touching four signatures.</summary>
+    public sealed class LevelModelsOutput
+    {
+        public string       Folder     = "";
+        public string       Pattern    = "";
+        public StraddleRule Straddle   = StraddleRule.KeepOverlapping;
+        public bool         Viewpoints = true;
+        public bool         Clip       = true;
+        public bool         EmbedXrefs = true;
+        public bool         KeepProps  = true;
+    }
+
+    public sealed class LevelModelsLevelDto
+    {
+        [XmlAttribute("name")]   public string Name   { get; set; } = "";
+        [XmlAttribute("bottom")] public double Bottom { get; set; }
+        [XmlAttribute("top")]    public double Top    { get; set; }
+        [XmlAttribute("edited")] public bool   Edited { get; set; }
+        [XmlElement("Model")]    public List<string> Models { get; set; } = new List<string>();
+    }
+
+    // =========================================================================
     // LevelModelsStore — remembers each document's level setup between sessions.
     //
     // WHY LOCAL AND NOT IN THE NWF. Navisworks exposes no way to attach custom
@@ -33,72 +104,12 @@ namespace LemoineNavisworks.LevelModels
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "LemoineTools", "navis-level-models.xml");
 
-        // ── Serialized shape (public — XmlSerializer refuses non-public types) ─
-
-        [XmlRoot("NavisLevelModels")]
-        public sealed class StoreDto
-        {
-            [XmlElement("Document")]
-            public List<DocumentDto> Documents { get; set; } = new List<DocumentDto>();
-        }
-
-        public sealed class DocumentDto
-        {
-            [XmlAttribute("key")]      public string Key      { get; set; } = "";
-            [XmlAttribute("modified")] public long   Modified  { get; set; }
-            /// <summary>What the levels were read from: a grid-system name, or a model key on the
-            /// tree fallback. Named "source" since before grids existed; the kind below says which.</summary>
-            [XmlAttribute("source")]   public string SourceModel { get; set; } = "";
-            /// <summary>"Grids" or "Tree". A logic token, deliberately not externalized. Missing
-            /// (a setup saved before grids were read) deserializes to "", which the ViewModel
-            /// treats as "whatever this document supports now".</summary>
-            [XmlAttribute("sourceKind")] public string SourceKind { get; set; } = "";
-            [XmlElement("Level")]      public List<LevelDto> Levels { get; set; } = new List<LevelDto>();
-
-            /// <summary>Models that belong to every level (the every-level bucket).</summary>
-            [XmlElement("EveryLevelModel")] public List<string> EveryLevelModels { get; set; } = new List<string>();
-
-            // The OUTPUT settings. These were not stored at all, so every reopen threw away the
-            // folder, the filename pattern and all four toggles while the level list came back —
-            // which reads as "the tool didn't save my setup". Missing attributes deserialize to
-            // these defaults, so a file written by the previous version still loads.
-            [XmlAttribute("folder")]     public string OutputFolder { get; set; } = "";
-            [XmlAttribute("pattern")]    public string Pattern      { get; set; } = "";
-            [XmlAttribute("straddle")]   public string Straddle     { get; set; } = "";
-            [XmlAttribute("viewpoints")] public bool   Viewpoints   { get; set; } = true;
-            [XmlAttribute("clip")]       public bool   Clip         { get; set; } = true;
-            [XmlAttribute("xrefs")]      public bool   EmbedXrefs   { get; set; } = true;
-            [XmlAttribute("props")]      public bool   KeepProps    { get; set; } = true;
-        }
-
-        /// <summary>The output settings, carried between the store and the ViewModel as one value so
-        /// adding another does not mean touching four signatures.</summary>
-        public sealed class OutputSettings
-        {
-            public string       Folder     = "";
-            public string       Pattern    = "";
-            public StraddleRule Straddle   = StraddleRule.KeepOverlapping;
-            public bool         Viewpoints = true;
-            public bool         Clip       = true;
-            public bool         EmbedXrefs = true;
-            public bool         KeepProps  = true;
-        }
-
-        public sealed class LevelDto
-        {
-            [XmlAttribute("name")]   public string Name   { get; set; } = "";
-            [XmlAttribute("bottom")] public double Bottom { get; set; }
-            [XmlAttribute("top")]    public double Top    { get; set; }
-            [XmlAttribute("edited")] public bool   Edited { get; set; }
-            [XmlElement("Model")]    public List<string> Models { get; set; } = new List<string>();
-        }
-
         // ── API ───────────────────────────────────────────────────────────────
 
         /// <summary>Loads the saved setup for this document, or null when there is none. Order is
         /// preserved exactly as saved — the user's own ordering is part of the setup.</summary>
         public static (List<LevelDef> Levels, string SourceModel, string SourceKind,
-                       List<string> EveryLevelModels, OutputSettings Output)? Load(string documentKey)
+                       List<string> EveryLevelModels, LevelModelsOutput Output)? Load(string documentKey)
         {
             if (string.IsNullOrWhiteSpace(documentKey)) return null;
 
@@ -121,7 +132,7 @@ namespace LemoineNavisworks.LevelModels
                     if (!string.IsNullOrWhiteSpace(m) && !def.Models.Contains(m)) def.Models.Add(m);
                 levels.Add(def);
             }
-            var output = new OutputSettings
+            var output = new LevelModelsOutput
             {
                 Folder     = doc.OutputFolder ?? "",
                 Pattern    = doc.Pattern ?? "",
@@ -150,7 +161,7 @@ namespace LemoineNavisworks.LevelModels
         /// failed save costs the remembered setup, and must not take the run with it.</summary>
         public static void Save(string documentKey, IReadOnlyList<LevelDef> levels, string sourceModel,
                                 string sourceKind, IEnumerable<string>? everyLevelModels,
-                                OutputSettings? output)
+                                LevelModelsOutput? output)
         {
             if (string.IsNullOrWhiteSpace(documentKey) || levels == null) return;
 
@@ -160,8 +171,8 @@ namespace LemoineNavisworks.LevelModels
                 store.Documents.RemoveAll(
                     d => string.Equals(d.Key, documentKey, StringComparison.OrdinalIgnoreCase));
 
-                var o = output ?? new OutputSettings();
-                var dto = new DocumentDto
+                var o = output ?? new LevelModelsOutput();
+                var dto = new LevelModelsDocumentDto
                 {
                     Key          = documentKey,
                     Modified     = DateTime.UtcNow.Ticks,
@@ -179,7 +190,7 @@ namespace LemoineNavisworks.LevelModels
                 };
                 foreach (var lv in levels)
                 {
-                    dto.Levels.Add(new LevelDto
+                    dto.Levels.Add(new LevelModelsLevelDto
                     {
                         Name   = lv.Name,
                         Bottom = lv.Bottom,
@@ -204,30 +215,56 @@ namespace LemoineNavisworks.LevelModels
 
         // ── File I/O ──────────────────────────────────────────────────────────
 
-        private static StoreDto ReadStore()
+        private static LevelModelsStoreDto ReadStore()
         {
+            string path = FilePath;
             try
             {
-                string path = FilePath;
-                if (!File.Exists(path)) return new StoreDto();
+                if (!File.Exists(path)) return new LevelModelsStoreDto();
+
+                // A zero-byte file is what a half-finished write leaves behind. It is "no settings
+                // yet", not corruption, and warning about it every single load was noise on top of
+                // the real bug rather than a report of it.
+                if (new FileInfo(path).Length == 0) return new LevelModelsStoreDto();
+
                 using (var fs = File.OpenRead(path))
-                    return (StoreDto)new XmlSerializer(typeof(StoreDto)).Deserialize(fs) ?? new StoreDto();
+                    return (LevelModelsStoreDto)new XmlSerializer(typeof(LevelModelsStoreDto)).Deserialize(fs)
+                           ?? new LevelModelsStoreDto();
             }
             catch (Exception ex)
             {
-                // A corrupt or older-shaped file must not block the tool — start clean and say so.
+                // A genuinely corrupt or older-shaped file must not block the tool — start clean,
+                // and say so, because this is the path that silently loses a saved setup.
                 DiagnosticsLog.Swallowed("LevelModelsStore: read (starting empty)", ex);
-                return new StoreDto();
+                return new LevelModelsStoreDto();
             }
         }
 
-        private static void WriteStore(StoreDto store)
+        /// <summary>Serialize to a TEMP file first, then move it into place.
+        ///
+        /// <para>Writing straight to the real path truncates it before serialization has produced a
+        /// single byte, so anything that throws mid-write — or a Navisworks crash — leaves a
+        /// zero-length file that every later load rejects. That is exactly what happened here.
+        /// Serializing to a temp file means the real one is only ever replaced by a complete
+        /// document.</para></summary>
+        private static void WriteStore(LevelModelsStoreDto store)
         {
             string path = FilePath;
             string dir  = Path.GetDirectoryName(path) ?? "";
             if (dir.Length > 0) Directory.CreateDirectory(dir);
-            using (var fs = File.Create(path))
-                new XmlSerializer(typeof(StoreDto)).Serialize(fs, store);
+
+            string temp = path + ".tmp";
+            using (var fs = File.Create(temp))
+            {
+                new XmlSerializer(typeof(LevelModelsStoreDto)).Serialize(fs, store);
+                fs.Flush();
+            }
+
+            // File.Move cannot overwrite on .NET Framework, so clear the target first. The window
+            // between the two is why the temp file exists at all: if the delete succeeds and the
+            // move does not, the temp file is still a complete, recoverable document.
+            if (File.Exists(path)) File.Delete(path);
+            File.Move(temp, path);
         }
     }
 }
