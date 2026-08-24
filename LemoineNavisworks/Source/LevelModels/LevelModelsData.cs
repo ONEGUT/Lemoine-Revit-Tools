@@ -88,6 +88,11 @@ namespace LemoineNavisworks.LevelModels
         public int    Models;
         public int    Hidden;
         public bool   Trimmed;
+        /// <summary>A viewpoint was saved for this level.</summary>
+        public bool   Viewpoint;
+        /// <summary>That viewpoint is actually CLIPPED to the band. Separate from
+        /// <see cref="Viewpoint"/> on purpose — inferring one from the other reported clips that
+        /// never happened.</summary>
         public bool   Clipped;
         public string File     = "";
         public bool   Written;

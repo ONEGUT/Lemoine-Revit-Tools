@@ -48,6 +48,31 @@ namespace LemoineNavisworks.LevelModels
             [XmlAttribute("modified")] public long   Modified  { get; set; }
             [XmlAttribute("source")]   public string SourceModel { get; set; } = "";
             [XmlElement("Level")]      public List<LevelDto> Levels { get; set; } = new List<LevelDto>();
+
+            // The OUTPUT settings. These were not stored at all, so every reopen threw away the
+            // folder, the filename pattern and all four toggles while the level list came back —
+            // which reads as "the tool didn't save my setup". Missing attributes deserialize to
+            // these defaults, so a file written by the previous version still loads.
+            [XmlAttribute("folder")]     public string OutputFolder { get; set; } = "";
+            [XmlAttribute("pattern")]    public string Pattern      { get; set; } = "";
+            [XmlAttribute("straddle")]   public string Straddle     { get; set; } = "";
+            [XmlAttribute("viewpoints")] public bool   Viewpoints   { get; set; } = true;
+            [XmlAttribute("clip")]       public bool   Clip         { get; set; } = true;
+            [XmlAttribute("xrefs")]      public bool   EmbedXrefs   { get; set; } = true;
+            [XmlAttribute("props")]      public bool   KeepProps    { get; set; } = true;
+        }
+
+        /// <summary>The output settings, carried between the store and the ViewModel as one value so
+        /// adding another does not mean touching four signatures.</summary>
+        public sealed class OutputSettings
+        {
+            public string       Folder     = "";
+            public string       Pattern    = "";
+            public StraddleRule Straddle   = StraddleRule.KeepOverlapping;
+            public bool         Viewpoints = true;
+            public bool         Clip       = true;
+            public bool         EmbedXrefs = true;
+            public bool         KeepProps  = true;
         }
 
         public sealed class LevelDto
@@ -63,7 +88,7 @@ namespace LemoineNavisworks.LevelModels
 
         /// <summary>Loads the saved setup for this document, or null when there is none. Order is
         /// preserved exactly as saved — the user's own ordering is part of the setup.</summary>
-        public static (List<LevelDef> Levels, string SourceModel)? Load(string documentKey)
+        public static (List<LevelDef> Levels, string SourceModel, OutputSettings Output)? Load(string documentKey)
         {
             if (string.IsNullOrWhiteSpace(documentKey)) return null;
 
@@ -86,12 +111,31 @@ namespace LemoineNavisworks.LevelModels
                     if (!string.IsNullOrWhiteSpace(m) && !def.Models.Contains(m)) def.Models.Add(m);
                 levels.Add(def);
             }
-            return (levels, doc.SourceModel ?? "");
+            var output = new OutputSettings
+            {
+                Folder     = doc.OutputFolder ?? "",
+                Pattern    = doc.Pattern ?? "",
+                // Persisted as a TOKEN, not the enum's numeric value: renaming or reordering
+                // StraddleRule must never silently change what a saved setup means.
+                Straddle   = string.Equals(doc.Straddle, StraddleCentroidToken, StringComparison.OrdinalIgnoreCase)
+                                 ? StraddleRule.ByCentroid : StraddleRule.KeepOverlapping,
+                Viewpoints = doc.Viewpoints,
+                Clip       = doc.Clip,
+                EmbedXrefs = doc.EmbedXrefs,
+                KeepProps  = doc.KeepProps,
+            };
+            return (levels, doc.SourceModel ?? "", output);
         }
+
+        // Logic tokens, deliberately hardcoded (CLAUDE.md: persisted values compared with == are
+        // never externalized).
+        private const string StraddleCentroidToken = "ByCentroid";
+        private const string StraddleKeepToken     = "KeepOverlapping";
 
         /// <summary>Writes this document's setup, replacing any previous one. Never throws — a
         /// failed save costs the remembered setup, and must not take the run with it.</summary>
-        public static void Save(string documentKey, IReadOnlyList<LevelDef> levels, string sourceModel)
+        public static void Save(string documentKey, IReadOnlyList<LevelDef> levels, string sourceModel,
+                                OutputSettings? output)
         {
             if (string.IsNullOrWhiteSpace(documentKey) || levels == null) return;
 
@@ -101,11 +145,20 @@ namespace LemoineNavisworks.LevelModels
                 store.Documents.RemoveAll(
                     d => string.Equals(d.Key, documentKey, StringComparison.OrdinalIgnoreCase));
 
+                var o = output ?? new OutputSettings();
                 var dto = new DocumentDto
                 {
-                    Key         = documentKey,
-                    Modified    = DateTime.UtcNow.Ticks,
-                    SourceModel = sourceModel ?? "",
+                    Key          = documentKey,
+                    Modified     = DateTime.UtcNow.Ticks,
+                    SourceModel  = sourceModel ?? "",
+                    OutputFolder = o.Folder ?? "",
+                    Pattern      = o.Pattern ?? "",
+                    Straddle     = o.Straddle == StraddleRule.ByCentroid
+                                       ? StraddleCentroidToken : StraddleKeepToken,
+                    Viewpoints   = o.Viewpoints,
+                    Clip         = o.Clip,
+                    EmbedXrefs   = o.EmbedXrefs,
+                    KeepProps    = o.KeepProps,
                 };
                 foreach (var lv in levels)
                 {

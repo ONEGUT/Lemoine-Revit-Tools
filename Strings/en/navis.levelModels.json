@@ -32,7 +32,20 @@
     "noDocument": "No model open. Open your federated NWF/NWD and reopen this tool.",
     "noModels":   "This document has no appended models, so there is nothing to scan.",
     "noLevels":   "{0} has no level groups \u2014 add levels by hand on the next step, or pick a different model.",
-    "noLevelsButChildren": "{0} has no level groups. What it does contain: {1}. Pick a different model, or add levels by hand.",
+    // {1} is the tree, depth by depth, from DescribeTree, so a no-levels result shows what the
+    // model DOES hold instead of dead-ending. A Revit NWC only carries level groups when it was
+    // exported from Revit with Divide File into Levels turned on.
+    "noLevelsButChildren": "No layer of {0}\u2019s tree reads as levels. What it holds: {1}. That usually means the NWC was not exported from Revit with \u201cDivide File into Levels\u201d on \u2014 pick a different model, add levels by hand on the next step, or re-export it.",
+    "readFrom":   "Read from {0}.",
+    // Assignment outcome, appended to "done". A federation split by DISCIPLINE (Arch / Struct /
+    // Mech) names no level in any file name, so allToAll is the normal path there, not an edge case.
+    "allToAll":   "No model file name named a level, so every model was put on every level for the elevation bands to split \u2014 change any of it on the next step.",
+    "noneMatched": "No model file name named a level and no level has an elevation band, so nothing was auto-assigned \u2014 assign models on the next step.",
+    "andMore":    " (+{0} more)",
+    "emptyTree":  "nothing below its root",
+    // Shown when the federation has never been saved: the store is keyed by file path, so there
+    // is nowhere to file the setup and nothing would persist.
+    "notPersisted": "This federation has not been saved to a file yet, so this setup cannot be remembered \u2014 save the NWF/NWD first.",
     "restored":   "Restored your saved setup \u2014 {0} level(s).",
     "restoredDropped": "Restored your saved setup \u2014 {0} level(s); {1} assignment(s) dropped for models no longer in this federation."
   },
@@ -124,9 +137,15 @@
     "start":          "Exporting {0} level(s) to {1}",
     "viewpointsHeld": "Holding {0} existing viewpoint(s) aside so each NWD carries only its own; they are restored when the run ends.",
     "viewpointHint":  "Viewpoints record the per-level hide state only if Options ▸ Interface ▸ Viewpoint Defaults ▸ “Save Hide/Required Attributes” is enabled.",
-    "viewpointFailed":"Could not save viewpoint “{0}” — the export itself is unaffected.",
+    "viewpointFailed":"Could not save viewpoint “{0}”: {1} — the export itself is unaffected.",
     "clipBadBand":    "This level's band has no height (top must be above bottom) — the viewpoint saves without a clip.",
-    "clipFailed":     "Could not clip the viewpoint — it saves uncut. The export itself is unaffected.",
+    "clipFailed":     "Could not clip the viewpoint: {0} — it saves uncut. The export itself is unaffected.",
+    "clipNoBand":     "Clipping is on but this level has no elevation band, so its viewpoint saves uncut.",
+    // Navisworks accepted every write and still reports the viewpoint unclipped — i.e. ClipPlanes
+    // handed back a detached copy. Reported rather than left as a silently uncut viewpoint.
+    "clipNotTaken":   "The clip did not take — Navisworks accepted it and still reports the viewpoint unclipped, so it saves uncut. See diagnostics.log.",
+    "aimFailed":      "Could not aim the viewpoint at this level’s band: {0}",
+    "viewpointSummary":"Viewpoints: {0} saved, {1} clipped.",
     "wrote":          "{0}: {1} model(s) → {2}",
     "failed":         "{0}: export failed → {1} ({2})",
     "exportRefused":  "Navisworks refused the export (TryExportToNwd returned false).",

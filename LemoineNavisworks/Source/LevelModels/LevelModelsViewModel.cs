@@ -143,6 +143,12 @@ namespace LemoineNavisworks.LevelModels
                     result  = ScanState.Failed;
                 }
 
+                // A federation that has never been saved has no file path, so the setup store has
+                // no bucket to file it under and NOTHING will persist. Say it once, here, rather
+                // than letting every later edit no-op in silence.
+                if (result == ScanState.Done && string.IsNullOrEmpty(_documentKey))
+                    message += " " + AppStrings.T("navis.levelModels.s0.notPersisted");
+
                 // Back to the window's thread to touch any UI state.
                 _scan        = result;
                 _scanMessage = message;
@@ -176,22 +182,62 @@ namespace LemoineNavisworks.LevelModels
             var found = NavisLevelModels.DiscoverLevels(doc, sourceIndex);
             MergeDiscovered(found, isRescan);
 
+            var report = NavisLevelModels.LastDiscovery;
+
             if (_levels.Count == 0)
             {
-                var rep = NavisLevelModels.LastDiscovery;
-                return rep.ChildNames.Count > 0
+                // Say WHAT the tree held, not just that nothing was found — a bare "no levels" is
+                // indistinguishable from a broken scan, and that is exactly how the wrapper-node
+                // bug hid. DescribeTree prints every depth the search looked at.
+                return report.Layers.Count > 0
                     ? AppStrings.T("navis.levelModels.s0.noLevelsButChildren",
-                                   rep.SourceModel, string.Join(", ", rep.ChildNames.Take(10)))
-                    : AppStrings.T("navis.levelModels.s0.noLevels", rep.SourceModel);
+                                   report.SourceModel, DescribeTree(report))
+                    : AppStrings.T("navis.levelModels.s0.noLevels", report.SourceModel);
             }
 
-            NavisLevelModels.AutoAssign(_models, _levels.Where(l => !l.UserEdited).ToList());
+            var assignMode = NavisLevelModels.AutoAssign(_models, _levels.Where(l => !l.UserEdited).ToList());
 
             int assigned = _levels.SelectMany(l => l.Models).Distinct(StringComparer.OrdinalIgnoreCase).Count();
             SaveSetup();
-            return AppStrings.T("navis.levelModels.s0.done",
-                                _levels.Count, NavisLevelModels.LastDiscovery.SourceModel,
-                                assigned, _models.Count);
+
+            string done = AppStrings.T("navis.levelModels.s0.done",
+                                       _levels.Count, report.SourceModel,
+                                       assigned, _models.Count);
+
+            // Levels normally sit under a "<file>.rvt : n : location <…>" node rather than at the
+            // top of the tree, so name the branch they came from — it is the one thing that tells
+            // the user at a glance whether the scan read levels or something else entirely.
+            if (!string.IsNullOrWhiteSpace(report.LayerPath))
+                done += " " + AppStrings.T("navis.levelModels.s0.readFrom", report.LayerPath);
+
+            // Say which way the assignment went. A federation split by DISCIPLINE names no levels
+            // in any file name, so the all-to-all fallback is the NORMAL path there, not an edge
+            // case — and silently doing it would look like the tool assigning models at random.
+            if (assignMode == NavisLevelModels.AutoAssignMode.AllToAll)
+                done += " " + AppStrings.T("navis.levelModels.s0.allToAll");
+            else if (assigned == 0 && _models.Count > 0)
+                done += " " + AppStrings.T("navis.levelModels.s0.noneMatched");
+
+            return done;
+        }
+
+        /// <summary>A one-line rendering of what the source model's tree actually holds, depth by
+        /// depth. This is what turns "no levels" from a dead end into an answer — it shows whether
+        /// the model was exported divided by level at all.</summary>
+        private static string DescribeTree(NavisLevelModels.DiscoveryReport report)
+        {
+            var parts = new List<string>();
+            foreach (var layer in report.Layers)
+            {
+                if (layer.Names.Count == 0) continue;
+                string shown = string.Join(", ", layer.Names.Take(6));
+                int rest = layer.Names.Count - 6;
+                if (rest > 0) shown += AppStrings.T("navis.levelModels.s0.andMore", rest);
+                parts.Add(shown);
+            }
+            return parts.Count == 0
+                ? AppStrings.T("navis.levelModels.s0.emptyTree")
+                : string.Join("  \u203a  ", parts);
         }
 
         /// <summary>Which model the level list is read from. Honours an explicit pick, otherwise
@@ -281,6 +327,21 @@ namespace LemoineNavisworks.LevelModels
                 if (!string.IsNullOrEmpty(saved.Value.SourceModel)) _sourceModelKey = saved.Value.SourceModel;
                 _restoredFromStore = true;
 
+                // The output settings come back with the levels. A pattern of "" means the setup
+                // predates them being stored, so the current default stands rather than being
+                // overwritten with an empty box.
+                var o = saved.Value.Output;
+                if (o != null)
+                {
+                    _outFolder  = o.Folder ?? "";
+                    if (!string.IsNullOrWhiteSpace(o.Pattern)) _pattern = o.Pattern;
+                    _straddle   = o.Straddle;
+                    _viewpoints = o.Viewpoints;
+                    _clip       = o.Clip;
+                    _embedXrefs = o.EmbedXrefs;
+                    _keepProps  = o.KeepProps;
+                }
+
                 // A model that has since left the federation must not linger as a phantom
                 // assignment that silently exports nothing.
                 var live = new HashSet<string>(_models.Select(m => m.Key), StringComparer.OrdinalIgnoreCase);
@@ -303,9 +364,24 @@ namespace LemoineNavisworks.LevelModels
 
         private void SaveSetup()
         {
+            // An unsaved federation has no file path, so there is no bucket to file the setup
+            // under and nothing persists. That is reported once on the scan step rather than
+            // silently doing nothing every time the user changes something.
             if (string.IsNullOrEmpty(_documentKey)) return;
-            LevelModelsStore.Save(_documentKey, _levels, _sourceModelKey);
+            LevelModelsStore.Save(_documentKey, _levels, _sourceModelKey, CurrentOutput());
         }
+
+        /// <summary>The S2 settings as one value for the store.</summary>
+        private LevelModelsStore.OutputSettings CurrentOutput() => new LevelModelsStore.OutputSettings
+        {
+            Folder     = _outFolder,
+            Pattern    = _pattern,
+            Straddle   = _straddle,
+            Viewpoints = _viewpoints,
+            Clip       = _clip,
+            EmbedXrefs = _embedXrefs,
+            KeepProps  = _keepProps,
+        };
 
         /// <summary>Marks a level as the user's and persists — every edit path calls this.</summary>
         private void TouchLevel(LevelDef lv)
@@ -804,7 +880,7 @@ namespace LemoineNavisworks.LevelModels
                 Path        = _outFolder,
                 DialogTitle = AppStrings.T("navis.levelModels.s2.folderDialog"),
             };
-            folder.PathChanged += p => { _outFolder = p ?? ""; Changed(); };
+            folder.PathChanged += p => { _outFolder = p ?? ""; SaveSetup(); Changed(); };
             panel.Children.Add(folder);
             panel.Children.Add(Sub(AppStrings.T("navis.levelModels.s2.localOnly")));
             panel.Children.Add(Gap());
@@ -815,7 +891,7 @@ namespace LemoineNavisworks.LevelModels
                 Text        = _pattern,
                 Placeholder = "{level}",
             };
-            pattern.TextChanged += t => { _pattern = t ?? ""; Changed(); };
+            pattern.TextChanged += t => { _pattern = t ?? ""; SaveSetup(); Changed(); };
             panel.Children.Add(pattern);
             panel.Children.Add(Sub(AppStrings.T("navis.levelModels.s2.patternTokens")));
             panel.Children.Add(Gap());
@@ -833,6 +909,7 @@ namespace LemoineNavisworks.LevelModels
                 straddle.SelectionChanged += sel =>
                 {
                     _straddle = sel == StraddleCentroidLabel ? StraddleRule.ByCentroid : StraddleRule.KeepOverlapping;
+                    SaveSetup();
                     Changed();
                 };
                 panel.Children.Add(straddle);
@@ -857,6 +934,7 @@ namespace LemoineNavisworks.LevelModels
                 if (st.TryGetValue("clip",  out var c)) _clip       = c;
                 if (st.TryGetValue("xrefs", out var x)) _embedXrefs = x;
                 if (st.TryGetValue("props", out var p)) _keepProps  = p;
+                SaveSetup();
                 Changed();
             };
             panel.Children.Add(options);
@@ -1050,6 +1128,7 @@ namespace LemoineNavisworks.LevelModels
                 pushLog(AppStrings.T("navis.levelModels.log.viewpointHint"), "info");
 
             int pass = 0, fail = 0, skip = 0;
+            int viewpointsSaved = 0, viewpointsClipped = 0;
             try
             {
                 for (int i = 0; i < targets.Count; i++)
@@ -1062,6 +1141,8 @@ namespace LemoineNavisworks.LevelModels
 
                     var lv = targets[i];
                     var outcome = ExportLevel(doc, lv, byKey, roots, items, allItems, folder, pushLog);
+                    if (outcome.Viewpoint) viewpointsSaved++;
+                    if (outcome.Clipped)   viewpointsClipped++;
 
                     if (outcome.Written)
                     {
@@ -1096,6 +1177,14 @@ namespace LemoineNavisworks.LevelModels
                 touched.Clear();
                 wasHidden.Clear();
             }
+
+            // One line for the whole run rather than one per level: a clip that failed has already
+            // printed its own warning, and this is the count that says whether the option did
+            // anything at all.
+            if (_viewpoints)
+                pushLog(AppStrings.T("navis.levelModels.log.viewpointSummary",
+                                     viewpointsSaved, viewpointsClipped),
+                        (_clip && viewpointsClipped < viewpointsSaved) ? "warn" : "info");
 
             pushLog(AppStrings.T("navis.levelModels.log.done", pass, fail), fail == 0 ? "pass" : "warn");
             onComplete(pass, fail, skip);
@@ -1132,7 +1221,11 @@ namespace LemoineNavisworks.LevelModels
                 // would ship carrying level 1's as well.
                 NavisLevelModels.ClearViewpoints(doc);
                 if (_viewpoints)
-                    outcome.Clipped = NavisLevelModels.SaveViewpoint(doc, Display(lv), lv, _clip, pushLog);
+                {
+                    var vpResult = NavisLevelModels.SaveViewpoint(doc, Display(lv), lv, _clip, pushLog);
+                    outcome.Viewpoint = vpResult.Saved;
+                    outcome.Clipped   = vpResult.Clipped;   // the CLIP, not "a viewpoint was saved"
+                }
 
                 string path = Path.Combine(folder, outcome.File);
                 string err  = NavisLevelModels.ExportNwd(doc, path, _embedXrefs, _keepProps);
