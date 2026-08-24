@@ -127,56 +127,172 @@ namespace LemoineNavisworks.LevelModels
 
         // ── Level discovery (names + elevations, both editable afterwards) ────
 
-        /// <summary>Reads distinct "Level" property values, taking each level's elevation from the
-        /// lowest item carrying it. Capped so opening the tool on a large federation cannot hang
-        /// the UI thread. Returns an empty list — and says so at the call site — when the models
-        /// carry no Level property at all.</summary>
+        /// <summary>What the last <see cref="DiscoverLevels"/> call actually saw. A scan that
+        /// returns nothing is useless without this — the user needs to know WHETHER the models
+        /// carry a level property at all and, if they do, what it is called.</summary>
+        public sealed class DiscoveryReport
+        {
+            public int    ItemsScanned;
+            public bool   HitCap;
+            public string MatchedBy = "";              // which pass produced the result
+            /// <summary>Distinct property names seen, most common first — the diagnostic that
+            /// makes a zero result actionable instead of a mystery.</summary>
+            public List<string> PropertyNames = new List<string>();
+        }
+
+        public static DiscoveryReport LastDiscovery { get; private set; } = new DiscoveryReport();
+
+        // Property names that carry a level, in preference order. Revit exports usually surface
+        // "Level"; MEP/structural families often only carry a Base/Reference/Schedule level.
+        private static readonly string[] LevelPropertyNames =
+        {
+            "Level", "Base Level", "Reference Level", "Schedule Level",
+            "Base Constraint", "Home Level", "Level Name", "Story", "Storey",
+        };
+
+        /// <summary>
+        /// Finds the levels present in the federation, taking each level's elevation from the
+        /// lowest item carrying it. Three passes, stopping at the first that finds anything:
+        ///   1. a property whose name is one of <see cref="LevelPropertyNames"/> (exact);
+        ///   2. any property whose name CONTAINS "level" with a non-empty value;
+        ///   3. item / ancestor names that look like a level ("L01", "B1", "Ground", "Roof"…),
+        ///      which is how a federation that groups by level in the TREE rather than by
+        ///      property presents itself.
+        /// Every pass records <see cref="LastDiscovery"/> so a zero result can say why.
+        /// </summary>
         public static List<DiscoveredLevel> DiscoverLevels(Document doc, int cap = LevelDefaults.DiscoverScanCap)
         {
             ResetProbeFailures();
-            var minZ = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+            var report = new DiscoveryReport();
+            LastDiscovery = report;
             if (doc == null || doc.IsClear) return new List<DiscoveredLevel>();
 
-            int seen = 0;
-            for (int i = 0; i < doc.Models.Count && seen < cap; i++)
+            // One traversal, collecting everything each pass needs, so a big federation is walked
+            // once rather than three times.
+            var byExact   = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+            var byLoose   = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+            var byName    = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+            var propSeen  = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+            int scanned = 0;
+            for (int i = 0; i < doc.Models.Count && scanned < cap; i++)
             {
                 foreach (ModelItem item in Descendants(doc.Models[i]))
                 {
-                    if (seen >= cap) break;
-                    if (!SafeHasGeometry(item)) continue;
-                    seen++;
+                    if (scanned >= cap) { report.HitCap = true; break; }
 
-                    string level = ReadLevelName(item);
-                    if (string.IsNullOrWhiteSpace(level)) continue;
-                    if (!TryZExtent(item, out double lo, out _)) continue;
+                    // The old scan counted (and required) geometry items only. A level is often
+                    // carried on a non-geometry group/layer node, and burning the cap on one
+                    // model's geometry could exhaust the budget before ever reaching a model that
+                    // does carry levels — which is exactly a scan that "finds nothing".
+                    bool hasGeom = SafeHasGeometry(item);
+                    scanned++;
 
-                    if (!minZ.TryGetValue(level, out double cur) || lo < cur) minZ[level] = lo;
+                    double lo = 0;
+                    bool haveZ = hasGeom && TryZExtent(item, out lo, out _);
+
+                    ReadLevelCandidates(item, propSeen, out string exact, out string loose);
+
+                    if (!string.IsNullOrWhiteSpace(exact)) Record(byExact, exact, haveZ, lo);
+                    if (!string.IsNullOrWhiteSpace(loose)) Record(byLoose, loose, haveZ, lo);
+
+                    string treeName = LevelLikeName(SafeDisplayName(item));
+                    if (!string.IsNullOrWhiteSpace(treeName)) Record(byName, treeName, haveZ, lo);
                 }
             }
 
-            return minZ.OrderBy(kv => kv.Value)
-                       .Select(kv => new DiscoveredLevel { Name = kv.Key, Elevation = kv.Value })
-                       .ToList();
+            report.ItemsScanned  = scanned;
+            report.PropertyNames = propSeen.OrderByDescending(kv => kv.Value)
+                                           .Select(kv => kv.Key)
+                                           .Take(25)
+                                           .ToList();
+
+            var chosen = byExact.Count > 0 ? byExact
+                       : byLoose.Count > 0 ? byLoose
+                       : byName;
+            report.MatchedBy = byExact.Count > 0 ? "property"
+                             : byLoose.Count > 0 ? "property-loose"
+                             : byName.Count  > 0 ? "name"
+                             : "";
+
+            return chosen.OrderBy(kv => kv.Value)
+                         .Select(kv => new DiscoveredLevel { Name = kv.Key, Elevation = kv.Value })
+                         .ToList();
         }
 
-        private static string ReadLevelName(ModelItem item)
+        // An item with no readable Z still proves the level EXISTS — record it at +inf so it is
+        // kept but sorts last, rather than dropping the level entirely (the old scan's `continue`
+        // on a failed bbox read silently discarded levels carried by non-geometry nodes).
+        private static void Record(Dictionary<string, double> into, string level, bool haveZ, double z)
         {
+            double v = haveZ ? z : double.PositiveInfinity;
+            if (!into.TryGetValue(level, out double cur) || v < cur) into[level] = v;
+        }
+
+        private static string SafeDisplayName(ModelItem item)
+        {
+            try { return item.DisplayName ?? ""; }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("LevelModels: item display name", ex); return ""; }
+        }
+
+        /// <summary>Reads both an exact-match and a loose-match level value off one item, and
+        /// tallies every property name seen for the diagnostic report — all in a single pass over
+        /// the item's categories, which is the expensive part.</summary>
+        private static void ReadLevelCandidates(
+            ModelItem item, Dictionary<string, int> propSeen, out string exact, out string loose)
+        {
+            exact = ""; loose = "";
             try
             {
                 foreach (PropertyCategory cat in item.PropertyCategories)
                 {
                     foreach (DataProperty p in cat.Properties)
                     {
-                        string pd = p.DisplayName ?? p.Name ?? "";                     // DataProperty.Name is itself a string (confirmed on a Windows/Revit run — the guessed .Name.Name chain does not compile)
-                        if (pd.Equals("Level", StringComparison.OrdinalIgnoreCase))
-                        {
-                            string v = p.Value?.ToDisplayString();                     // VariantData.ToDisplayString() — confirmed
-                            if (!string.IsNullOrWhiteSpace(v)) return v.Trim();
-                        }
+                        string pd = (p.DisplayName ?? p.Name ?? "").Trim();
+                        if (pd.Length == 0) continue;
+
+                        if (propSeen.TryGetValue(pd, out int n)) propSeen[pd] = n + 1;
+                        else                                     propSeen[pd] = 1;
+
+                        bool isExact = exact.Length == 0 &&
+                                       LevelPropertyNames.Any(k => pd.Equals(k, StringComparison.OrdinalIgnoreCase));
+                        bool isLoose = loose.Length == 0 &&
+                                       pd.IndexOf("level", StringComparison.OrdinalIgnoreCase) >= 0;
+                        if (!isExact && !isLoose) continue;
+
+                        string v = "";
+                        try { v = p.Value?.ToDisplayString() ?? ""; }
+                        catch (Exception ex) { DiagnosticsLog.Swallowed("LevelModels: read property value", ex); }
+                        v = v.Trim();
+                        if (v.Length == 0) continue;
+
+                        if (isExact) exact = v;
+                        if (isLoose) loose = v;
                     }
                 }
             }
             catch (Exception ex) { DiagnosticsLog.Swallowed("LevelModels: read level property", ex); }
+        }
+
+        /// <summary>Returns the trimmed name when it reads like a level label, else "". Covers the
+        /// conventions actually in use here — L1 / L01 for storeys, L0 / Underground for below
+        /// grade — plus the usual B1 / Level 2 / Ground / Roof variants.</summary>
+        private static string LevelLikeName(string raw)
+        {
+            string name = (raw ?? "").Trim();
+            if (name.Length == 0 || name.Length > 40) return "";
+
+            // L1, L01, L-01, LVL 2, Level 3, B1, Storey 4 …
+            if (System.Text.RegularExpressions.Regex.IsMatch(
+                    name, @"^(L|B|LVL|LEVEL|FLOOR|STOR(E)?Y)\s*[-_]?\s*\d{1,3}([A-Za-z]|\.\d+)?$",
+                    System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+                return name;
+
+            // Named levels with no number.
+            string[] named = { "underground", "basement", "ground", "roof", "mezzanine", "podium", "plant" };
+            foreach (var w in named)
+                if (name.Equals(w, StringComparison.OrdinalIgnoreCase)) return name;
+
             return "";
         }
 

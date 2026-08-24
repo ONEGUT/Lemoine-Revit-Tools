@@ -22,7 +22,10 @@
   "s1": {
     "intro":            "Each level exports one NWD holding only the models you assign to it — everything else is hidden before the export. Open a row to trim its models to an elevation band.",
     "discovered":       "Found {0} level(s) in the model. Names and elevations are editable.",
-    "discoveredNone":   "No “Level” property found in these models — add levels manually below.",
+    "discoveredNone":   "No levels found after scanning {0} item(s) — add them manually below.",
+    "propertiesSeen":   "The models do carry these properties: {0}. If one of them holds the level, say so and it can be matched.",
+    "matchedByName":    "Matched on item names rather than a Level property.",
+    "scanCapped":       "Scan stopped at {0} items; rescan or add remaining levels by hand.",
     "probeFailures":    "{0} item(s) could not be measured; see diagnostics.log.",
     "noDocument":       "No model open. Open your federated NWF/NWD and reopen this tool.",
     "noModels":         "This document has no appended models, so there is nothing to assign.",

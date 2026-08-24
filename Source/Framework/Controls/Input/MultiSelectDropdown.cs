@@ -5,7 +5,6 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
-using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 
@@ -25,11 +24,14 @@ namespace LemoineTools.Framework.Controls
     // Open:     search · "All" row · one checkable row per item (+ optional
     //           right-aligned secondary text, e.g. a source filename)
     //
-    // Popup safety follows the proven TagChipInput/SearchAutocomplete pattern:
-    // StaysOpen = true (StaysOpen = false corrupts Revit's message loop — see
-    // CLAUDE.md), dismissal via the search box losing focus outside the popup,
-    // and a self-contained scroller plus a window-level wheel redirect so the
-    // list scrolls both directions under Revit's WPF hosting.
+    // The open list is an INLINE panel, not a Popup. A Popup renders in its own
+    // top-level hwnd: under Navisworks that hwnd was inert (rows would not take a
+    // click) and it drew outside the tool window's bounds, which is wrong for a
+    // control that lives on a repeated row. Inline costs a taller row while open
+    // and buys working clicks, correct clipping, and no popup focus machinery at
+    // all — no StaysOpen, no LostFocus dismissal, no window-level wheel redirect.
+    // Only one dropdown is open at a time (see _openInstance) so a column of these
+    // cannot stack into an unusable page.
     //
     // Host-agnostic: no Revit or Navisworks types, so it compiles into both
     // assemblies from the shared Source\Framework tree.
@@ -91,13 +93,14 @@ namespace LemoineTools.Framework.Controls
         private readonly Border      _field   = new Border();
         private readonly TextBlock   _caret   = new TextBlock();
 
-        private Popup?          _popup;
-        private Border?         _popupRoot;
+        private Border?         _panel;      // the inline open list
         private TextBox?        _searchBox;
         private StackPanel?     _rowStack;
-        private ScrollViewer?   _rowScroll;
-        private Window?         _wheelOwner;
         private bool            _suppress;   // guards re-entrant row rebuilds
+
+        // Only one open at a time: a level list with a dozen rows would otherwise become a
+        // very long page of stacked open lists. Static, because the rule spans instances.
+        private static MultiSelectDropdown? _openInstance;
 
         public MultiSelectDropdown()
         {
@@ -153,18 +156,18 @@ namespace LemoineTools.Framework.Controls
             _field.SetResourceReference(Border.PaddingProperty,      "LemoineTh_InputPad");
             _field.SetResourceReference(Border.MinHeightProperty,    "LemoineH_Input");
             _field.Cursor = Cursors.Hand;
-            // Opens only — never toggles closed. A click on _field while the popup is already
-            // open (e.g. an imprecise click meant for the search box just below it) must not
-            // silently close it out from under the user; dismissal is LostFocus-driven only.
-            _field.MouseLeftButtonUp += (s, e) => { e.Handled = true; OpenPopup(); };
+            // Safe to toggle now that the list is inline: there is no separate hwnd whose focus
+            // could race the click, which is what forced open-only behaviour under the Popup.
+            _field.MouseLeftButtonUp += (s, e) => { e.Handled = true; Toggle(); };
             outer.Children.Add(_field);
 
-            // Parented deliberately: a Popup built loose sits outside the logical tree, so
-            // SetResourceReference in its subtree never reaches the Window's injected
-            // ResourceDictionary and every themed brush falls back silently. As a panel child it
-            // takes no layout space but does inherit the resource scope.
-            _popup = BuildPopup();
-            outer.Children.Add(_popup);
+            _panel = BuildPanel();
+            outer.Children.Add(_panel);
+
+            // _openInstance is static, so a control left open when its window closes would stay
+            // rooted for the life of the process (CLAUDE.md memory discipline) and would also make
+            // the next window's first Open() call Close() on a dead control.
+            Unloaded += (s, e) => { if (ReferenceEquals(_openInstance, this)) _openInstance = null; };
 
             Content = outer;
             RenderClosed();
@@ -198,32 +201,26 @@ namespace LemoineTools.Framework.Controls
                 : string.Join(", ", head);
         }
 
-        // ── Popup ─────────────────────────────────────────────────────────────
+        // ── Inline open list ──────────────────────────────────────────────────
 
-        private Popup BuildPopup()
+        private void Toggle()
         {
-            var popup = new Popup
-            {
-                PlacementTarget    = _field,
-                Placement          = PlacementMode.Bottom,
-                StaysOpen          = true,   // StaysOpen=false corrupts Revit's message loop (CLAUDE.md)
-                AllowsTransparency = true,
-                PopupAnimation     = PopupAnimation.Fade,
-            };
+            if (_panel != null && _panel.Visibility == Visibility.Visible) Close();
+            else                                                          Open();
+        }
 
-            var outerBorder = new Border
+        private Border BuildPanel()
+        {
+            var box = new Border
             {
                 BorderThickness = new Thickness(1),
                 CornerRadius    = new CornerRadius(3),
-                MinWidth        = 220,
+                Margin          = new Thickness(0, 3, 0, 0),
                 Padding         = new Thickness(6),
-                Effect          = new System.Windows.Media.Effects.DropShadowEffect
-                {
-                    BlurRadius = 8, Opacity = 0.18, ShadowDepth = 2, Direction = 270,
-                },
+                Visibility      = Visibility.Collapsed,
             };
-            outerBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
-            outerBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
+            box.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
+            box.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
 
             var stack = new StackPanel();
 
@@ -241,14 +238,6 @@ namespace LemoineTools.Framework.Controls
             // Guarded exactly as the house ComboBox rule requires: without the focus check a
             // programmatic Text reset during a rebuild re-enters the filter.
             _searchBox.TextChanged += (s, e) => { if (_searchBox!.IsKeyboardFocusWithin) RefreshRows(); };
-            // Dismiss when focus leaves for something OUTSIDE the popup. Rows are non-focusable,
-            // so ticking one keeps the list open for multi-select; clicking away closes it.
-            // Deferred so the click that moved focus settles first.
-            _searchBox.LostFocus += (s, e) =>
-                Dispatcher.BeginInvoke(new Action(() =>
-                {
-                    if (_searchBox != null && !_searchBox.IsKeyboardFocusWithin) ClosePopup();
-                }), System.Windows.Threading.DispatcherPriority.Background);
             stack.Children.Add(_searchBox);
 
             var sv = new ScrollViewer
@@ -259,42 +248,46 @@ namespace LemoineTools.Framework.Controls
             };
             _rowStack  = new StackPanel();
             sv.Content = _rowStack;
-            // Authoritative popup-scroller tag: the wheel drives this list and never leaks to the
-            // page behind it (visual-tree popup detection is unreliable under Revit's hosting).
-            ControlStyles.SetSelfContainedScroll(sv, true);
-            _rowScroll = sv;
+            // In-page scroller (not a popup any more): it SHOULD hand the wheel back to the page
+            // once it hits its own limit, which is the house rule for nested in-page scrollers.
+            ControlStyles.WireBubblingScroll(sv);
             stack.Children.Add(sv);
 
-            outerBorder.Child = stack;
-            popup.Child       = outerBorder;
-            _popupRoot        = outerBorder;
-            return popup;
+            box.Child = stack;
+            return box;
         }
 
-        private void OpenPopup()
+        private void Open()
         {
-            if (_popup == null || _searchBox == null) return;
-            if (_popup.IsOpen) { RefocusSearchBox(); return; }   // already open — don't wipe the query
+            if (_panel == null || _searchBox == null) return;
+            if (_panel.Visibility == Visibility.Visible) { FocusSearchBox(); return; }
+
+            // Close whichever other row was open first.
+            if (!ReferenceEquals(_openInstance, this)) _openInstance?.Close();
+            _openInstance = this;
 
             _suppress = true;
             _searchBox.Text = "";
             _suppress = false;
             RefreshRows();
 
-            _popup.IsOpen = true;
-            _caret.Text   = "▲";
+            _panel.Visibility = Visibility.Visible;
+            _caret.Text       = "▲";
             _field.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
-            RefocusSearchBox();
-
-            // A Popup takes no Win32 activation, so WM_MOUSEWHEEL can be delivered to the MAIN
-            // window instead of the popup's hwnd — the "scrolls down but not up" bug. Redirect at
-            // the window level ONLY while open; detached in ClosePopup.
-            if (_wheelOwner != null) _wheelOwner.PreviewMouseWheel -= OnOwnerPreviewMouseWheel;
-            _wheelOwner = Window.GetWindow(this);
-            if (_wheelOwner != null) _wheelOwner.PreviewMouseWheel += OnOwnerPreviewMouseWheel;
+            FocusSearchBox();
         }
 
-        private void RefocusSearchBox()
+        private void Close()
+        {
+            if (_panel != null) _panel.Visibility = Visibility.Collapsed;
+            if (ReferenceEquals(_openInstance, this)) _openInstance = null;
+            _caret.Text = "▼";
+            _field.SetResourceReference(Border.BorderBrushProperty, "LemoineBorderMid");
+        }
+
+        // Deferred: the panel has only just been made visible, so it has not been measured or
+        // arranged yet and a same-frame Focus() can land on an element that is not yet live.
+        private void FocusSearchBox()
         {
             var box = _searchBox;
             if (box == null) return;
@@ -302,24 +295,6 @@ namespace LemoineTools.Framework.Controls
             {
                 if (box.IsVisible) { box.Focus(); Keyboard.Focus(box); }
             }), System.Windows.Threading.DispatcherPriority.Loaded);
-        }
-
-        private void ClosePopup()
-        {
-            if (_wheelOwner != null)
-            {
-                _wheelOwner.PreviewMouseWheel -= OnOwnerPreviewMouseWheel;
-                _wheelOwner = null;
-            }
-            if (_popup != null) _popup.IsOpen = false;
-            _caret.Text = "▼";
-            _field.SetResourceReference(Border.BorderBrushProperty, "LemoineBorderMid");
-        }
-
-        private void OnOwnerPreviewMouseWheel(object sender, MouseWheelEventArgs e)
-        {
-            if (_popup?.IsOpen != true) return;
-            ControlStyles.RedirectWheelToPopupScroller(e, _popupRoot, _rowScroll);
         }
 
         // ── Row list ──────────────────────────────────────────────────────────
@@ -380,7 +355,7 @@ namespace LemoineTools.Framework.Controls
 
             PaintCheck(box, check, allOn);
 
-            row.MouseLeftButtonUp += (s, e) =>
+            row.MouseLeftButtonDown += (s, e) =>
             {
                 e.Handled = true;
                 if (allOn) foreach (var v in visible) _selected.Remove(v);
@@ -406,7 +381,7 @@ namespace LemoineTools.Framework.Controls
             PaintCheck(box, check, on);
             if (on) row.SetResourceReference(Border.BackgroundProperty, "LemoineAccentDim");
 
-            row.MouseLeftButtonUp += (s, e) =>
+            row.MouseLeftButtonDown += (s, e) =>
             {
                 e.Handled = true;
                 if (_selected.Contains(item)) _selected.Remove(item);

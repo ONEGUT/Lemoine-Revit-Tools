@@ -25,8 +25,13 @@ namespace LemoineNavisworks.LevelModels
     //   S3  Run             — per level: hide everything not assigned, optionally
     //                         trim by band, save a clipped viewpoint, export, restore.
     //
-    // Navisworks runs plugin code on the main STA thread, so Run() calls the API
-    // directly — no ExternalEvent (unlike every Revit tool in this repo).
+    // THREADING. The window runs on its own STA thread (NavisToolWindow explains why:
+    // on Navisworks' own thread the host ate every keystroke). The Navisworks API may
+    // only be touched from Navisworks' main thread, so:
+    //   • the constructor runs there, called from AddInPlugin.Execute, and captures
+    //     everything the UI will need — models, levels, units, document title;
+    //   • Rescan and Run marshal back through NavisMainThread;
+    //   • nothing else in this file may call the API.
     // =========================================================================
     public sealed class LevelModelsViewModel : IStepFlowTool, IStepAware, IToolCleanup
     {
@@ -49,6 +54,7 @@ namespace LemoineNavisworks.LevelModels
         private List<ModelRef>           _models  = new List<ModelRef>();
         private readonly string          _unit;
         private readonly bool            _hasDoc;
+        private readonly string          _docTitle;
         private string                   _discoverNote = "";
 
         private StraddleRule _straddle    = StraddleRule.KeepOverlapping;
@@ -63,11 +69,19 @@ namespace LemoineNavisworks.LevelModels
         private StackPanel?     _levelHost;
         private StackPanel?     _warnHost;
 
+        /// <summary>
+        /// Built on Navisworks' MAIN thread (from AddInPlugin.Execute, before the window's thread
+        /// starts), so every read here is a legal API call and needs no marshalling. Everything the
+        /// UI needs later is captured now — including the document title, because the filename
+        /// preview reaches for it while the first step is being built on the window thread, at
+        /// which point the main thread is still blocked waiting for that window to appear.
+        /// </summary>
         public LevelModelsViewModel()
         {
             var doc = NavisApp.ActiveDocument;
             _hasDoc = doc != null && !doc.IsClear;
             _unit   = _hasDoc ? NavisLevelModels.UnitSuffix(doc!) : "";
+            _docTitle = ReadDocTitle(doc);
             if (!_hasDoc) return;
 
             _models = NavisLevelModels.ListModels(doc!);
@@ -91,19 +105,43 @@ namespace LemoineNavisworks.LevelModels
             {
                 // A level's band runs to the next level up; the topmost is left open (Top ==
                 // Bottom means "no band", so Trim stays off until the user gives it one).
-                double bottom = found[i].Elevation;
-                double top    = i + 1 < found.Count ? found[i + 1].Elevation : bottom;
+                // Discovery reports +infinity for a level it found by name but could not measure
+                // (a non-geometry group node has no bounding box) — that must not reach a stepper
+                // or a band, so it degrades to "no elevation known" and the user fills it in.
+                double bottom = Finite(found[i].Elevation);
+                double top    = i + 1 < found.Count ? Finite(found[i + 1].Elevation) : bottom;
+                if (top < bottom) top = bottom;
                 _levels.Add(new LevelDef { Name = found[i].Name, Bottom = bottom, Top = top });
             }
 
-            // A silent empty result is indistinguishable from a broken collector — say which.
-            _discoverNote = found.Count > 0
-                ? AppStrings.T("navis.levelModels.s1.discovered", found.Count)
-                : AppStrings.T("navis.levelModels.s1.discoveredNone");
+            // A silent empty result is indistinguishable from a broken collector — say which, and
+            // when nothing matched, name the properties the models DO carry so the next step is
+            // obvious instead of guesswork.
+            var report = NavisLevelModels.LastDiscovery;
+            if (found.Count > 0)
+            {
+                _discoverNote = AppStrings.T("navis.levelModels.s1.discovered", found.Count);
+                if (report.MatchedBy == "name")
+                    _discoverNote += " " + AppStrings.T("navis.levelModels.s1.matchedByName");
+            }
+            else
+            {
+                _discoverNote = AppStrings.T("navis.levelModels.s1.discoveredNone", report.ItemsScanned);
+                if (report.PropertyNames.Count > 0)
+                    _discoverNote += " " + AppStrings.T("navis.levelModels.s1.propertiesSeen",
+                                                        string.Join(", ", report.PropertyNames.Take(12)));
+            }
+            if (report.HitCap)
+                _discoverNote += " " + AppStrings.T("navis.levelModels.s1.scanCapped", report.ItemsScanned);
             if (NavisLevelModels.ProbeFailures > 0)
                 _discoverNote += " " + AppStrings.T("navis.levelModels.s1.probeFailures",
                                                     NavisLevelModels.ProbeFailures);
         }
+
+        /// <summary>Discovery uses +infinity for "level exists, elevation unknown"; the UI needs a
+        /// real number. Anything non-finite becomes 0 so the steppers stay usable.</summary>
+        private static double Finite(double v) =>
+            double.IsNaN(v) || double.IsInfinity(v) ? 0 : v;
 
         // ── IStepAware ────────────────────────────────────────────────────────
 
@@ -351,12 +389,21 @@ namespace LemoineNavisworks.LevelModels
             Changed();
         }
 
+        // Runs on the window's own thread (a button click), so the document reads have to hop to
+        // the main thread. Synchronous because the user is waiting on the result, and bounded by
+        // NavisMainThread's timeout so a wedged main thread cannot hang the window.
         private void Rescan()
         {
-            var doc = NavisApp.ActiveDocument;
-            if (doc == null || doc.IsClear) return;
-            _models = NavisLevelModels.ListModels(doc);
-            SeedLevelsFromDocument(doc);
+            bool ok = NavisMainThread.Invoke(() =>
+            {
+                var doc = NavisApp.ActiveDocument;
+                if (doc == null || doc.IsClear) return false;
+                _models = NavisLevelModels.ListModels(doc);
+                SeedLevelsFromDocument(doc);
+                return true;
+            }, fallback: false, timeoutSeconds: 120);   // a full federation scan is not quick
+
+            if (!ok) return;
             _rebuild?.Invoke("S1");   // repopulate the whole step, including the discovery note
             Changed();
         }
@@ -570,7 +617,49 @@ namespace LemoineNavisworks.LevelModels
 
         // ── Run ───────────────────────────────────────────────────────────────
 
+        /// <summary>
+        /// Called on the window's own thread. The export is queued onto Navisworks' main thread
+        /// and this returns immediately — exactly the shape the Revit tools have, where Run() only
+        /// raises an ExternalEvent and completion arrives through the callbacks.
+        ///
+        /// Deliberately Post (fire-and-forget) rather than a blocking Invoke: the window thread has
+        /// to stay free to paint progress and to accept a Cancel click, and RunState's flag is what
+        /// carries that cancellation across to the main thread.
+        /// </summary>
         public void Run(
+            Action<string, string>     pushLog,
+            Action<int, int, int, int> onProgress,
+            Action<int, int, int>      onComplete)
+        {
+            // onComplete MUST fire exactly once, whatever happens on the far side. Without this
+            // guard an escape before the run's own onComplete would leave StepFlowWindow stuck
+            // showing a run in progress, with Reset flipped to Cancel and no way back short of
+            // closing the window.
+            bool completed = false;
+            void CompleteOnce(int pass, int fail, int skip)
+            {
+                if (completed) return;
+                completed = true;
+                onComplete(pass, fail, skip);
+            }
+
+            NavisMainThread.Post(() =>
+            {
+                try { RunOnMainThread(pushLog, onProgress, CompleteOnce); }
+                catch (Exception ex)
+                {
+                    DiagnosticsLog.Error("LevelModels: run failed on main thread", ex);
+                    pushLog(AppStrings.T("navis.levelModels.log.aborted", ex.Message), "fail");
+                    CompleteOnce(0, 1, 0);
+                }
+                finally
+                {
+                    CompleteOnce(0, 0, 0);   // no-op if the run already reported its own result
+                }
+            });
+        }
+
+        private void RunOnMainThread(
             Action<string, string>     pushLog,
             Action<int, int, int, int> onProgress,
             Action<int, int, int>      onComplete)
@@ -796,11 +885,13 @@ namespace LemoineNavisworks.LevelModels
             return name;
         }
 
-        private static string SafeDocTitle()
+        /// <summary>The captured title — never an API call, so it is safe from any thread.</summary>
+        private string SafeDocTitle() => _docTitle;
+
+        private static string ReadDocTitle(NavisDoc? doc)
         {
             try
             {
-                var doc = NavisApp.ActiveDocument;
                 string t = doc?.Title ?? "";
                 if (!string.IsNullOrWhiteSpace(t)) return Path.GetFileNameWithoutExtension(t);
             }
@@ -863,19 +954,13 @@ namespace LemoineNavisworks.LevelModels
 
         private static FrameworkElement Gap() => new Border { Height = 8 };
 
-        /// <summary>Lets the window repaint and deliver clicks in the middle of a run.
+        /// <summary>Keeps NAVISWORKS responsive while a long export holds its main thread.
         ///
-        /// Navisworks runs plugin code on the SAME thread that owns the tool window, so this
-        /// synchronous export loop blocks that dispatcher: every progress/log callback queues
-        /// behind us and nothing appears until the run ends — and, worse, the Cancel button can
-        /// never be clicked, which would make the RunState.CancelRequested check in the loop
-        /// unreachable. Draining the queue at Background priority once per level fixes both.
-        ///
-        /// Revit tools need none of this: their ExternalEvent handler runs on Revit's main thread
-        /// while the window has a dispatcher of its own, so callbacks paint as they arrive.
-        ///
-        /// Re-entrancy is bounded because StepFlowWindow disables the step controls for the
-        /// duration of a run — Cancel and Reset are the only live buttons, which is the point.</summary>
+        /// The run body executes on Navisworks' main thread, so this drains that thread's queue —
+        /// not the window's. The window is on its own thread now and paints progress freely
+        /// without any help, so this is no longer what makes the progress bar move or the Cancel
+        /// button clickable; it exists so the host itself does not appear hung for the length of
+        /// a big federation export.</summary>
         private static void PumpUi()
         {
             try
