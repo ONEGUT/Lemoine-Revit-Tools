@@ -46,7 +46,13 @@ namespace LemoineNavisworks.LevelModels
         {
             [XmlAttribute("key")]      public string Key      { get; set; } = "";
             [XmlAttribute("modified")] public long   Modified  { get; set; }
+            /// <summary>What the levels were read from: a grid-system name, or a model key on the
+            /// tree fallback. Named "source" since before grids existed; the kind below says which.</summary>
             [XmlAttribute("source")]   public string SourceModel { get; set; } = "";
+            /// <summary>"Grids" or "Tree". A logic token, deliberately not externalized. Missing
+            /// (a setup saved before grids were read) deserializes to "", which the ViewModel
+            /// treats as "whatever this document supports now".</summary>
+            [XmlAttribute("sourceKind")] public string SourceKind { get; set; } = "";
             [XmlElement("Level")]      public List<LevelDto> Levels { get; set; } = new List<LevelDto>();
 
             /// <summary>Models that belong to every level (the every-level bucket).</summary>
@@ -91,8 +97,8 @@ namespace LemoineNavisworks.LevelModels
 
         /// <summary>Loads the saved setup for this document, or null when there is none. Order is
         /// preserved exactly as saved — the user's own ordering is part of the setup.</summary>
-        public static (List<LevelDef> Levels, string SourceModel, List<string> EveryLevelModels,
-                       OutputSettings Output)? Load(string documentKey)
+        public static (List<LevelDef> Levels, string SourceModel, string SourceKind,
+                       List<string> EveryLevelModels, OutputSettings Output)? Load(string documentKey)
         {
             if (string.IsNullOrWhiteSpace(documentKey)) return null;
 
@@ -132,7 +138,7 @@ namespace LemoineNavisworks.LevelModels
             foreach (var m in doc.EveryLevelModels.OrEmpty())
                 if (!string.IsNullOrWhiteSpace(m) && !everyLevel.Contains(m)) everyLevel.Add(m);
 
-            return (levels, doc.SourceModel ?? "", everyLevel, output);
+            return (levels, doc.SourceModel ?? "", doc.SourceKind ?? "", everyLevel, output);
         }
 
         // Logic tokens, deliberately hardcoded (CLAUDE.md: persisted values compared with == are
@@ -143,7 +149,8 @@ namespace LemoineNavisworks.LevelModels
         /// <summary>Writes this document's setup, replacing any previous one. Never throws — a
         /// failed save costs the remembered setup, and must not take the run with it.</summary>
         public static void Save(string documentKey, IReadOnlyList<LevelDef> levels, string sourceModel,
-                                IEnumerable<string>? everyLevelModels, OutputSettings? output)
+                                string sourceKind, IEnumerable<string>? everyLevelModels,
+                                OutputSettings? output)
         {
             if (string.IsNullOrWhiteSpace(documentKey) || levels == null) return;
 
@@ -159,6 +166,7 @@ namespace LemoineNavisworks.LevelModels
                     Key          = documentKey,
                     Modified     = DateTime.UtcNow.Ticks,
                     SourceModel  = sourceModel ?? "",
+                    SourceKind   = sourceKind ?? "",
                     EveryLevelModels = (everyLevelModels ?? new List<string>()).ToList(),
                     OutputFolder = o.Folder ?? "",
                     Pattern      = o.Pattern ?? "",

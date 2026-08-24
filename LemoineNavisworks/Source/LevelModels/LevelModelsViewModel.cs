@@ -91,8 +91,19 @@ namespace LemoineNavisworks.LevelModels
         /// Empty means nothing has been read yet, which is what makes confirming step 1 walk the
         /// tree exactly once per model choice instead of on every pass through the step.</summary>
         private string    _levelsFromKey = "";
-        /// <summary>Key of the model the level list is read from. Empty until the scan picks one.</summary>
-        private string    _sourceModelKey = "";
+        /// <summary>Where levels come from. Grids is the real answer — Navisworks keeps a
+        /// federation's levels in Grids &amp; Levels, the list the View tab shows. Tree is the
+        /// fallback for a federation carrying no grid systems at all.</summary>
+        private enum LevelSource { Grids, Tree }
+        private LevelSource _levelSource = LevelSource.Tree;
+
+        /// <summary>Grid-system names found in the document. Empty means no grids, which is what
+        /// puts the tool on the tree fallback.</summary>
+        private List<string> _gridSystems = new List<string>();
+
+        /// <summary>What the levels are read from: a grid-system name under
+        /// <see cref="LevelSource.Grids"/>, a model key under <see cref="LevelSource.Tree"/>.</summary>
+        private string    _sourceKey = "";
         private Action?   _stopThrobber;
 
         /// <summary>
@@ -123,28 +134,49 @@ namespace LemoineNavisworks.LevelModels
             }
             catch (Exception ex) { DiagnosticsLog.Error("LevelModels: list models", ex); }
 
-            // A saved setup is the user's own work from last time and stands in for a scan — the
-            // source model, the levels and the every-level bucket all come back, so confirming
-            // step 1 walks nothing unless the source model is changed.
+            // Where the levels live. Grids & Levels is the real home of a federation's levels —
+            // the same list the View tab shows — and reading the system names is a small in-memory
+            // collection, cheap enough to do before the window appears.
+            try { _gridSystems = NavisGridLevels.ListSystemNames(doc!); }
+            catch (Exception ex) { DiagnosticsLog.Error("LevelModels: list grid systems", ex); }
+            _levelSource = _gridSystems.Count > 0 ? LevelSource.Grids : LevelSource.Tree;
+
+            // A saved setup is the user's own work from last time and stands in for a read — the
+            // source, the levels and the every-level bucket all come back, so confirming step 1
+            // reads nothing unless the source is changed.
             try { TryRestoreSaved(); }
             catch (Exception ex) { DiagnosticsLog.Error("LevelModels: restore saved setup", ex); }
 
-            EnsureSourceModelDefault();
+            EnsureSourceDefault();
         }
 
-        /// <summary>Picks the source model shown on step 1 when nothing is saved: the architectural
-        /// file if one is recognisable, otherwise the first APPENDED model (not the alphabetically
-        /// first — _models is sorted for display and that must not decide what gets scanned).</summary>
-        private void EnsureSourceModelDefault()
+        /// <summary>Picks what step 1 shows when nothing is saved: the first grid system, or — with
+        /// no grids in the document — the architectural model, falling back to the first APPENDED
+        /// one (not the alphabetically first; _models is sorted for display and that ordering must
+        /// not decide what gets read).</summary>
+        private void EnsureSourceDefault()
         {
+            if (_levelSource == LevelSource.Grids)
+            {
+                if (_gridSystems.Any(n => string.Equals(n, _sourceKey, StringComparison.OrdinalIgnoreCase)))
+                    return;
+                _sourceKey = _gridSystems.FirstOrDefault() ?? "";
+                return;
+            }
+
             if (_models.Count == 0) return;
-            if (_models.Any(m => string.Equals(m.Key, _sourceModelKey, StringComparison.OrdinalIgnoreCase)))
+            if (_models.Any(m => string.Equals(m.Key, _sourceKey, StringComparison.OrdinalIgnoreCase)))
                 return;
 
             var arch   = _models.FirstOrDefault(LooksArchitectural);
             var chosen = arch ?? _models.OrderBy(m => m.Index).FirstOrDefault();
-            _sourceModelKey = chosen?.Key ?? "";
+            _sourceKey = chosen?.Key ?? "";
         }
+
+        /// <summary>Options step 1 offers: grid systems, or model keys on the tree fallback.</summary>
+        private List<string> SourceOptions() => _levelSource == LevelSource.Grids
+            ? _gridSystems.ToList()
+            : _models.Select(m => m.Key).OrderBy(k => k, NaturalOrderComparer.OrdinalIgnoreCase).ToList();
 
         /// <summary>Identifies the document for the saved-setup store. The file path is the only
         /// stable handle Navisworks offers; an unsaved document has none and simply does not
@@ -219,23 +251,15 @@ namespace LemoineNavisworks.LevelModels
             // RE-read, and a re-read never overwrites a row the user has edited.
             bool isRescan = _levelsFromKey.Length > 0;
 
-            int sourceIndex = ResolveSourceModelIndex();
-            var found = NavisLevelModels.DiscoverLevels(doc, sourceIndex);
-            MergeDiscovered(found, isRescan);
-            _levelsFromKey = _sourceModelKey;
+            bool grids = _levelSource == LevelSource.Grids;
+            var found = grids
+                ? NavisGridLevels.ReadLevels(doc, _sourceKey)
+                : NavisLevelModels.DiscoverLevels(doc, ResolveSourceModelIndex());
 
-            var report = NavisLevelModels.LastDiscovery;
+            MergeDiscovered(found, isRescan, NavisLevelModels.ModelTopZ(doc));
+            _levelsFromKey = _sourceKey;
 
-            if (_levels.Count == 0)
-            {
-                // Say WHAT the tree held, not just that nothing was found — a bare "no levels" is
-                // indistinguishable from a broken scan, and that is exactly how the wrapper-node
-                // bug hid. DescribeTree prints every depth the search looked at.
-                return report.Layers.Count > 0
-                    ? AppStrings.T("navis.levelModels.s0.noLevelsButChildren",
-                                   report.SourceModel, DescribeTree(report))
-                    : AppStrings.T("navis.levelModels.s0.noLevels", report.SourceModel);
-            }
+            if (_levels.Count == 0) return grids ? NoGridLevelsMessage() : NoTreeLevelsMessage();
 
             int matched = NavisLevelModels.AutoAssign(_models, _levels.Where(l => !l.UserEdited).ToList());
 
@@ -256,15 +280,19 @@ namespace LemoineNavisworks.LevelModels
             int assigned = _levels.SelectMany(ModelsFor).Distinct(StringComparer.OrdinalIgnoreCase).Count();
             SaveSetup();
 
-            string done = AppStrings.T("navis.levelModels.s0.done",
-                                       _levels.Count, report.SourceModel,
-                                       assigned, _models.Count);
+            string done = grids
+                ? AppStrings.T("navis.levelModels.s0.doneGrids",
+                               _levels.Count, NavisGridLevels.LastRead.UsedSystem,
+                               assigned, _models.Count)
+                : AppStrings.T("navis.levelModels.s0.done",
+                               _levels.Count, NavisLevelModels.LastDiscovery.SourceModel,
+                               assigned, _models.Count);
 
-            // Levels normally sit under a "<file>.rvt : n : location <…>" node rather than at the
-            // top of the tree, so name the branch they came from — it is the one thing that tells
-            // the user at a glance whether the scan read levels or something else entirely.
-            if (!string.IsNullOrWhiteSpace(report.LayerPath))
-                done += " " + AppStrings.T("navis.levelModels.s0.readFrom", report.LayerPath);
+            // On the tree fallback, name the branch the levels came from — with no grids to read,
+            // that is the only thing that says whether it found levels or something else entirely.
+            if (!grids && !string.IsNullOrWhiteSpace(NavisLevelModels.LastDiscovery.LayerPath))
+                done += " " + AppStrings.T("navis.levelModels.s0.readFrom",
+                                           NavisLevelModels.LastDiscovery.LayerPath);
 
             // Say which way the assignment went. Silently filling the bucket would look like the
             // tool assigning models at random.
@@ -274,6 +302,30 @@ namespace LemoineNavisworks.LevelModels
                 done += " " + AppStrings.T("navis.levelModels.s0.noneMatched");
 
             return done;
+        }
+
+        /// <summary>Why a grid read came back empty. Names the systems the document does have, so
+        /// "no levels" is an answer rather than a dead end.</summary>
+        private string NoGridLevelsMessage()
+        {
+            var r = NavisGridLevels.LastRead;
+            return r.SystemNames.Count > 0
+                ? AppStrings.T("navis.levelModels.s0.noGridLevels",
+                               r.UsedSystem.Length > 0 ? r.UsedSystem : _sourceKey,
+                               string.Join(", ", r.SystemNames.Take(8)))
+                : AppStrings.T("navis.levelModels.s0.noGridSystems", r.Failure);
+        }
+
+        /// <summary>Why the tree fallback came back empty.</summary>
+        private string NoTreeLevelsMessage()
+        {
+            var report = NavisLevelModels.LastDiscovery;
+            // Say WHAT the tree held, not just that nothing was found — a bare "no levels" is
+            // indistinguishable from a broken collector.
+            return report.Layers.Count > 0
+                ? AppStrings.T("navis.levelModels.s0.noLevelsButChildren",
+                               report.SourceModel, DescribeTree(report))
+                : AppStrings.T("navis.levelModels.s0.noLevels", report.SourceModel);
         }
 
         /// <summary>A one-line rendering of what the source model's tree actually holds, depth by
@@ -295,14 +347,14 @@ namespace LemoineNavisworks.LevelModels
                 : string.Join("  \u203a  ", parts);
         }
 
-        /// <summary>doc.Models index of the model step 1 picked. The pick itself is made in the
-        /// constructor (<see cref="EnsureSourceModelDefault"/>) and by the step-1 picker, so this
-        /// only resolves it — it never invents one.</summary>
+        /// <summary>doc.Models index of the model step 1 picked, for the TREE fallback only. The
+        /// pick itself is made in the constructor (<see cref="EnsureSourceDefault"/>) and by the
+        /// step-1 picker, so this only resolves it — it never invents one.</summary>
         private int ResolveSourceModelIndex()
         {
-            EnsureSourceModelDefault();
+            EnsureSourceDefault();
             var picked = _models.FirstOrDefault(
-                m => string.Equals(m.Key, _sourceModelKey, StringComparison.OrdinalIgnoreCase));
+                m => string.Equals(m.Key, _sourceKey, StringComparison.OrdinalIgnoreCase));
             return picked?.Index ?? 0;
         }
 
@@ -318,7 +370,7 @@ namespace LemoineNavisworks.LevelModels
         /// untouched level takes the newly-read name and band; a level that is new to the model is
         /// added; and an untouched level the model no longer has is dropped.
         /// </summary>
-        private void MergeDiscovered(List<DiscoveredLevel> found, bool isRescan)
+        private void MergeDiscovered(List<DiscoveredLevel> found, bool isRescan, double? modelTopFt)
         {
             if (!isRescan) _levels.RemoveAll(l => !l.UserEdited);
 
@@ -353,6 +405,25 @@ namespace LemoineNavisworks.LevelModels
                 if (nextBottom > ordered[i].Bottom) ordered[i].Top = nextBottom;
             }
 
+            // The TOPMOST level has no next one to take a top from, and a grid level carries an
+            // elevation and no ceiling at all — so without this it gets a zero-height band, trims
+            // nothing, and the every-level bucket lands on it whole. The model's own highest point
+            // is the honest answer; repeating the last floor-to-floor height is the fallback when
+            // nothing could be measured.
+            var top = ordered.LastOrDefault();
+            if (top != null && !top.UserEdited && top.Top <= top.Bottom)
+            {
+                if (modelTopFt is double mt && mt > top.Bottom)
+                {
+                    top.Top = mt;
+                }
+                else if (ordered.Count >= 2)
+                {
+                    double lastFloorToFloor = ordered[ordered.Count - 1].Bottom - ordered[ordered.Count - 2].Bottom;
+                    if (lastFloorToFloor > 0) top.Top = top.Bottom + lastFloorToFloor;
+                }
+            }
+
             // Only impose discovery's ordering when the user has not arranged the list themselves.
             if (!_levels.Any(l => l.UserEdited))
             {
@@ -374,7 +445,13 @@ namespace LemoineNavisworks.LevelModels
                 _levels.AddRange(saved.Value.Levels);
                 _everyLevelModels.Clear();
                 foreach (var k in saved.Value.EveryLevelModels.OrEmpty()) _everyLevelModels.Add(k);
-                if (!string.IsNullOrEmpty(saved.Value.SourceModel)) _sourceModelKey = saved.Value.SourceModel;
+                // Only honour the saved source when it was read the same way. A setup saved off a
+                // model tree must not be handed to the grid reader as a system name (or the other
+                // way round) — it would silently resolve to nothing and read the wrong levels.
+                bool sameKind = string.Equals(saved.Value.SourceKind, _levelSource.ToString(),
+                                              StringComparison.OrdinalIgnoreCase);
+                if (sameKind && !string.IsNullOrEmpty(saved.Value.SourceModel))
+                    _sourceKey = saved.Value.SourceModel;
 
                 // The output settings come back with the levels. A pattern of "" means the setup
                 // predates them being stored, so the current default stands rather than being
@@ -402,7 +479,10 @@ namespace LemoineNavisworks.LevelModels
                     if (!live.Contains(_everyLevelModels[i])) { _everyLevelModels.RemoveAt(i); dropped++; }
 
                 ReconcileBucket();
-                _levelsFromKey = _sourceModelKey;
+                // A setup restored from a DIFFERENT source kind cannot claim its levels are current
+                // for this document's source — leaving _levelsFromKey empty makes confirming step 1
+                // re-read, which is the honest outcome.
+                _levelsFromKey = sameKind ? _sourceKey : "";
                 _scan          = ScanState.Done;
 
                 _scanMessage = dropped > 0
@@ -423,7 +503,8 @@ namespace LemoineNavisworks.LevelModels
             // under and nothing persists. That is reported once on the scan step rather than
             // silently doing nothing every time the user changes something.
             if (string.IsNullOrEmpty(_documentKey)) return;
-            LevelModelsStore.Save(_documentKey, _levels, _sourceModelKey, _everyLevelModels, CurrentOutput());
+            LevelModelsStore.Save(_documentKey, _levels, _sourceKey, _levelSource.ToString(),
+                                  _everyLevelModels, CurrentOutput());
         }
 
         /// <summary>The S2 settings as one value for the store.</summary>
@@ -539,7 +620,7 @@ namespace LemoineNavisworks.LevelModels
             // Already read for THIS model — walking again would only re-derive what is on screen,
             // and would reset any untouched row the user is about to look at.
             if (_levels.Count > 0 &&
-                string.Equals(_levelsFromKey, _sourceModelKey, StringComparison.OrdinalIgnoreCase))
+                string.Equals(_levelsFromKey, _sourceKey, StringComparison.OrdinalIgnoreCase))
                 return;
 
             BeginScan();
@@ -567,21 +648,29 @@ namespace LemoineNavisworks.LevelModels
             if (_models.Count == 0)
                 { panel.Children.Add(Warn(AppStrings.T("navis.levelModels.s0.noModels"))); return panel; }
 
-            panel.Children.Add(Sub(AppStrings.T("navis.levelModels.s0.explain")));
+            bool grids = _levelSource == LevelSource.Grids;
+
+            panel.Children.Add(Sub(AppStrings.T(grids
+                ? "navis.levelModels.s0.explainGrids"
+                : "navis.levelModels.s0.explain")));
+
+            // No grids in this federation — say so, because falling back to the selection tree is a
+            // materially worse source and the user should know which one produced their levels.
+            if (!grids) panel.Children.Add(Warn(AppStrings.T("navis.levelModels.s0.noGridsFallback")));
             panel.Children.Add(Gap());
 
             var src = new SingleSelect
             {
-                Label = AppStrings.T("navis.levelModels.s1.sourceModel"),
-                Items = _models.Select(m => m.Key)
-                               .OrderBy(k => k, NaturalOrderComparer.OrdinalIgnoreCase)
-                               .ToList(),
+                Label = AppStrings.T(grids
+                    ? "navis.levelModels.s1.gridSystem"
+                    : "navis.levelModels.s1.sourceModel"),
+                Items = SourceOptions(),
             };
-            if (!string.IsNullOrEmpty(_sourceModelKey)) src.SelectedItem = _sourceModelKey;
+            if (!string.IsNullOrEmpty(_sourceKey)) src.SelectedItem = _sourceKey;
             src.SelectionChanged += sel =>
             {
-                if (string.IsNullOrEmpty(sel) || sel == _sourceModelKey) return;
-                _sourceModelKey = sel!;
+                if (string.IsNullOrEmpty(sel) || sel == _sourceKey) return;
+                _sourceKey = sel!;
                 SaveSetup();
                 // Deliberately does NOT scan. The walk happens on Confirm, and _levelsFromKey no
                 // longer matching this pick is exactly what tells Confirm there is work to do.
@@ -589,19 +678,21 @@ namespace LemoineNavisworks.LevelModels
                 Changed();
             };
             panel.Children.Add(src);
-            panel.Children.Add(Sub(AppStrings.T("navis.levelModels.s1.sourceModelHint")));
+            panel.Children.Add(Sub(AppStrings.T(grids
+                ? "navis.levelModels.s1.gridSystemHint"
+                : "navis.levelModels.s1.sourceModelHint")));
 
             // What the last read produced, so coming Back here shows why the level list looks the
             // way it does rather than an unexplained picker.
             if (_scan == ScanState.Done || _scan == ScanState.Failed)
             {
                 panel.Children.Add(Gap());
-                bool stale = !string.Equals(_levelsFromKey, _sourceModelKey, StringComparison.OrdinalIgnoreCase);
+                bool stale = !string.Equals(_levelsFromKey, _sourceKey, StringComparison.OrdinalIgnoreCase);
                 var status = new TextBlock
                 {
                     TextWrapping = TextWrapping.Wrap,
                     Text         = stale
-                                 ? AppStrings.T("navis.levelModels.s0.pendingRead", _sourceModelKey)
+                                 ? AppStrings.T("navis.levelModels.s0.pendingRead", _sourceKey)
                                  : _scanMessage,
                 };
                 status.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
@@ -1197,7 +1288,8 @@ namespace LemoineNavisworks.LevelModels
 
         public bool IsValid(string stepId) => stepId switch
         {
-            "S0" => _hasDoc && _models.Count > 0 && !string.IsNullOrEmpty(_sourceModelKey),
+            "S0" => _hasDoc && _models.Count > 0 && !string.IsNullOrEmpty(_sourceKey)
+                    && (_levelSource == LevelSource.Tree || _gridSystems.Count > 0),
             "S1" => _hasDoc && Exportable().Any(),
             "S2" => !string.IsNullOrWhiteSpace(_outFolder) && !string.IsNullOrWhiteSpace(_pattern),
             _    => true,
@@ -1211,9 +1303,9 @@ namespace LemoineNavisworks.LevelModels
                 case "S0":
                     if (_scan == ScanState.Running) return AppStrings.T("navis.levelModels.summary.s0Running");
                     if (_scan == ScanState.Failed)  return AppStrings.T("navis.levelModels.summary.s0Failed");
-                    return string.IsNullOrEmpty(_sourceModelKey)
+                    return string.IsNullOrEmpty(_sourceKey)
                         ? AppStrings.T("navis.levelModels.summary.s0Idle")
-                        : AppStrings.T("navis.levelModels.summary.s0Picked", _sourceModelKey);
+                        : AppStrings.T("navis.levelModels.summary.s0Picked", _sourceKey);
                 case "S1":
                     int assigned = _levels.SelectMany(ModelsFor)
                                           .Distinct(StringComparer.OrdinalIgnoreCase).Count();

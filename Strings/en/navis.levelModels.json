@@ -12,7 +12,7 @@
   "runLabel": "Export Level NWDs →",
 
   "steps": {
-    "S0": "Source model",
+    "S0": "Level source",
     "S1": "Levels & models",
     "S2": "Output",
     "S3": "Run"
@@ -24,10 +24,16 @@
   // confirms this step; the walk then runs on the way to step 2, which shows a throbber.
   "s0": {
     "running":    "Reading levels from the model\u2019s structure\u2026",
-    "explain":    "Levels are read from one model\u2019s own structure \u2014 no element scan. Pick the model that carries the full level breakdown, usually the architectural file.",
+    "explainGrids": "Levels come from the federation\u2019s Grids & Levels \u2014 the same list the View tab shows. Pick the grid system that covers the building you are exporting.",
+    // Fallback wording, used only when the federation carries no grid systems at all.
+    "explain":    "Levels are read from one model\u2019s own tree structure. Pick the model that carries the full level breakdown, usually the architectural file.",
+    "noGridsFallback": "This federation has no grid systems, so levels are being read from a model\u2019s tree instead \u2014 a much weaker source. Loading a model that carries Revit levels will give a better list.",
     "confirm":    "Read levels \u2192",
     "pendingRead":"{0} has not been read yet \u2014 confirm this step to read its levels.",
     "done":       "Found {0} level(s) in {1}. {2} of {3} models matched by name.",
+    "doneGrids":  "Found {0} level(s) in grid system {1}. {2} of {3} models matched by name.",
+    "noGridLevels":  "Grid system {0} reports no levels. Systems in this document: {1}. Pick another, or add levels by hand on the next step.",
+    "noGridSystems": "No grid levels could be read ({0}). Add levels by hand on the next step.",
     "failed":     "Scan failed: {0}",
     "noDocument": "No model open. Open your federated NWF/NWD and reopen this tool.",
     "noModels":   "This document has no appended models, so there is nothing to scan.",
@@ -64,6 +70,8 @@
     "everyLevelHint":   "These models go into every level\u2019s NWD and are cropped to that level\u2019s elevation band. They are not offered in the per-level pickers below.",
     "everyLevelPick":   "Select models\u2026",
     "backToSource":     "Go back to step 1 to pick a different model.",
+    "gridSystem":        "Grid system",
+    "gridSystemHint":    "The grid system whose levels become the export list. Its levels are read when you confirm this step, and each level\u2019s band runs from its own elevation up to the next level\u2019s.",
     "sourceModel":       "Read levels from",
     "sourceModelHint":  "The model whose structure supplies the level list. Defaults to the architectural file. Its levels are read when you confirm this step.",
     "moveUp":           "Move this level up",

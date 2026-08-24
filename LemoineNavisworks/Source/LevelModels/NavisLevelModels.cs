@@ -163,7 +163,36 @@ namespace LemoineNavisworks.LevelModels
             }
         }
 
-        // ── Level discovery — from the source model's TREE, not from elements ──
+        /// <summary>Highest point of the whole federation, in FEET, or null when nothing could be
+        /// measured. This is what gives the TOPMOST level a band top: a grid level carries an
+        /// elevation and no ceiling, so without it the top level would have a zero-height band and
+        /// trim nothing.</summary>
+        public static double? ModelTopZ(Document doc)
+        {
+            if (doc == null || doc.IsClear) return null;
+
+            double toFeet = ToFeet(doc);
+            double top    = double.MinValue;
+            bool   any    = false;
+
+            for (int i = 0; i < doc.Models.Count; i++)
+            {
+                try
+                {
+                    if (!TryZExtent(doc.Models[i].RootItem, out double _, out double hi)) continue;
+                    any = true;
+                    if (hi > top) top = hi;
+                }
+                catch (Exception ex) { DiagnosticsLog.Swallowed($"LevelModels: model {i} extent", ex); }
+            }
+            return any ? top * toFeet : (double?)null;
+        }
+
+        // ── Level discovery — from the source model's TREE (fallback only) ────
+        //
+        // Navisworks keeps a federation's levels in GRIDS & LEVELS, not in the selection tree —
+        // see NavisGridLevels, which is the primary source. This tree walk survives only for a
+        // federation carrying no grid systems at all, and the step says when it was used.
 
         /// <summary>
         /// One depth of the source model's tree, as considered by the level search. Kept so a
