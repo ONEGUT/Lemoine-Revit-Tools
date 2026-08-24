@@ -33,16 +33,20 @@ namespace LemoineNavisworks.LevelModels
     // ExcludeHiddenItems do not exist before 2026.
     //
     // Every member this file calls has been confirmed against a real
-    // Autodesk.Navisworks.Api.dll (2026) by decoding its metadata tables with dnfile —
+    // Autodesk.Navisworks.Api.dll by decoding its metadata tables with dnfile —
     // the same technique CLAUDE.md's Research Discipline prescribes for RevitAPI.dll,
-    // via devtools/navis_dump.py. This project still cannot be BUILT or RUN on Linux
-    // (no Navisworks host, no dnfile-confirmable runtime behavior), so two things
-    // remain genuinely unverified despite every name/signature being real, and stay
-    // tagged "⚠ verify" at their call sites rather than the whole file:
+    // via devtools/navis_dump.py. A real run has since confirmed the export path and
+    // corrected the viewpoint one: doc.CurrentViewpoint.ToViewpoint() returns a
+    // READ-ONLY Viewpoint, so every set on it threw "Object is Read-Only" until
+    // CreateCopy() was put in front of it, and a clip is ASSIGNED through
+    // Viewpoint.ClipPlanes' setter rather than mutated in place.
+    //
+    // What metadata still cannot answer is RENDER behavior, so these stay tagged
+    // "⚠ verify" at their call sites rather than the whole file:
     //   • whether DocumentModels.SetHidden on a model ROOT item cascades to its
     //     descendants (the whole-model hide optimization depends on it);
-    //   • whether ClipPlaneSet.Mode = Box actually renders as "clip outside the box,
-    //     unclipped inside" (see ApplyClip).
+    //   • whether ClipPlaneSet.Mode = Box renders as "clip outside the box, unclipped
+    //     inside", and whether a set's Range bounds its Box (see ClipViewpoint).
     // Both degrade to a logged warning rather than an unhandled throw if wrong.
     // =========================================================================
     internal static class NavisLevelModels
@@ -161,6 +165,38 @@ namespace LemoineNavisworks.LevelModels
                 DiagnosticsLog.Swallowed("LevelModels: unit scale factor", ex);
                 return 1.0;   // treat as already-feet rather than scaling by a guess
             }
+        }
+
+        /// <summary>Bounding box of the whole federation in DOCUMENT units, or null when nothing
+        /// could be measured. The clip box is expressed in these units and needs the real plan
+        /// extent: a box of +/-1,000,000 was a guess at "wide enough", and a clip set also carries a
+        /// Range the box sits inside, which an absurd box can fall foul of.</summary>
+        public static BoundingBox3D? ModelBounds(Document doc)
+        {
+            if (doc == null || doc.IsClear) return null;
+
+            double minX = double.MaxValue, minY = double.MaxValue, minZ = double.MaxValue;
+            double maxX = double.MinValue, maxY = double.MinValue, maxZ = double.MinValue;
+            bool any = false;
+
+            for (int i = 0; i < doc.Models.Count; i++)
+            {
+                try
+                {
+                    BoundingBox3D bb = doc.Models[i].RootItem.BoundingBox();
+                    if (bb == null) continue;
+                    any = true;
+                    if (bb.Min.X < minX) minX = bb.Min.X;
+                    if (bb.Min.Y < minY) minY = bb.Min.Y;
+                    if (bb.Min.Z < minZ) minZ = bb.Min.Z;
+                    if (bb.Max.X > maxX) maxX = bb.Max.X;
+                    if (bb.Max.Y > maxY) maxY = bb.Max.Y;
+                    if (bb.Max.Z > maxZ) maxZ = bb.Max.Z;
+                }
+                catch (Exception ex) { DiagnosticsLog.Swallowed($"LevelModels: model {i} bounds", ex); }
+            }
+            if (!any) return null;
+            return new BoundingBox3D(new Point3D(minX, minY, minZ), new Point3D(maxX, maxY, maxZ));
         }
 
         /// <summary>Highest point of the whole federation, in FEET, or null when nothing could be
@@ -816,15 +852,11 @@ namespace LemoineNavisworks.LevelModels
             var result = new ViewpointResult();
             try
             {
-                // Two writes, on purpose. ApplyClip clips the LIVE viewpoint and copies it back
-                // through doc.CurrentViewpoint; ClipViewpoint then writes the same clip straight
-                // onto the copy that is about to be saved. Whether ClipPlaneSet is a live handle on
-                // its Viewpoint or a detached copy could NOT be confirmed offline (no Navisworks
-                // DLL to decode here), and those two possibilities need opposite code — so do both
-                // and then VERIFY, rather than pick one and hope.
-                if (clip && level.HasBand) ApplyClip(doc, level.Bottom, level.Top);
-
-                Viewpoint vp = doc.CurrentViewpoint.ToViewpoint();                       // confirmed
+                // CreateCopy() is what makes this writable. doc.CurrentViewpoint.ToViewpoint()
+                // hands back a READ-ONLY Viewpoint — every set on it threw "Object is Read-Only",
+                // which is why neither the aim nor the clip ever took. Confirmed against the real
+                // assembly: Viewpoint.CreateCopy() : Viewpoint.
+                Viewpoint vp = doc.CurrentViewpoint.ToViewpoint().CreateCopy();          // confirmed
                 AimAtBand(vp, doc, level, log);
 
                 if (clip) result.Clipped = ClipViewpoint(vp, doc, level, log);
@@ -844,11 +876,11 @@ namespace LemoineNavisworks.LevelModels
 
         /// <summary>Clips ONE viewpoint to a level's band and says whether the clip actually took.
         ///
-        /// <para>Order matters: <c>Mode</c> goes to Box BEFORE <c>Box</c> is written, because a box
-        /// assigned while the set is still in Planes mode is the likeliest way this quietly does
-        /// nothing. The values are then READ BACK — if <c>ClipPlanes</c> hands out a detached copy,
-        /// every write above is a silent no-op, and an uncut viewpoint with nothing in the log is
-        /// precisely the failure that was reported. ⚠ verify on a Windows/Navisworks run.</para></summary>
+        /// <para>The set is BUILT and ASSIGNED, never mutated in place. <c>Viewpoint.ClipPlanes</c>
+        /// has a setter (<c>set_ClipPlanes(ClipPlaneSet)</c>, confirmed against the assembly), and
+        /// the set the getter returns belongs to a read-only viewpoint — writing to it is what
+        /// raised "Object is Read-Only". <c>CopyFrom</c> starts from the document's existing set so
+        /// its Range and box transform are preserved rather than invented.</para></summary>
         private static bool ClipViewpoint(Viewpoint vp, Document doc, LevelDef level, Action<string, string> log)
         {
             if (!level.HasBand)
@@ -866,11 +898,27 @@ namespace LemoineNavisworks.LevelModels
                     return false;
                 }
 
-                ClipPlaneSet planes = vp.ClipPlanes;
-                planes.Mode    = ClipPlaneSetMode.Box;
-                planes.Box     = BandBox(lo, hi);
-                planes.Enabled = true;
+                var planes = new ClipPlaneSet();                                         // public .ctor() — confirmed
+                try { planes.CopyFrom(vp.ClipPlanes); }                                  // CopyFrom(ClipPlaneSet) — confirmed
+                catch (Exception ex) { DiagnosticsLog.Swallowed("LevelModels: seed clip set", ex); }
 
+                BandBoxes(doc, lo, hi, out BoundingBox3D range, out BoundingBox3D band);
+
+                planes.Mode = ClipPlaneSetMode.Box;                                      // set_Mode — confirmed
+                // Range BEFORE Box, and built so the band is provably inside it. ⚠ verify: that a
+                // ClipPlaneSet's Range bounds its Box is the reading of the two members' names, not
+                // something metadata can confirm — but a Box outside its Range is the likeliest way
+                // this gets silently clamped, so the two are kept consistent rather than left to
+                // whatever the previous set happened to hold.
+                try { planes.Range = range; }                                            // set_Range — confirmed
+                catch (Exception ex) { DiagnosticsLog.Swallowed("LevelModels: set clip range", ex); }
+
+                planes.Box     = band;                                                   // set_Box — confirmed
+                planes.Enabled = true;                                                   // set_Enabled — confirmed
+                vp.ClipPlanes  = planes;                                                 // set_ClipPlanes — confirmed
+
+                // Read it back off the viewpoint, not off the local set: this is what proves the
+                // assignment landed rather than that the local object accepted the writes.
                 ClipPlaneSet check = vp.ClipPlanes;
                 if (!check.Enabled || check.Mode != ClipPlaneSetMode.Box)
                 {
@@ -892,7 +940,10 @@ namespace LemoineNavisworks.LevelModels
         /// <summary>Lifts the camera to the MIDDLE of the level's band so the saved viewpoint opens
         /// looking at that level rather than wherever the user happened to be standing. Only the
         /// height is changed — the direction the user is facing is left alone, since that is a
-        /// preference and the band is the thing this tool actually knows about.</summary>
+        /// preference and the band is the thing this tool actually knows about.
+        ///
+        /// <para><paramref name="vp"/> must be a CreateCopy() of the current viewpoint: the one
+        /// ToViewpoint() returns is read-only and this set threw "Object is Read-Only" on it.</para></summary>
         private static void AimAtBand(Viewpoint vp, Document doc, LevelDef level, Action<string, string> log)
         {
             try
@@ -907,8 +958,8 @@ namespace LemoineNavisworks.LevelModels
             }
             catch (Exception ex)
             {
-                // Previously swallowed. If the Viewpoint copy turns out to be read-only, this is
-                // the FIRST thing that fails and the clip is the second — a silent aim failure hides
+                // Never swallowed: if the viewpoint copy is somehow still read-only, this is the
+                // FIRST thing that fails and the clip is the second — a silent aim failure hides
                 // the cause of both.
                 DiagnosticsLog.Error("LevelModels: aim viewpoint at band", ex);
                 log?.Invoke(AppStrings.T("navis.levelModels.log.aimFailed", ex.Message), "warn");
@@ -991,8 +1042,6 @@ namespace LemoineNavisworks.LevelModels
         //
         // Bottom/Top being in the wrong order would silently produce an inverted or empty box —
         // guard it rather than pass whatever the caller has.
-        private const double ClipPlaneHorizontalExtent = 1_000_000; // matches the level-band stepper's own ±range
-
         /// <summary>A level's band converted from FEET into the document's own units. False when the
         /// band has no height, which would otherwise produce an inverted or empty clip box.</summary>
         private static bool TryBandInDocUnits(Document doc, double bottomFt, double topFt,
@@ -1008,49 +1057,42 @@ namespace LemoineNavisworks.LevelModels
             return hi > lo;
         }
 
-        /// <summary>A clip box tight on Z and enormous on X/Y — a horizontal band cut that needs no
-        /// knowledge of the model's real plan extent.</summary>
-        private static BoundingBox3D BandBox(double lo, double hi) => new BoundingBox3D(
-            new Point3D(-ClipPlaneHorizontalExtent, -ClipPlaneHorizontalExtent, lo),
-            new Point3D( ClipPlaneHorizontalExtent,  ClipPlaneHorizontalExtent, hi));
-
-        /// <summary>Clips the LIVE viewpoint, so the copy taken from it a moment later already
-        /// carries the clip. Deliberately reports nothing to the run log: <see cref="ClipViewpoint"/>
-        /// is the authoritative attempt and owns the user-facing message, and both logging would
-        /// print every clip problem twice for one level.</summary>
-        private static void ApplyClip(Document doc, double bottom, double top)
+        /// <summary>The clip volumes for one band: <paramref name="range"/> spans the whole model,
+        /// <paramref name="band"/> is the same footprint cut to the band's Z.
+        ///
+        /// <para>The plan extent is the federation's REAL bounding box, not a +/-1,000,000 stand-in
+        /// for "wide enough" — an absurd box is exactly the kind of value that gets clamped or
+        /// rejected with nothing said. A small margin keeps a box face off the geometry. Falls back
+        /// to a wide box only when the model could not be measured at all.</para></summary>
+        private static void BandBoxes(Document doc, double lo, double hi,
+                                      out BoundingBox3D range, out BoundingBox3D band)
         {
-            try
+            BoundingBox3D? bounds = ModelBounds(doc);
+            if (bounds == null)
             {
-                if (!TryBandInDocUnits(doc, bottom, top, out double lo, out double hi)) return;
+                const double wide = 1_000_000;
+                range = new BoundingBox3D(new Point3D(-wide, -wide, -wide), new Point3D(wide, wide, wide));
+                band  = new BoundingBox3D(new Point3D(-wide, -wide, lo),    new Point3D(wide, wide, hi));
+                return;
+            }
 
-                Viewpoint vp = doc.CurrentViewpoint.ToViewpoint();
-                ClipPlaneSet clip = vp.ClipPlanes;
-                // Mode FIRST: a Box written while the set is still in Planes mode is the likeliest
-                // way this silently does nothing (or throws). Order was the other way round when the
-                // clip was reported as not taking.
-                clip.Mode    = ClipPlaneSetMode.Box;
-                clip.Box     = BandBox(lo, hi);
-                clip.Enabled = true;
-                doc.CurrentViewpoint.CopyFrom(vp);
-            }
-            catch (Exception ex)
-            {
-                DiagnosticsLog.Error("LevelModels: apply clip planes to the live viewpoint", ex);
-            }
+            double margin = Math.Max(1.0, (bounds.Max.X - bounds.Min.X) * 0.01);
+            double minX = bounds.Min.X - margin, maxX = bounds.Max.X + margin;
+            double minY = bounds.Min.Y - margin, maxY = bounds.Max.Y + margin;
+
+            // The range must contain the band even when the band runs past the model — a top level
+            // whose band was seeded from the model's own highest point sits exactly on that edge.
+            double minZ = Math.Min(bounds.Min.Z, lo) - margin;
+            double maxZ = Math.Max(bounds.Max.Z, hi) + margin;
+
+            range = new BoundingBox3D(new Point3D(minX, minY, minZ), new Point3D(maxX, maxY, maxZ));
+            band  = new BoundingBox3D(new Point3D(minX, minY, lo),   new Point3D(maxX, maxY, hi));
         }
 
-        /// <summary>Disables the clip so the run leaves the live view unclipped afterwards.</summary>
-        public static void ClearClip(Document doc)
-        {
-            try
-            {
-                Viewpoint vp = doc.CurrentViewpoint.ToViewpoint();
-                vp.ClipPlanes.Enabled = false;
-                doc.CurrentViewpoint.CopyFrom(vp);
-            }
-            catch (Exception ex) { DiagnosticsLog.Swallowed("LevelModels: clear clip planes", ex); }
-        }
+        // ClearClip is gone with the live-view write it existed to undo. The clip now goes only
+        // onto the private Viewpoint copy that gets saved, so the user's own view is never touched
+        // and there is nothing to put back — and clearing it afterwards would have wiped a section
+        // the user had set up themselves.
 
         // ── Export ───────────────────────────────────────────────────────────
 

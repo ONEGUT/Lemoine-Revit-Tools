@@ -1477,7 +1477,6 @@ namespace LemoineNavisworks.LevelModels
             {
                 RestoreVisibility(doc, touched, wasHidden, pushLog);
                 NavisLevelModels.RestoreViewpoints(doc, heldViewpoints);
-                if (_clip) NavisLevelModels.ClearClip(doc);
                 items.Clear();
                 allItems.Clear();
                 touched.Clear();
