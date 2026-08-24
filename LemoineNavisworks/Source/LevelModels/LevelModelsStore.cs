@@ -49,6 +49,9 @@ namespace LemoineNavisworks.LevelModels
             [XmlAttribute("source")]   public string SourceModel { get; set; } = "";
             [XmlElement("Level")]      public List<LevelDto> Levels { get; set; } = new List<LevelDto>();
 
+            /// <summary>Models that belong to every level (the every-level bucket).</summary>
+            [XmlElement("EveryLevelModel")] public List<string> EveryLevelModels { get; set; } = new List<string>();
+
             // The OUTPUT settings. These were not stored at all, so every reopen threw away the
             // folder, the filename pattern and all four toggles while the level list came back —
             // which reads as "the tool didn't save my setup". Missing attributes deserialize to
@@ -88,7 +91,8 @@ namespace LemoineNavisworks.LevelModels
 
         /// <summary>Loads the saved setup for this document, or null when there is none. Order is
         /// preserved exactly as saved — the user's own ordering is part of the setup.</summary>
-        public static (List<LevelDef> Levels, string SourceModel, OutputSettings Output)? Load(string documentKey)
+        public static (List<LevelDef> Levels, string SourceModel, List<string> EveryLevelModels,
+                       OutputSettings Output)? Load(string documentKey)
         {
             if (string.IsNullOrWhiteSpace(documentKey)) return null;
 
@@ -124,7 +128,11 @@ namespace LemoineNavisworks.LevelModels
                 EmbedXrefs = doc.EmbedXrefs,
                 KeepProps  = doc.KeepProps,
             };
-            return (levels, doc.SourceModel ?? "", output);
+            var everyLevel = new List<string>();
+            foreach (var m in doc.EveryLevelModels.OrEmpty())
+                if (!string.IsNullOrWhiteSpace(m) && !everyLevel.Contains(m)) everyLevel.Add(m);
+
+            return (levels, doc.SourceModel ?? "", everyLevel, output);
         }
 
         // Logic tokens, deliberately hardcoded (CLAUDE.md: persisted values compared with == are
@@ -135,7 +143,7 @@ namespace LemoineNavisworks.LevelModels
         /// <summary>Writes this document's setup, replacing any previous one. Never throws — a
         /// failed save costs the remembered setup, and must not take the run with it.</summary>
         public static void Save(string documentKey, IReadOnlyList<LevelDef> levels, string sourceModel,
-                                OutputSettings? output)
+                                IEnumerable<string>? everyLevelModels, OutputSettings? output)
         {
             if (string.IsNullOrWhiteSpace(documentKey) || levels == null) return;
 
@@ -151,6 +159,7 @@ namespace LemoineNavisworks.LevelModels
                     Key          = documentKey,
                     Modified     = DateTime.UtcNow.Ticks,
                     SourceModel  = sourceModel ?? "",
+                    EveryLevelModels = (everyLevelModels ?? new List<string>()).ToList(),
                     OutputFolder = o.Folder ?? "",
                     Pattern      = o.Pattern ?? "",
                     Straddle     = o.Straddle == StraddleRule.ByCentroid

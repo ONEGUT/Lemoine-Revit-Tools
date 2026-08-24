@@ -548,19 +548,6 @@ namespace LemoineNavisworks.LevelModels
 
         // ── Auto-assign models to levels by file name ────────────────────────
 
-        /// <summary>How <see cref="AutoAssign"/> decided, so the scan step can say which it was
-        /// instead of leaving the user to work it out from an assignment count.</summary>
-        public enum AutoAssignMode
-        {
-            /// <summary>Nothing to do — no models, or no levels.</summary>
-            None,
-            /// <summary>At least one model's file name named a level; only those were assigned.</summary>
-            ByName,
-            /// <summary>No model named any level, so every model went on every level and each
-            /// level's elevation band does the splitting.</summary>
-            AllToAll,
-        }
-
         /// <summary>
         /// Matches each model to the levels its FILE NAME mentions. "DT-Arch-L02.nwc" lands on
         /// "LEVEL 02".
@@ -570,17 +557,15 @@ namespace LemoineNavisworks.LevelModels
         /// token that matches wins, so "LEVEL 01" is never mistaken for "LEVEL 0" when both
         /// exist — the single most likely way a name match goes quietly wrong.</para>
         ///
-        /// <para><b>When NO model names a level</b> — the normal shape of a federation split by
-        /// DISCIPLINE (DT - Arch, DT - Struct, DT - Mech) rather than by level — every model is put
-        /// on every level so each level's elevation band does the splitting, which is what the band
-        /// is for. Leaving them all unassigned instead exports a set of empty NWDs and reads as the
-        /// tool doing nothing. That fallback only runs when at least one level actually HAS a band;
-        /// without one it would write the same whole-federation NWD once per level.</para>
+        /// <para>Returns HOW MANY models it placed. Zero is the normal answer for a federation split
+        /// by DISCIPLINE (DT - Arch, DT - Struct, DT - Mech) rather than by level — no file name
+        /// mentions a level, and there is nothing here to guess from. The caller decides what to do
+        /// about that; this method never invents an assignment.</para>
         /// </summary>
-        public static AutoAssignMode AutoAssign(IReadOnlyList<ModelRef> models, IReadOnlyList<LevelDef> levels)
+        public static int AutoAssign(IReadOnlyList<ModelRef> models, IReadOnlyList<LevelDef> levels)
         {
             if (models == null || levels == null || models.Count == 0 || levels.Count == 0)
-                return AutoAssignMode.None;
+                return 0;
 
             // Longest first: "LEVEL01" must be tested before "LEVEL0".
             var tokens = levels
@@ -605,13 +590,7 @@ namespace LemoineNavisworks.LevelModels
                 if (!best.Level.Models.Contains(m.Key)) best.Level.Models.Add(m.Key);
             }
 
-            if (matched > 0) return AutoAssignMode.ByName;
-            if (!levels.Any(l => l.HasBand)) return AutoAssignMode.ByName;   // 0 matched, nothing safe to fall back to
-
-            foreach (var lv in levels)
-                foreach (var m in models)
-                    if (!lv.Models.Contains(m.Key)) lv.Models.Add(m.Key);
-            return AutoAssignMode.AllToAll;
+            return matched;
         }
 
         /// <summary>The forms a level name might take inside a file name, longest first.</summary>

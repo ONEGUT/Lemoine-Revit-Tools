@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using System.Windows;
@@ -53,6 +54,16 @@ namespace LemoineNavisworks.LevelModels
 
         private readonly List<LevelDef>  _levels  = new List<LevelDef>();
         private List<ModelRef>           _models  = new List<ModelRef>();
+
+        /// <summary>Models that belong to EVERY level. They are added to each level's export on top
+        /// of that level's own picks and are cropped by that level's elevation band exactly like an
+        /// owned model, which is the whole point: a discipline model (Struct, Mech) spans the
+        /// building and only the band decides what of it lands on each floor.
+        ///
+        /// <para>A model in here is removed from the per-level pickers — it is already on every
+        /// level, so offering it again would only let the user express the same thing twice and
+        /// then wonder which one won.</para></summary>
+        private readonly ObservableCollection<string> _everyLevelModels = new ObservableCollection<string>();
         // Bands are always shown in FEET now, so this is a constant label rather than the
         // document's own unit — a metric model still types and reads feet.
         private const string             _unit = "ft";
@@ -172,7 +183,11 @@ namespace LemoineNavisworks.LevelModels
             var doc = NavisApp.ActiveDocument;
             if (doc == null || doc.IsClear) return AppStrings.T("navis.levelModels.s0.noDocument");
 
-            _models = NavisLevelModels.ListModels(doc);
+            // Sorted once, here, so every picker built from _models is alphabetical by construction
+            // and no call site has to remember to sort. Index still maps back to doc.Models.
+            _models = NavisLevelModels.ListModels(doc)
+                                      .OrderBy(m => m.Key, NaturalOrderComparer.OrdinalIgnoreCase)
+                                      .ToList();
             if (_models.Count == 0) return AppStrings.T("navis.levelModels.s0.noModels");
 
             // A saved setup wins on a first open — it is the user's own work from last time.
@@ -195,9 +210,23 @@ namespace LemoineNavisworks.LevelModels
                     : AppStrings.T("navis.levelModels.s0.noLevels", report.SourceModel);
             }
 
-            var assignMode = NavisLevelModels.AutoAssign(_models, _levels.Where(l => !l.UserEdited).ToList());
+            int matched = NavisLevelModels.AutoAssign(_models, _levels.Where(l => !l.UserEdited).ToList());
 
-            int assigned = _levels.SelectMany(l => l.Models).Distinct(StringComparer.OrdinalIgnoreCase).Count();
+            // Not one file name named a level — the normal shape of a federation split by discipline.
+            // Everything goes in the every-level bucket, where each level's band crops it, rather
+            // than being copied into every level's own list (which would go stale the moment a level
+            // was added) or left unassigned (which exports a set of empty NWDs).
+            //
+            // Only on a FIRST scan: an explicit rescan must not refill a bucket the user emptied.
+            bool bucketed = false;
+            if (matched == 0 && !isRescan && _everyLevelModels.Count == 0
+                && _levels.Any(l => l.HasBand) && _models.Count > 0)
+            {
+                foreach (var m in _models) _everyLevelModels.Add(m.Key);
+                bucketed = true;
+            }
+
+            int assigned = _levels.SelectMany(ModelsFor).Distinct(StringComparer.OrdinalIgnoreCase).Count();
             SaveSetup();
 
             string done = AppStrings.T("navis.levelModels.s0.done",
@@ -210,10 +239,9 @@ namespace LemoineNavisworks.LevelModels
             if (!string.IsNullOrWhiteSpace(report.LayerPath))
                 done += " " + AppStrings.T("navis.levelModels.s0.readFrom", report.LayerPath);
 
-            // Say which way the assignment went. A federation split by DISCIPLINE names no levels
-            // in any file name, so the all-to-all fallback is the NORMAL path there, not an edge
-            // case — and silently doing it would look like the tool assigning models at random.
-            if (assignMode == NavisLevelModels.AutoAssignMode.AllToAll)
+            // Say which way the assignment went. Silently filling the bucket would look like the
+            // tool assigning models at random.
+            if (bucketed)
                 done += " " + AppStrings.T("navis.levelModels.s0.allToAll");
             else if (assigned == 0 && _models.Count > 0)
                 done += " " + AppStrings.T("navis.levelModels.s0.noneMatched");
@@ -253,7 +281,9 @@ namespace LemoineNavisworks.LevelModels
 
             // Default to the Arch file — it is the one that carries a full level structure.
             var arch = _models.FirstOrDefault(m => LooksArchitectural(m));
-            var chosen = arch ?? _models.FirstOrDefault();
+            // Fall back to the FIRST APPENDED model, not the alphabetically first — _models is now
+            // sorted for display and that ordering must not silently change which model is scanned.
+            var chosen = arch ?? _models.OrderBy(m => m.Index).FirstOrDefault();
             if (chosen != null) _sourceModelKey = chosen.Key;
             return chosen?.Index ?? 0;
         }
@@ -324,6 +354,8 @@ namespace LemoineNavisworks.LevelModels
 
                 _levels.Clear();
                 _levels.AddRange(saved.Value.Levels);
+                _everyLevelModels.Clear();
+                foreach (var k in saved.Value.EveryLevelModels.OrEmpty()) _everyLevelModels.Add(k);
                 if (!string.IsNullOrEmpty(saved.Value.SourceModel)) _sourceModelKey = saved.Value.SourceModel;
                 _restoredFromStore = true;
 
@@ -349,6 +381,10 @@ namespace LemoineNavisworks.LevelModels
                 foreach (var lv in _levels)
                     for (int i = lv.Models.Count - 1; i >= 0; i--)
                         if (!live.Contains(lv.Models[i])) { lv.Models.RemoveAt(i); dropped++; }
+                for (int i = _everyLevelModels.Count - 1; i >= 0; i--)
+                    if (!live.Contains(_everyLevelModels[i])) { _everyLevelModels.RemoveAt(i); dropped++; }
+
+                ReconcileBucket();
 
                 _scanMessage = dropped > 0
                     ? AppStrings.T("navis.levelModels.s0.restoredDropped", _levels.Count, dropped)
@@ -368,7 +404,7 @@ namespace LemoineNavisworks.LevelModels
             // under and nothing persists. That is reported once on the scan step rather than
             // silently doing nothing every time the user changes something.
             if (string.IsNullOrEmpty(_documentKey)) return;
-            LevelModelsStore.Save(_documentKey, _levels, _sourceModelKey, CurrentOutput());
+            LevelModelsStore.Save(_documentKey, _levels, _sourceModelKey, _everyLevelModels, CurrentOutput());
         }
 
         /// <summary>The S2 settings as one value for the store.</summary>
@@ -382,6 +418,51 @@ namespace LemoineNavisworks.LevelModels
             EmbedXrefs = _embedXrefs,
             KeepProps  = _keepProps,
         };
+
+        /// <summary>Every model that will be in this level's NWD: its own picks plus the
+        /// every-level bucket. Nothing outside the pickers should read <c>LevelDef.Models</c>
+        /// directly — the bucket is invisible there and the level would look emptier than it is.</summary>
+        private List<string> ModelsFor(LevelDef lv)
+        {
+            var set = new List<string>(lv.Models);
+            foreach (var k in _everyLevelModels)
+                if (!set.Contains(k, StringComparer.OrdinalIgnoreCase)) set.Add(k);
+            return set;
+        }
+
+        private int ModelCountFor(LevelDef lv) => ModelsFor(lv).Count;
+
+        /// <summary>Model keys a per-level picker may offer: everything except what the every-level
+        /// bucket already covers, in natural alphabetical order.</summary>
+        private List<string> PickableModelKeys() => _models
+            .Select(m => m.Key)
+            .Where(k => !_everyLevelModels.Contains(k, StringComparer.OrdinalIgnoreCase))
+            .OrderBy(k => k, NaturalOrderComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        /// <summary>Called when the every-level bucket changes. A model can never be in both the
+        /// bucket and a level's own list, so the bucket wins and the duplicates are cleared out —
+        /// otherwise removing it from the bucket later would leave it silently stuck on some levels.</summary>
+        private void OnEveryLevelModelsChanged()
+        {
+            ReconcileBucket();
+            SaveSetup();
+            RebuildLevelRows();      // the pickers' options changed
+            RefreshWarnings();
+            Changed();
+        }
+
+        /// <summary>Strips from every level's own list anything the bucket now covers. Must run
+        /// before the rows are built: a per-level picker whose ItemsSource excludes bucket models
+        /// would otherwise be handed a selection it cannot show.</summary>
+        private void ReconcileBucket()
+        {
+            if (_everyLevelModels.Count == 0) return;
+            foreach (var lv in _levels)
+                for (int i = lv.Models.Count - 1; i >= 0; i--)
+                    if (_everyLevelModels.Contains(lv.Models[i], StringComparer.OrdinalIgnoreCase))
+                        lv.Models.RemoveAt(i);
+        }
 
         /// <summary>Marks a level as the user's and persists — every edit path calls this.</summary>
         private void TouchLevel(LevelDef lv)
@@ -421,6 +502,7 @@ namespace LemoineNavisworks.LevelModels
             _warnHost  = null;
             _models    = new List<ModelRef>();
             _levels.Clear();
+            _everyLevelModels.Clear();
         }
 
         // ── IStepNavigable — lets the scan step hand over once it finishes ────
@@ -541,7 +623,9 @@ namespace LemoineNavisworks.LevelModels
                 var src = new SingleSelect
                 {
                     Label = AppStrings.T("navis.levelModels.s1.sourceModel"),
-                    Items = _models.Select(m => m.Key).ToList(),
+                    Items = _models.Select(m => m.Key)
+                                   .OrderBy(k => k, NaturalOrderComparer.OrdinalIgnoreCase)
+                                   .ToList(),
                 };
                 if (!string.IsNullOrEmpty(_sourceModelKey)) src.SelectedItem = _sourceModelKey;
                 src.SelectionChanged += sel =>
@@ -555,6 +639,8 @@ namespace LemoineNavisworks.LevelModels
                 panel.Children.Add(Sub(AppStrings.T("navis.levelModels.s1.sourceModelHint")));
                 panel.Children.Add(Gap());
             }
+
+            if (_models.Count > 0) panel.Children.Add(BuildEveryLevelSection());
 
             panel.Children.Add(BuildColumnHeader());
 
@@ -580,6 +666,53 @@ namespace LemoineNavisworks.LevelModels
             panel.Children.Add(_warnHost);
 
             return panel;
+        }
+
+        /// <summary>The every-level bucket. Deliberately NOT an "apply to all" action with a button:
+        /// it is a standing set, so a model dropped in here is on every level from then on — including
+        /// levels added later — rather than a one-shot copy that silently goes stale the moment the
+        /// level list changes.</summary>
+        private FrameworkElement BuildEveryLevelSection()
+        {
+            var box = new Border
+            {
+                Margin          = new Thickness(0, 0, 0, 11),
+                Padding         = new Thickness(10, 9, 10, 10),
+                BorderThickness = new Thickness(1),
+            };
+            box.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
+            box.SetResourceReference(Border.BackgroundProperty,  "LemoineAccentDim");
+            box.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Card");
+
+            var stack = new StackPanel();
+
+            var head = new TextBlock { Text = AppStrings.T("navis.levelModels.s1.everyLevel") };
+            head.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            head.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            head.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
+            stack.Children.Add(head);
+
+            var hint = Sub(AppStrings.T("navis.levelModels.s1.everyLevelHint"));
+            hint.Margin = new Thickness(0, 2, 0, 7);
+            stack.Children.Add(hint);
+
+            var picker = new MultiSelectDropdown
+            {
+                // Offers every model: this picker is where a model is put ON every level, so nothing
+                // is filtered out of it. Ordered naturally so "Model 2" precedes "Model 10".
+                ItemsSource    = _models.Select(m => m.Key)
+                                        .OrderBy(k => k, NaturalOrderComparer.OrdinalIgnoreCase)
+                                        .ToList(),
+                SecondaryText  = _models.ToDictionary(m => m.Key, m => m.SourceFile),
+                SelectedItems  = _everyLevelModels,
+                Placeholder    = AppStrings.T("navis.levelModels.s1.everyLevelPick"),
+                AccessibleName = AppStrings.T("navis.levelModels.s1.everyLevel"),
+            };
+            picker.SelectionChanged += _ => OnEveryLevelModelsChanged();
+            stack.Children.Add(picker);
+
+            box.Child = stack;
+            return box;
         }
 
         private FrameworkElement BuildColumnHeader()
@@ -677,7 +810,8 @@ namespace LemoineNavisworks.LevelModels
             var picker = new MultiSelectDropdown
             {
                 Margin        = new Thickness(8, 0, 0, 0),
-                ItemsSource   = _models.Select(m => m.Key).ToList(),
+                // Alphabetical, and WITHOUT anything the every-level bucket already covers.
+                ItemsSource   = PickableModelKeys(),
                 SecondaryText = _models.ToDictionary(m => m.Key, m => m.SourceFile),
                 SelectedItems = lv.Models,
                 Placeholder   = AppStrings.T("navis.levelModels.s1.pickModels"),
@@ -802,18 +936,25 @@ namespace LemoineNavisworks.LevelModels
             var list = new List<string>();
             if (!_hasDoc) return list;
 
-            foreach (var lv in _levels.Where(l => l.Models.Count == 0))
+            foreach (var lv in _levels.Where(l => ModelCountFor(l) == 0))
                 list.Add(AppStrings.T("navis.levelModels.warn.levelNoModels", Display(lv)));
 
             var assigned = new HashSet<string>(_levels.SelectMany(l => l.Models), StringComparer.OrdinalIgnoreCase);
+            foreach (var k in _everyLevelModels) assigned.Add(k);
             foreach (var m in _models.Where(m => !assigned.Contains(m.Key)))
                 list.Add(AppStrings.T("navis.levelModels.warn.modelUnassigned", m.Key));
 
+            // One line per band-less level, but the consequence differs: with the every-level bucket
+            // in play, no band means a building-spanning discipline model lands WHOLE on that level
+            // rather than cropped to it, which is a far bigger surprise than "it will not trim".
+            string noBandKey = _everyLevelModels.Count > 0
+                ? "navis.levelModels.warn.bucketNoBand"
+                : "navis.levelModels.warn.trimNoBand";
             foreach (var lv in _levels.Where(l => !l.HasBand))
-                list.Add(AppStrings.T("navis.levelModels.warn.trimNoBand", Display(lv)));
+                list.Add(AppStrings.T(noBandKey, Display(lv)));
 
             // Two levels writing the same filename would silently overwrite each other.
-            var byFile = _levels.Where(l => l.Models.Count > 0)
+            var byFile = _levels.Where(l => ModelCountFor(l) > 0)
                                 .GroupBy(l => ResolveFileName(l.Name), StringComparer.OrdinalIgnoreCase)
                                 .Where(g => g.Count() > 1);
             foreach (var g in byFile)
@@ -970,12 +1111,14 @@ namespace LemoineNavisworks.LevelModels
                     ? AppStrings.T("navis.levelModels.s3.withBand", Fmt(lv.Bottom), Fmt(lv.Top))
                     : "";
                 panel.Children.Add(Sub($"• {ResolveFileName(lv.Name)}  —  "
-                    + AppStrings.T("navis.levelModels.s3.modelCount", lv.Models.Count) + band));
+                    + AppStrings.T("navis.levelModels.s3.modelCount", ModelCountFor(lv)) + band));
             }
             return panel;
         }
 
-        private IEnumerable<LevelDef> Exportable() => _levels.Where(l => l.Models.Count > 0);
+        // Counts the BUCKET too: a level whose models all come from the every-level bucket has a
+        // real NWD to write, and reading LevelDef.Models alone would call it empty and skip it.
+        private IEnumerable<LevelDef> Exportable() => _levels.Where(l => ModelCountFor(l) > 0);
 
         // ── Validation / summaries ────────────────────────────────────────────
 
@@ -1195,10 +1338,14 @@ namespace LemoineNavisworks.LevelModels
             List<NavisItem> roots, List<ItemZ> items, List<NavisItem> allItems, string folder,
             Action<string, string> pushLog)
         {
+            // Own picks PLUS the every-level bucket. The bucket's models are hidden outside this
+            // level's band exactly like an owned one — that is what crops them to the level.
+            var effective = ModelsFor(lv);
+
             var outcome = new LevelOutcome
             {
                 Level   = Display(lv),
-                Models  = lv.Models.Count,
+                Models  = effective.Count,
                 Trimmed = lv.HasBand,
                 File    = ResolveFileName(lv.Name),
             };
@@ -1206,7 +1353,7 @@ namespace LemoineNavisworks.LevelModels
             try
             {
                 var owned = new HashSet<int>();
-                foreach (var key in lv.Models)
+                foreach (var key in effective)
                     if (byKey.TryGetValue(key, out int idx)) owned.Add(idx);
 
                 var hide = NavisLevelModels.HideSetFor(lv, owned, roots, items, _straddle);

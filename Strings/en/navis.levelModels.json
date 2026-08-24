@@ -39,7 +39,7 @@
     "readFrom":   "Read from {0}.",
     // Assignment outcome, appended to "done". A federation split by DISCIPLINE (Arch / Struct /
     // Mech) names no level in any file name, so allToAll is the normal path there, not an edge case.
-    "allToAll":   "No model file name named a level, so every model was put on every level for the elevation bands to split \u2014 change any of it on the next step.",
+    "allToAll":   "No model file name named a level, so every model went into \u201con every level\u201d for the elevation bands to crop \u2014 change any of it on the next step.",
     "noneMatched": "No model file name named a level and no level has an elevation band, so nothing was auto-assigned \u2014 assign models on the next step.",
     "andMore":    " (+{0} more)",
     "emptyTree":  "nothing below its root",
@@ -60,6 +60,9 @@
     "pickModels":       "Select models…",
     "pickerAccessible": "Models assigned to {0}",                 // {0} = level name
     "removeLevel":      "Remove this level",
+    "everyLevel":       "On every level",
+    "everyLevelHint":   "These models go into every level\u2019s NWD and are cropped to that level\u2019s elevation band. They are not offered in the per-level pickers below.",
+    "everyLevelPick":   "Select models\u2026",
     "sourceModel":      "Read levels from",
     "sourceModelHint":  "The model whose structure supplies the level list. Defaults to the architectural file. Changing it rescans.",
     "rescan":           "Rescan levels",
@@ -109,6 +112,9 @@
     "levelNoModels":    "{0} has no models — it will be skipped.",
     "modelUnassigned":  "{0} is assigned to no level — it will never be exported.",
     "trimNoBand":       "{0} has trim on but no band (top must be above bottom) — it will not trim.",
+    // Same situation, but with models in the every-level bucket the consequence is much worse than
+    // "it will not trim": nothing crops them, so the whole discipline model lands on that level.
+    "bucketNoBand":     "{0} has no band (top must be above bottom), so the every-level models are not cropped to it — they land whole in its NWD.",
     "duplicateFile":    "{0} would be written by {1} levels — they would overwrite each other."
   },
 
