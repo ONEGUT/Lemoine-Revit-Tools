@@ -12,7 +12,7 @@
   "runLabel": "Export Level NWDs →",
 
   "steps": {
-    "S0": "Scanning",
+    "S0": "Source model",
     "S1": "Levels & models",
     "S2": "Output",
     "S3": "Run"
@@ -20,13 +20,13 @@
 
   "unnamedLevel": "(unnamed level)",
 
-  // s0 — the scan step. The window opens first and this runs after, so the user
-  // sees the tool immediately rather than a frozen Navisworks.
+  // s0 — pick the model whose tree supplies the level list. Nothing is read until the user
+  // confirms this step; the walk then runs on the way to step 2, which shows a throbber.
   "s0": {
-    "idle":       "Preparing\u2026",
-    "running":    "Reading levels and models from the federation\u2026",
-    "explain":    "The level list is read from one model's own structure \u2014 no element scan \u2014 and models are matched to levels by file name. Both are editable on the next step.",
-    "scanAgain":  "Scan again",
+    "running":    "Reading levels from the model\u2019s structure\u2026",
+    "explain":    "Levels are read from one model\u2019s own structure \u2014 no element scan. Pick the model that carries the full level breakdown, usually the architectural file.",
+    "confirm":    "Read levels \u2192",
+    "pendingRead":"{0} has not been read yet \u2014 confirm this step to read its levels.",
     "done":       "Found {0} level(s) in {1}. {2} of {3} models matched by name.",
     "failed":     "Scan failed: {0}",
     "noDocument": "No model open. Open your federated NWF/NWD and reopen this tool.",
@@ -63,10 +63,9 @@
     "everyLevel":       "On every level",
     "everyLevelHint":   "These models go into every level\u2019s NWD and are cropped to that level\u2019s elevation band. They are not offered in the per-level pickers below.",
     "everyLevelPick":   "Select models\u2026",
-    "sourceModel":      "Read levels from",
-    "sourceModelHint":  "The model whose structure supplies the level list. Defaults to the architectural file. Changing it rescans.",
-    "rescan":           "Rescan levels",
-    "rescanTip":        "Re-reads levels and re-matches models. Levels you have edited are left untouched.",
+    "backToSource":     "Go back to step 1 to pick a different model.",
+    "sourceModel":       "Read levels from",
+    "sourceModelHint":  "The model whose structure supplies the level list. Defaults to the architectural file. Its levels are read when you confirm this step.",
     "moveUp":           "Move this level up",
     "moveDown":         "Move this level down",
     "addLevel":         "+ Add level",
@@ -119,10 +118,10 @@
   },
 
   "summary": {
-    "s0Idle":    "Not started",
-    "s0Running": "Scanning\u2026",
-    "s0Done":    "{0} level(s) \u00b7 {1} model(s)",
-    "s0Failed":  "Scan failed",
+    "s0Idle":    "No model picked",
+    "s0Picked":  "{0}",
+    "s0Running": "Reading levels\u2026",
+    "s0Failed":  "Could not read levels",
     "s1":     "{0} level(s) · {1} of {2} models assigned",
     "s2":     "{0} level(s) → {1}",
     "s2None": "No output folder",

@@ -34,7 +34,7 @@ namespace LemoineNavisworks.LevelModels
     //   • Rescan and Run marshal back through NavisMainThread;
     //   • nothing else in this file may call the API.
     // =========================================================================
-    public sealed class LevelModelsViewModel : IStepFlowTool, IStepAware, IStepNavigable, IToolCleanup
+    public sealed class LevelModelsViewModel : IStepFlowTool, IStepAware, IStepConfirmable, IToolCleanup
     {
         public string Title    => AppStrings.T("navis.levelModels.title");
         public string RunLabel => AppStrings.T("navis.levelModels.runLabel");
@@ -87,7 +87,10 @@ namespace LemoineNavisworks.LevelModels
         private ScanState _scan = ScanState.Idle;
         private string    _scanMessage = "";
         private string    _documentKey = "";
-        private bool      _restoredFromStore;
+        /// <summary>Source model the current level list was read from — a restored setup counts.
+        /// Empty means nothing has been read yet, which is what makes confirming step 1 walk the
+        /// tree exactly once per model choice instead of on every pass through the step.</summary>
+        private string    _levelsFromKey = "";
         /// <summary>Key of the model the level list is read from. Empty until the scan picks one.</summary>
         private string    _sourceModelKey = "";
         private Action?   _stopThrobber;
@@ -101,12 +104,46 @@ namespace LemoineNavisworks.LevelModels
         /// </summary>
         public LevelModelsViewModel()
         {
-            // Deliberately CHEAP. The window must appear before any scanning starts, so this only
-            // reads what the chrome needs; the real work happens in step S0 once the window is up.
             var doc   = NavisApp.ActiveDocument;
             _hasDoc   = doc != null && !doc.IsClear;
             _docTitle = ReadDocTitle(doc);
             _documentKey = ReadDocumentKey(doc);
+            if (!_hasDoc) return;
+
+            // Listing the appended models is two property reads per model — cheap enough for the
+            // constructor, and step 1 cannot offer a source model to pick without it. What used to
+            // make this step slow was the TREE WALK, and that still waits for Confirm.
+            //
+            // Sorted once here so every picker built from _models is alphabetical by construction.
+            try
+            {
+                _models = NavisLevelModels.ListModels(doc!)
+                                          .OrderBy(m => m.Key, NaturalOrderComparer.OrdinalIgnoreCase)
+                                          .ToList();
+            }
+            catch (Exception ex) { DiagnosticsLog.Error("LevelModels: list models", ex); }
+
+            // A saved setup is the user's own work from last time and stands in for a scan — the
+            // source model, the levels and the every-level bucket all come back, so confirming
+            // step 1 walks nothing unless the source model is changed.
+            try { TryRestoreSaved(); }
+            catch (Exception ex) { DiagnosticsLog.Error("LevelModels: restore saved setup", ex); }
+
+            EnsureSourceModelDefault();
+        }
+
+        /// <summary>Picks the source model shown on step 1 when nothing is saved: the architectural
+        /// file if one is recognisable, otherwise the first APPENDED model (not the alphabetically
+        /// first — _models is sorted for display and that must not decide what gets scanned).</summary>
+        private void EnsureSourceModelDefault()
+        {
+            if (_models.Count == 0) return;
+            if (_models.Any(m => string.Equals(m.Key, _sourceModelKey, StringComparison.OrdinalIgnoreCase)))
+                return;
+
+            var arch   = _models.FirstOrDefault(LooksArchitectural);
+            var chosen = arch ?? _models.OrderBy(m => m.Index).FirstOrDefault();
+            _sourceModelKey = chosen?.Key ?? "";
         }
 
         /// <summary>Identifies the document for the saved-setup store. The file path is the only
@@ -127,15 +164,16 @@ namespace LemoineNavisworks.LevelModels
 
         // ── Scan (step S0) ────────────────────────────────────────────────────
 
-        /// <summary>Kicks the scan off on Navisworks' main thread and repaints S0 when it lands.
-        /// Called from OnStepActivated("S0"), which fires as soon as the window opens — so the
-        /// window is on screen and showing a throbber before any work starts.</summary>
-        private void BeginScan(bool isRescan)
+        /// <summary>Kicks the level read off on Navisworks' main thread and repaints when it lands.
+        /// Called from OnStepConfirm("S0") — the user picks the source model, presses Confirm, and
+        /// the walk happens on the way to step 2, which shows a throbber until it arrives.</summary>
+        private void BeginScan()
         {
             if (_scan == ScanState.Running) return;
             _scan = ScanState.Running;
             _scanMessage = "";
             _rebuild?.Invoke("S0");
+            _rebuild?.Invoke("S1");
             Changed();
 
             NavisMainThread.Post(() =>
@@ -144,7 +182,7 @@ namespace LemoineNavisworks.LevelModels
                 ScanState result;
                 try
                 {
-                    message = RunScan(isRescan);
+                    message = RunScan();
                     result  = ScanState.Done;
                 }
                 catch (Exception ex)
@@ -166,36 +204,25 @@ namespace LemoineNavisworks.LevelModels
                 _rebuild?.Invoke("S0");
                 _rebuild?.Invoke("S1");
                 Changed();
-                // Hand over to Levels & models. StepFlowWindow marshals this onto the window's
-                // own dispatcher, so raising it from Navisworks' main thread is safe.
-                if (result == ScanState.Done)
-                {
-                    try { NavigateRequested?.Invoke(this, 1); }
-                    catch (Exception ex) { DiagnosticsLog.Swallowed("LevelModels: advance past scan", ex); }
-                }
             });
         }
 
         /// <summary>The scan itself. Runs on the main thread. Returns the line shown under the
         /// throbber when it finishes.</summary>
-        private string RunScan(bool isRescan)
+        private string RunScan()
         {
             var doc = NavisApp.ActiveDocument;
             if (doc == null || doc.IsClear) return AppStrings.T("navis.levelModels.s0.noDocument");
-
-            // Sorted once, here, so every picker built from _models is alphabetical by construction
-            // and no call site has to remember to sort. Index still maps back to doc.Models.
-            _models = NavisLevelModels.ListModels(doc)
-                                      .OrderBy(m => m.Key, NaturalOrderComparer.OrdinalIgnoreCase)
-                                      .ToList();
             if (_models.Count == 0) return AppStrings.T("navis.levelModels.s0.noModels");
 
-            // A saved setup wins on a first open — it is the user's own work from last time.
-            if (!isRescan && TryRestoreSaved()) return _scanMessage;
+            // Anything already on screen — a previous walk, or a restored setup — makes this a
+            // RE-read, and a re-read never overwrites a row the user has edited.
+            bool isRescan = _levelsFromKey.Length > 0;
 
             int sourceIndex = ResolveSourceModelIndex();
             var found = NavisLevelModels.DiscoverLevels(doc, sourceIndex);
             MergeDiscovered(found, isRescan);
+            _levelsFromKey = _sourceModelKey;
 
             var report = NavisLevelModels.LastDiscovery;
 
@@ -268,24 +295,15 @@ namespace LemoineNavisworks.LevelModels
                 : string.Join("  \u203a  ", parts);
         }
 
-        /// <summary>Which model the level list is read from. Honours an explicit pick, otherwise
-        /// prefers an architectural model by name, otherwise the first model.</summary>
+        /// <summary>doc.Models index of the model step 1 picked. The pick itself is made in the
+        /// constructor (<see cref="EnsureSourceModelDefault"/>) and by the step-1 picker, so this
+        /// only resolves it — it never invents one.</summary>
         private int ResolveSourceModelIndex()
         {
-            if (!string.IsNullOrEmpty(_sourceModelKey))
-            {
-                var picked = _models.FirstOrDefault(
-                    m => string.Equals(m.Key, _sourceModelKey, StringComparison.OrdinalIgnoreCase));
-                if (picked != null) return picked.Index;
-            }
-
-            // Default to the Arch file — it is the one that carries a full level structure.
-            var arch = _models.FirstOrDefault(m => LooksArchitectural(m));
-            // Fall back to the FIRST APPENDED model, not the alphabetically first — _models is now
-            // sorted for display and that ordering must not silently change which model is scanned.
-            var chosen = arch ?? _models.OrderBy(m => m.Index).FirstOrDefault();
-            if (chosen != null) _sourceModelKey = chosen.Key;
-            return chosen?.Index ?? 0;
+            EnsureSourceModelDefault();
+            var picked = _models.FirstOrDefault(
+                m => string.Equals(m.Key, _sourceModelKey, StringComparison.OrdinalIgnoreCase));
+            return picked?.Index ?? 0;
         }
 
         private static bool LooksArchitectural(ModelRef m)
@@ -357,7 +375,6 @@ namespace LemoineNavisworks.LevelModels
                 _everyLevelModels.Clear();
                 foreach (var k in saved.Value.EveryLevelModels.OrEmpty()) _everyLevelModels.Add(k);
                 if (!string.IsNullOrEmpty(saved.Value.SourceModel)) _sourceModelKey = saved.Value.SourceModel;
-                _restoredFromStore = true;
 
                 // The output settings come back with the levels. A pattern of "" means the setup
                 // predates them being stored, so the current default stands rather than being
@@ -385,6 +402,8 @@ namespace LemoineNavisworks.LevelModels
                     if (!live.Contains(_everyLevelModels[i])) { _everyLevelModels.RemoveAt(i); dropped++; }
 
                 ReconcileBucket();
+                _levelsFromKey = _sourceModelKey;
+                _scan          = ScanState.Done;
 
                 _scanMessage = dropped > 0
                     ? AppStrings.T("navis.levelModels.s0.restoredDropped", _levels.Count, dropped)
@@ -482,13 +501,13 @@ namespace LemoineNavisworks.LevelModels
 
         public void OnStepActivated(string stepId)
         {
-            // S0 fires the moment the window opens (StepFlowWindow activates step 0 during setup),
-            // which is exactly the hook the scan wants: the window is already on screen.
-            if (stepId == "S0" && _scan == ScanState.Idle) { BeginScan(isRescan: false); return; }
+            // S0 no longer scans on activation. The user picks a source model there and the tree
+            // walk happens on Confirm (OnStepConfirm), so opening the tool never blocks on a read.
 
-            // S2's straddle row and S3's summary both read S1's state, and step content is built
-            // eagerly at window construction — without this they'd render once and never update.
-            if (stepId == "S2" || stepId == "S3") _rebuild?.Invoke(stepId);
+            // S1 shows whatever the read produced (throbber, failure, or the level rows) and S2's
+            // straddle row and S3's summary both read S1's state. Step content is built eagerly at
+            // window construction, so without this they'd render once and never update.
+            if (stepId == "S1" || stepId == "S2" || stepId == "S3") _rebuild?.Invoke(stepId);
         }
 
         public void OnWindowClosed()
@@ -505,9 +524,26 @@ namespace LemoineNavisworks.LevelModels
             _everyLevelModels.Clear();
         }
 
-        // ── IStepNavigable — lets the scan step hand over once it finishes ────
+        // ── IStepConfirmable — the scan runs on the way out of step 1 ────────
 
-        public event EventHandler<int>? NavigateRequested;
+        public string? ConfirmLabelFor(string stepId) =>
+            stepId == "S0" ? AppStrings.T("navis.levelModels.s0.confirm") : null;
+
+        /// <summary>StepFlowWindow calls this before it navigates, so the walk is already under way
+        /// by the time step 2 appears; step 2 shows a throbber until it lands.</summary>
+        public void OnStepConfirm(string stepId)
+        {
+            if (stepId != "S0" || !_hasDoc) return;
+            if (_scan == ScanState.Running) return;
+
+            // Already read for THIS model — walking again would only re-derive what is on screen,
+            // and would reset any untouched row the user is about to look at.
+            if (_levels.Count > 0 &&
+                string.Equals(_levelsFromKey, _sourceModelKey, StringComparison.OrdinalIgnoreCase))
+                return;
+
+            BeginScan();
+        }
 
         // ── Step content ──────────────────────────────────────────────────────
 
@@ -528,40 +564,80 @@ namespace LemoineNavisworks.LevelModels
 
             if (!_hasDoc)
                 { panel.Children.Add(Hint(AppStrings.T("navis.levelModels.s1.noDocument"))); return panel; }
+            if (_models.Count == 0)
+                { panel.Children.Add(Warn(AppStrings.T("navis.levelModels.s0.noModels"))); return panel; }
 
-            var row = new StackPanel { Orientation = Orientation.Horizontal };
+            panel.Children.Add(Sub(AppStrings.T("navis.levelModels.s0.explain")));
+            panel.Children.Add(Gap());
+
+            var src = new SingleSelect
+            {
+                Label = AppStrings.T("navis.levelModels.s1.sourceModel"),
+                Items = _models.Select(m => m.Key)
+                               .OrderBy(k => k, NaturalOrderComparer.OrdinalIgnoreCase)
+                               .ToList(),
+            };
+            if (!string.IsNullOrEmpty(_sourceModelKey)) src.SelectedItem = _sourceModelKey;
+            src.SelectionChanged += sel =>
+            {
+                if (string.IsNullOrEmpty(sel) || sel == _sourceModelKey) return;
+                _sourceModelKey = sel!;
+                SaveSetup();
+                // Deliberately does NOT scan. The walk happens on Confirm, and _levelsFromKey no
+                // longer matching this pick is exactly what tells Confirm there is work to do.
+                _rebuild?.Invoke("S0");
+                Changed();
+            };
+            panel.Children.Add(src);
+            panel.Children.Add(Sub(AppStrings.T("navis.levelModels.s1.sourceModelHint")));
+
+            // What the last read produced, so coming Back here shows why the level list looks the
+            // way it does rather than an unexplained picker.
+            if (_scan == ScanState.Done || _scan == ScanState.Failed)
+            {
+                panel.Children.Add(Gap());
+                bool stale = !string.Equals(_levelsFromKey, _sourceModelKey, StringComparison.OrdinalIgnoreCase);
+                var status = new TextBlock
+                {
+                    TextWrapping = TextWrapping.Wrap,
+                    Text         = stale
+                                 ? AppStrings.T("navis.levelModels.s0.pendingRead", _sourceModelKey)
+                                 : _scanMessage,
+                };
+                status.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+                status.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+                status.SetResourceReference(TextBlock.ForegroundProperty,
+                    _scan == ScanState.Failed && !stale ? "LemoineRed" : "LemoineTextSub");
+                panel.Children.Add(status);
+            }
+
+            return panel;
+        }
+
+        /// <summary>The throbber plus one line, shown on step 2 while the tree walk is in flight and
+        /// in place of it when the walk failed. Null once levels are on screen, which is the normal
+        /// case.</summary>
+        private FrameworkElement? BuildScanStatusRow()
+        {
+            if (_scan != ScanState.Running && _scan != ScanState.Failed) return null;
+
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 9) };
             if (_scan == ScanState.Running) row.Children.Add(BuildThrobber());
 
             var status = new TextBlock
             {
                 VerticalAlignment = VerticalAlignment.Center,
                 TextWrapping      = TextWrapping.Wrap,
-                Text = _scan switch
-                {
-                    ScanState.Running => AppStrings.T("navis.levelModels.s0.running"),
-                    ScanState.Done    => _scanMessage,
-                    ScanState.Failed  => _scanMessage,
-                    _                 => AppStrings.T("navis.levelModels.s0.idle"),
-                },
+                Text = _scan == ScanState.Running
+                     ? AppStrings.T("navis.levelModels.s0.running")
+                     : _scanMessage,
             };
             status.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
             status.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
             status.SetResourceReference(TextBlock.ForegroundProperty,
                 _scan == ScanState.Failed ? "LemoineRed" : "LemoineText");
             row.Children.Add(status);
-            panel.Children.Add(row);
-
-            panel.Children.Add(Gap());
-            panel.Children.Add(Sub(AppStrings.T("navis.levelModels.s0.explain")));
-
-            if (_scan == ScanState.Done || _scan == ScanState.Failed)
-            {
-                panel.Children.Add(Gap());
-                var again = ControlStyles.BuildSmallButton(AppStrings.T("navis.levelModels.s0.scanAgain"));
-                again.Click += (s, e) => BeginScan(isRescan: true);
-                panel.Children.Add(again);
-            }
-            return panel;
+            return row;
         }
 
         /// <summary>A spinning arc. The animation and its transform are built PER INSTANCE and
@@ -569,6 +645,10 @@ namespace LemoineNavisworks.LevelModels
         /// outright (CLAUDE.md), because each window is a separate STA thread.</summary>
         private FrameworkElement BuildThrobber()
         {
+            // A step rebuild can replace a throbber that is still spinning. Its animation clock
+            // keeps the old visual alive, so stop the previous one before minting another.
+            _stopThrobber?.Invoke();
+
             var arc = new System.Windows.Shapes.Path
             {
                 Width  = 16,
@@ -611,32 +691,28 @@ namespace LemoineNavisworks.LevelModels
             if (!_hasDoc) return Hint(AppStrings.T("navis.levelModels.s1.noDocument"));
 
             var panel = new StackPanel();
+
+            // The walk is in flight (or failed) — say so instead of showing an empty level table.
+            // Step 1's Confirm starts it, so this is the first thing the user sees on arriving here.
+            var scanRow = BuildScanStatusRow();
+            if (scanRow != null) panel.Children.Add(scanRow);
+            if (_scan == ScanState.Running) return panel;
+            if (_scan == ScanState.Failed)
+            {
+                panel.Children.Add(Sub(AppStrings.T("navis.levelModels.s1.backToSource")));
+                return panel;
+            }
+
             panel.Children.Add(Sub(AppStrings.T("navis.levelModels.s1.intro")));
             if (_models.Count == 0)
                 panel.Children.Add(Warn(AppStrings.T("navis.levelModels.s1.noModels")));
             panel.Children.Add(Gap());
 
-            // Which model the levels are read from. Defaults to the Arch file; changing it
-            // rescans, because the level list is that model's tree.
-            if (_models.Count > 0)
+            // The read itself is reported here rather than on step 1, because this is where its
+            // result — the level rows — actually is.
+            if (_scanMessage.Length > 0)
             {
-                var src = new SingleSelect
-                {
-                    Label = AppStrings.T("navis.levelModels.s1.sourceModel"),
-                    Items = _models.Select(m => m.Key)
-                                   .OrderBy(k => k, NaturalOrderComparer.OrdinalIgnoreCase)
-                                   .ToList(),
-                };
-                if (!string.IsNullOrEmpty(_sourceModelKey)) src.SelectedItem = _sourceModelKey;
-                src.SelectionChanged += sel =>
-                {
-                    if (string.IsNullOrEmpty(sel) || sel == _sourceModelKey) return;
-                    _sourceModelKey = sel!;
-                    SaveSetup();
-                    BeginScan(isRescan: true);
-                };
-                panel.Children.Add(src);
-                panel.Children.Add(Sub(AppStrings.T("navis.levelModels.s1.sourceModelHint")));
+                panel.Children.Add(Sub(_scanMessage));
                 panel.Children.Add(Gap());
             }
 
@@ -649,15 +725,12 @@ namespace LemoineNavisworks.LevelModels
             panel.Children.Add(_levelHost);
             panel.Children.Add(Gap());
 
+            // No rescan here: the source model is chosen on step 1 and the read happens on the way
+            // out of it, so a second trigger for the same thing would be two places to look.
             var buttons = new StackPanel { Orientation = Orientation.Horizontal };
-            var rescan = ControlStyles.BuildSmallButton(AppStrings.T("navis.levelModels.s1.rescan"));
-            rescan.ToolTip = AppStrings.T("navis.levelModels.s1.rescanTip");
-            rescan.Click += (s, e) => BeginScan(isRescan: true);
             var add = ControlStyles.BuildButton(AppStrings.T("navis.levelModels.s1.addLevel"),
                                                 ControlStyles.ButtonVariant.Primary);
-            add.Margin = new Thickness(8, 0, 0, 0);
             add.Click += (s, e) => AddLevel();
-            buttons.Children.Add(rescan);
             buttons.Children.Add(add);
             panel.Children.Add(buttons);
 
@@ -1124,7 +1197,7 @@ namespace LemoineNavisworks.LevelModels
 
         public bool IsValid(string stepId) => stepId switch
         {
-            "S0" => _scan == ScanState.Done || _scan == ScanState.Failed,
+            "S0" => _hasDoc && _models.Count > 0 && !string.IsNullOrEmpty(_sourceModelKey),
             "S1" => _hasDoc && Exportable().Any(),
             "S2" => !string.IsNullOrWhiteSpace(_outFolder) && !string.IsNullOrWhiteSpace(_pattern),
             _    => true,
@@ -1136,15 +1209,13 @@ namespace LemoineNavisworks.LevelModels
             switch (stepId)
             {
                 case "S0":
-                    return _scan switch
-                    {
-                        ScanState.Running => AppStrings.T("navis.levelModels.summary.s0Running"),
-                        ScanState.Done    => AppStrings.T("navis.levelModels.summary.s0Done", _levels.Count, _models.Count),
-                        ScanState.Failed  => AppStrings.T("navis.levelModels.summary.s0Failed"),
-                        _                 => AppStrings.T("navis.levelModels.summary.s0Idle"),
-                    };
+                    if (_scan == ScanState.Running) return AppStrings.T("navis.levelModels.summary.s0Running");
+                    if (_scan == ScanState.Failed)  return AppStrings.T("navis.levelModels.summary.s0Failed");
+                    return string.IsNullOrEmpty(_sourceModelKey)
+                        ? AppStrings.T("navis.levelModels.summary.s0Idle")
+                        : AppStrings.T("navis.levelModels.summary.s0Picked", _sourceModelKey);
                 case "S1":
-                    int assigned = _levels.SelectMany(l => l.Models)
+                    int assigned = _levels.SelectMany(ModelsFor)
                                           .Distinct(StringComparer.OrdinalIgnoreCase).Count();
                     return AppStrings.T("navis.levelModels.summary.s1", levels, assigned, _models.Count);
                 case "S2":
