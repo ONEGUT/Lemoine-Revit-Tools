@@ -96,7 +96,10 @@ namespace LemoineTools.Framework.Controls
         private Border?         _panel;      // the inline open list
         private TextBox?        _searchBox;
         private StackPanel?     _rowStack;
-        private bool            _suppress;   // guards re-entrant row rebuilds
+        private bool            _suppress;      // guards re-entrant row rebuilds
+        private bool            _selectedOnly;  // "show selected only" filter state
+        private Border?         _selectedOnlyRow;
+        private Action?         _repaintSelectedOnly;
 
         // Only one open at a time: a level list with a dozen rows would otherwise become a
         // very long page of stacked open lists. Static, because the rule spans instances.
@@ -240,6 +243,26 @@ namespace LemoineTools.Framework.Controls
             _searchBox.TextChanged += (s, e) => { if (_searchBox!.IsKeyboardFocusWithin) RefreshRows(); };
             stack.Children.Add(_searchBox);
 
+            // "Show selected only" — a review filter, so a long model list can be checked at a
+            // glance without scrolling past everything that ISN'T assigned.
+            _selectedOnlyRow = MakeRowShell(out Border sBox, out TextBlock sCheck,
+                                           out TextBlock sText, out TextBlock sTail);
+            _selectedOnlyRow.Margin          = new Thickness(0, 0, 0, 3);
+            _selectedOnlyRow.BorderThickness = new Thickness(0, 0, 0, 1);
+            _selectedOnlyRow.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            sText.Text = AppStrings.T("controls.pickers.multiSelectDropdown.selectedOnly");
+            sText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextSub");
+            _repaintSelectedOnly = () => PaintCheck(sBox, sCheck, _selectedOnly);
+            _repaintSelectedOnly();
+            _selectedOnlyRow.MouseLeftButtonDown += (s, e) =>
+            {
+                e.Handled = true;
+                _selectedOnly = !_selectedOnly;
+                _repaintSelectedOnly?.Invoke();
+                RefreshRows();
+            };
+            stack.Children.Add(_selectedOnlyRow);
+
             var sv = new ScrollViewer
             {
                 MaxHeight                     = 260,
@@ -269,6 +292,8 @@ namespace LemoineTools.Framework.Controls
             _suppress = true;
             _searchBox.Text = "";
             _suppress = false;
+            _selectedOnly = false;   // a review aid, not a sticky mode
+            _repaintSelectedOnly?.Invoke();
             RefreshRows();
 
             _panel.Visibility = Visibility.Visible;
@@ -308,14 +333,18 @@ namespace LemoineTools.Framework.Controls
             var visible = string.IsNullOrEmpty(q)
                 ? _items.ToList()
                 : _items.Where(i => i.IndexOf(q, StringComparison.OrdinalIgnoreCase) >= 0).ToList();
+            if (_selectedOnly) visible = visible.Where(i => _selected.Contains(i)).ToList();
 
             if (visible.Count == 0)
             {
-                // Never a silently empty list — say why there is nothing to tick.
+                // Never a silently empty list — say WHICH filter emptied it, so "show selected
+                // only" with nothing selected does not read as a broken picker.
                 var empty = new TextBlock
                 {
                     Text         = _items.Count == 0
                                  ? AppStrings.T("controls.pickers.multiSelectDropdown.noItems")
+                                 : _selectedOnly && _selected.Count == 0
+                                 ? AppStrings.T("controls.pickers.multiSelectDropdown.noneSelected")
                                  : AppStrings.T("controls.pickers.multiSelectDropdown.noMatches", q),
                     TextWrapping = TextWrapping.Wrap,
                     Margin       = new Thickness(5, 6, 5, 6),

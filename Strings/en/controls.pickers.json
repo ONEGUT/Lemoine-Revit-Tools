@@ -93,6 +93,8 @@
     "all": "All",                                              // bulk toggle, no search active
     "allMatches": "All {0} matches",                           // {0} = visible matches; scoped to them only
     "count": "{0} / {1}",                                      // {0} = selected visible, {1} = visible
+    "selectedOnly": "Show selected only",                      // review filter inside the open list
+    "noneSelected": "Nothing selected yet \u2014 untick \u201cShow selected only\u201d to pick some.",
     "noItems": "Nothing to choose from.",                      // the source list itself is empty
     "noMatches": "No items match “{0}”."                       // {0} = the typed query
   }

@@ -125,108 +125,93 @@ namespace LemoineNavisworks.LevelModels
             return $"Model {index + 1}";
         }
 
-        // ── Level discovery (names + elevations, both editable afterwards) ────
+        // ── Units ────────────────────────────────────────────────────────────
 
-        /// <summary>What the last <see cref="DiscoverLevels"/> call actually saw. A scan that
-        /// returns nothing is useless without this — the user needs to know WHETHER the models
-        /// carry a level property at all and, if they do, what it is called.</summary>
+        /// <summary>Multiplier from the document's own units into FEET. Bands and every Z value
+        /// the tool compares are held in feet, because that is what the UI states — a model
+        /// authored in millimetres must not silently make a "12.00" band mean 12 mm.</summary>
+        public static double ToFeet(Document doc)
+        {
+            try
+            {
+                return UnitConversion.ScaleFactor(doc.Units, Units.Feet);   // confirmed member
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Swallowed("LevelModels: unit scale factor", ex);
+                return 1.0;   // treat as already-feet rather than scaling by a guess
+            }
+        }
+
+        // ── Level discovery — from the source model's TREE, not from elements ──
+
+        /// <summary>What the last <see cref="DiscoverLevels"/> call saw, so a zero result can say
+        /// why instead of leaving the user guessing.</summary>
         public sealed class DiscoveryReport
         {
-            public int    ItemsScanned;
-            public bool   HitCap;
-            public string MatchedBy = "";              // which pass produced the result
-            /// <summary>Distinct property names seen, most common first — the diagnostic that
-            /// makes a zero result actionable instead of a mystery.</summary>
-            public List<string> PropertyNames = new List<string>();
+            public string SourceModel = "";
+            public int    GroupsSeen;
+            /// <summary>Names of the child nodes under the model root, whether or not they looked
+            /// like levels — the diagnostic that makes an empty result actionable.</summary>
+            public List<string> ChildNames = new List<string>();
         }
 
         public static DiscoveryReport LastDiscovery { get; private set; } = new DiscoveryReport();
 
-        // Property names that carry a level, in preference order. Revit exports usually surface
-        // "Level"; MEP/structural families often only carry a Base/Reference/Schedule level.
-        private static readonly string[] LevelPropertyNames =
-        {
-            "Level", "Base Level", "Reference Level", "Schedule Level",
-            "Base Constraint", "Home Level", "Level Name", "Story", "Storey",
-        };
-
         /// <summary>
-        /// Finds the levels present in the federation, taking each level's elevation from the
-        /// lowest item carrying it. Three passes, stopping at the first that finds anything:
-        ///   1. a property whose name is one of <see cref="LevelPropertyNames"/> (exact);
-        ///   2. any property whose name CONTAINS "level" with a non-empty value;
-        ///   3. item / ancestor names that look like a level ("L01", "B1", "Ground", "Roof"…),
-        ///      which is how a federation that groups by level in the TREE rather than by
-        ///      property presents itself.
-        /// Every pass records <see cref="LastDiscovery"/> so a zero result can say why.
+        /// Reads the levels of ONE model from its tree: the nodes directly under the model's root.
+        /// An NWC exported from Revit "divided by level" carries exactly that — LEVEL 0, LEVEL 01,
+        /// … ROOF BEARING — which is what the Navisworks selection tree shows.
+        ///
+        /// <para>This replaces v1's federation-wide element-property sweep. That scan was capped,
+        /// walked every geometry item in every model, and still found nothing; this reads a
+        /// handful of nodes from a single model and is effectively instant.</para>
+        ///
+        /// Elevations come from each group's own bounding box and are returned in FEET.
         /// </summary>
-        public static List<DiscoveredLevel> DiscoverLevels(Document doc, int cap = LevelDefaults.DiscoverScanCap)
+        public static List<DiscoveredLevel> DiscoverLevels(Document doc, int modelIndex)
         {
             ResetProbeFailures();
             var report = new DiscoveryReport();
             LastDiscovery = report;
-            if (doc == null || doc.IsClear) return new List<DiscoveredLevel>();
 
-            // One traversal, collecting everything each pass needs, so a big federation is walked
-            // once rather than three times.
-            var byExact   = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
-            var byLoose   = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
-            var byName    = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
-            var propSeen  = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            var found = new List<DiscoveredLevel>();
+            if (doc == null || doc.IsClear) return found;
+            if (modelIndex < 0 || modelIndex >= doc.Models.Count) return found;
 
-            int scanned = 0;
-            for (int i = 0; i < doc.Models.Count && scanned < cap; i++)
+            double toFeet = ToFeet(doc);
+
+            try
             {
-                foreach (ModelItem item in Descendants(doc.Models[i]))
+                Model model = doc.Models[modelIndex];
+                report.SourceModel = SafeModelName(model, "", modelIndex);
+
+                foreach (ModelItem child in model.RootItem.Children)
                 {
-                    if (scanned >= cap) { report.HitCap = true; break; }
+                    string name = SafeDisplayName(child).Trim();
+                    if (name.Length == 0) continue;
+                    report.ChildNames.Add(name);
+                    report.GroupsSeen++;
 
-                    // The old scan counted (and required) geometry items only. A level is often
-                    // carried on a non-geometry group/layer node, and burning the cap on one
-                    // model's geometry could exhaust the budget before ever reaching a model that
-                    // does carry levels — which is exactly a scan that "finds nothing".
-                    bool hasGeom = SafeHasGeometry(item);
-                    scanned++;
-
-                    double lo = 0;
-                    bool haveZ = hasGeom && TryZExtent(item, out lo, out _);
-
-                    ReadLevelCandidates(item, propSeen, out string exact, out string loose);
-
-                    if (!string.IsNullOrWhiteSpace(exact)) Record(byExact, exact, haveZ, lo);
-                    if (!string.IsNullOrWhiteSpace(loose)) Record(byLoose, loose, haveZ, lo);
-
-                    string treeName = LevelLikeName(SafeDisplayName(item));
-                    if (!string.IsNullOrWhiteSpace(treeName)) Record(byName, treeName, haveZ, lo);
+                    // Every child is offered — the tree of a level-divided export contains levels
+                    // and little else, and filtering by a name pattern here would silently drop a
+                    // level whose name does not fit the pattern (ROOF BEARING, PODIUM…). The user
+                    // deletes any row that is not a level.
+                    if (!TryZExtent(child, out double lo, out double hi)) { lo = 0; hi = 0; }
+                    found.Add(new DiscoveredLevel
+                    {
+                        Name      = name,
+                        Elevation = lo * toFeet,
+                        Top       = hi * toFeet,
+                    });
                 }
             }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Error("LevelModels: read level groups", ex);
+            }
 
-            report.ItemsScanned  = scanned;
-            report.PropertyNames = propSeen.OrderByDescending(kv => kv.Value)
-                                           .Select(kv => kv.Key)
-                                           .Take(25)
-                                           .ToList();
-
-            var chosen = byExact.Count > 0 ? byExact
-                       : byLoose.Count > 0 ? byLoose
-                       : byName;
-            report.MatchedBy = byExact.Count > 0 ? "property"
-                             : byLoose.Count > 0 ? "property-loose"
-                             : byName.Count  > 0 ? "name"
-                             : "";
-
-            return chosen.OrderBy(kv => kv.Value)
-                         .Select(kv => new DiscoveredLevel { Name = kv.Key, Elevation = kv.Value })
-                         .ToList();
-        }
-
-        // An item with no readable Z still proves the level EXISTS — record it at +inf so it is
-        // kept but sorts last, rather than dropping the level entirely (the old scan's `continue`
-        // on a failed bbox read silently discarded levels carried by non-geometry nodes).
-        private static void Record(Dictionary<string, double> into, string level, bool haveZ, double z)
-        {
-            double v = haveZ ? z : double.PositiveInfinity;
-            if (!into.TryGetValue(level, out double cur) || v < cur) into[level] = v;
+            return found.OrderBy(l => l.Elevation).ToList();
         }
 
         private static string SafeDisplayName(ModelItem item)
@@ -235,81 +220,99 @@ namespace LemoineNavisworks.LevelModels
             catch (Exception ex) { DiagnosticsLog.Swallowed("LevelModels: item display name", ex); return ""; }
         }
 
-        /// <summary>Reads both an exact-match and a loose-match level value off one item, and
-        /// tallies every property name seen for the diagnostic report — all in a single pass over
-        /// the item's categories, which is the expensive part.</summary>
-        private static void ReadLevelCandidates(
-            ModelItem item, Dictionary<string, int> propSeen, out string exact, out string loose)
+        // ── Auto-assign models to levels by file name ────────────────────────
+
+        /// <summary>
+        /// Matches each model to the levels its FILE NAME mentions. "DT-Arch-L02.nwc" lands on
+        /// "LEVEL 02"; a model naming no level at all is left unassigned rather than guessed at.
+        ///
+        /// <para>Matching is done on a squashed form of both strings (letters and digits only,
+        /// upper-cased) so "LEVEL 02" / "Level02" / "L02" / "L2" all reconcile. The longest level
+        /// token that matches wins, so "LEVEL 01" is never mistaken for "LEVEL 0" when both
+        /// exist — the single most likely way a name match goes quietly wrong.</para>
+        /// </summary>
+        public static void AutoAssign(IReadOnlyList<ModelRef> models, IReadOnlyList<LevelDef> levels)
         {
-            exact = ""; loose = "";
-            try
+            if (models == null || levels == null) return;
+
+            // Longest first: "LEVEL01" must be tested before "LEVEL0".
+            var tokens = levels
+                .Select(lv => new { Level = lv, Keys = LevelTokens(lv.Name) })
+                .Where(x => x.Keys.Count > 0)
+                .ToList();
+
+            foreach (var m in models)
             {
-                foreach (PropertyCategory cat in item.PropertyCategories)
-                {
-                    foreach (DataProperty p in cat.Properties)
-                    {
-                        string pd = (p.DisplayName ?? p.Name ?? "").Trim();
-                        if (pd.Length == 0) continue;
+                string hay = Squash(Path.GetFileNameWithoutExtension(m.SourceFile ?? "") + " " + m.DisplayName);
+                if (hay.Length == 0) continue;
 
-                        if (propSeen.TryGetValue(pd, out int n)) propSeen[pd] = n + 1;
-                        else                                     propSeen[pd] = 1;
+                var best = tokens
+                    .Select(x => new { x.Level, Hit = x.Keys.Where(k => hay.Contains(k)).OrderByDescending(k => k.Length).FirstOrDefault() })
+                    .Where(x => x.Hit != null)
+                    .OrderByDescending(x => x.Hit!.Length)
+                    .FirstOrDefault();
 
-                        bool isExact = exact.Length == 0 &&
-                                       LevelPropertyNames.Any(k => pd.Equals(k, StringComparison.OrdinalIgnoreCase));
-                        bool isLoose = loose.Length == 0 &&
-                                       pd.IndexOf("level", StringComparison.OrdinalIgnoreCase) >= 0;
-                        if (!isExact && !isLoose) continue;
-
-                        string v = "";
-                        try { v = p.Value?.ToDisplayString() ?? ""; }
-                        catch (Exception ex) { DiagnosticsLog.Swallowed("LevelModels: read property value", ex); }
-                        v = v.Trim();
-                        if (v.Length == 0) continue;
-
-                        if (isExact) exact = v;
-                        if (isLoose) loose = v;
-                    }
-                }
+                if (best == null) continue;
+                if (!best.Level.Models.Contains(m.Key)) best.Level.Models.Add(m.Key);
             }
-            catch (Exception ex) { DiagnosticsLog.Swallowed("LevelModels: read level property", ex); }
         }
 
-        /// <summary>Returns the trimmed name when it reads like a level label, else "". Covers the
-        /// conventions actually in use here — L1 / L01 for storeys, L0 / Underground for below
-        /// grade — plus the usual B1 / Level 2 / Ground / Roof variants.</summary>
-        private static string LevelLikeName(string raw)
+        /// <summary>The forms a level name might take inside a file name, longest first.</summary>
+        private static List<string> LevelTokens(string levelName)
         {
-            string name = (raw ?? "").Trim();
-            if (name.Length == 0 || name.Length > 40) return "";
+            var keys = new List<string>();
+            string squashed = Squash(levelName);
+            if (squashed.Length == 0) return keys;
 
-            // L1, L01, L-01, LVL 2, Level 3, B1, Storey 4 …
-            if (System.Text.RegularExpressions.Regex.IsMatch(
-                    name, @"^(L|B|LVL|LEVEL|FLOOR|STOR(E)?Y)\s*[-_]?\s*\d{1,3}([A-Za-z]|\.\d+)?$",
-                    System.Text.RegularExpressions.RegexOptions.IgnoreCase))
-                return name;
+            keys.Add(squashed);                                   // LEVEL02
 
-            // Named levels with no number.
-            string[] named = { "underground", "basement", "ground", "roof", "mezzanine", "podium", "plant" };
-            foreach (var w in named)
-                if (name.Equals(w, StringComparison.OrdinalIgnoreCase)) return name;
+            // A trailing number gives the short forms people actually use in file names.
+            var m = System.Text.RegularExpressions.Regex.Match(squashed, @"^(?:LEVEL|LVL|FLOOR|STOREY|STORY|L|B)(\d{1,3})$",
+                        System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (m.Success)
+            {
+                string digits = m.Groups[1].Value;               // "02"
+                string bare   = digits.TrimStart('0');
+                if (bare.Length == 0) bare = "0";
+                keys.Add("LEVEL" + digits);
+                keys.Add("L" + digits);                          // L02
+                if (bare != digits) { keys.Add("LEVEL" + bare); keys.Add("L" + bare); }   // L2
+            }
+            return keys.Distinct().OrderByDescending(k => k.Length).ToList();
+        }
 
-            return "";
+        /// <summary>Letters and digits only, upper-cased — so spaces, dashes and underscores in
+        /// either the level name or the file name stop mattering.</summary>
+        private static string Squash(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return "";
+            var sb = new System.Text.StringBuilder(s.Length);
+            foreach (char c in s)
+                if (char.IsLetterOrDigit(c)) sb.Append(char.ToUpperInvariant(c));
+            return sb.ToString();
         }
 
         // ── Geometry extents (only gathered when some level trims) ────────────
 
+        /// <summary>Vertical extents of every geometry item, in FEET so they compare directly
+        /// against the levels' bands.</summary>
         public static List<ItemZ> GatherItemZ(Document doc)
         {
             ResetProbeFailures();
             var list = new List<ItemZ>();
             if (doc == null || doc.IsClear) return list;
 
+            double toFeet = ToFeet(doc);
             for (int i = 0; i < doc.Models.Count; i++)
                 foreach (ModelItem item in Descendants(doc.Models[i]))
                 {
                     if (!SafeHasGeometry(item)) continue;
                     if (!TryZExtent(item, out double lo, out double hi)) continue;
-                    list.Add(new ItemZ { Item = item, ModelIndex = i, MinZ = lo, MaxZ = hi });
+                    list.Add(new ItemZ
+                    {
+                        Item = item, ModelIndex = i,
+                        MinZ = lo * toFeet, MaxZ = hi * toFeet,
+                    });
                 }
             return list;
         }
@@ -407,8 +410,9 @@ namespace LemoineNavisworks.LevelModels
             for (int i = 0; i < allRoots.Count; i++)
                 if (!ownedModelIndices.Contains(i)) hide.Add(allRoots[i]);
 
-            // 2. Within the owned models, elements outside the band.
-            if (level.Trim && level.HasBand && items != null)
+            // 2. Within the owned models, elements outside the band. Trim is always on; a level
+            //    with no real band (top not above bottom) simply has nothing to trim against.
+            if (level.HasBand && items != null)
             {
                 foreach (var z in items)
                 {
@@ -440,6 +444,7 @@ namespace LemoineNavisworks.LevelModels
                 if (clip && level.HasBand) ApplyClip(doc, level.Bottom, level.Top, log);
 
                 Viewpoint vp = doc.CurrentViewpoint.ToViewpoint();                       // confirmed
+                AimAtBand(vp, doc, level);
                 var sv = new SavedViewpoint(vp) { DisplayName = name };                  // SavedViewpoint(Viewpoint) + inherited SavedItem.DisplayName — confirmed
                 doc.SavedViewpoints.AddCopy(sv);                                         // AddCopy(SavedItem) — confirmed (SavedViewpoint : SavedItem)
                 return true;
@@ -450,6 +455,73 @@ namespace LemoineNavisworks.LevelModels
                 log?.Invoke(AppStrings.T("navis.levelModels.log.viewpointFailed", name), "warn");
                 return false;
             }
+        }
+
+        /// <summary>Lifts the camera to the MIDDLE of the level's band so the saved viewpoint opens
+        /// looking at that level rather than wherever the user happened to be standing. Only the
+        /// height is changed — the direction the user is facing is left alone, since that is a
+        /// preference and the band is the thing this tool actually knows about.</summary>
+        private static void AimAtBand(Viewpoint vp, Document doc, LevelDef level)
+        {
+            try
+            {
+                if (!level.HasBand) return;
+                double toFeet = ToFeet(doc);
+                double scale  = Math.Abs(toFeet) > 1e-9 ? 1.0 / toFeet : 1.0;
+                double midZ   = ((level.Bottom + level.Top) * 0.5) * scale;   // band is in feet
+
+                Point3D p = vp.Position;                                                  // confirmed get/set
+                vp.Position = new Point3D(p.X, p.Y, midZ);
+            }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("LevelModels: aim viewpoint at band", ex); }
+        }
+
+        // ── Viewpoint isolation for the export ───────────────────────────────
+
+        /// <summary>
+        /// Takes every saved viewpoint out of the document and hands them back for restoring, so
+        /// the NWD written next contains ONLY the viewpoint this run creates. Returns null when
+        /// there was nothing to remove (or the read failed), which the caller treats as "nothing
+        /// to restore".
+        ///
+        /// <para>This mutates the LIVE document. It is only ever safe because the caller restores
+        /// in a finally — and even a hard failure costs the session's viewpoints, not the file's,
+        /// since nothing here saves the document.</para>
+        /// </summary>
+        public static IList<SavedItem>? TakeViewpoints(Document doc)
+        {
+            try
+            {
+                var snapshot = doc.SavedViewpoints.CreateCopy();                         // confirmed
+                if (snapshot == null || snapshot.Count == 0) return null;
+                doc.SavedViewpoints.Clear();                                             // confirmed
+                return snapshot;
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Error("LevelModels: take saved viewpoints", ex);
+                return null;
+            }
+        }
+
+        /// <summary>Puts the document's own viewpoints back, dropping whatever the run added.</summary>
+        public static void RestoreViewpoints(Document doc, IList<SavedItem>? snapshot)
+        {
+            try
+            {
+                doc.SavedViewpoints.Clear();
+                if (snapshot != null && snapshot.Count > 0)
+                    doc.SavedViewpoints.CopyFrom(snapshot);                              // CopyFrom(IEnumerable<SavedItem>) — confirmed
+            }
+            catch (Exception ex) { DiagnosticsLog.Error("LevelModels: restore saved viewpoints", ex); }
+        }
+
+        /// <summary>Removes just the viewpoints added since the document was emptied, so the next
+        /// level does not inherit the previous level's viewpoint.</summary>
+        public static void ClearViewpoints(Document doc)
+        {
+            try { doc.SavedViewpoints.Clear(); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("LevelModels: clear saved viewpoints", ex); }
         }
 
         // Clipping planes — real API confirmed by decoding libs-navis\Autodesk.Navisworks.Api.dll
@@ -492,11 +564,17 @@ namespace LemoineNavisworks.LevelModels
                     return;
                 }
 
+                // bottom/top arrive in FEET; the clip box is expressed in the document's own
+                // units, so convert back or the band lands at the wrong height in a metric model.
+                double toFeet = ToFeet(doc);
+                double scale  = Math.Abs(toFeet) > 1e-9 ? 1.0 / toFeet : 1.0;
+                double lo = bottom * scale, hi = top * scale;
+
                 Viewpoint vp = doc.CurrentViewpoint.ToViewpoint();
                 ClipPlaneSet clip = vp.ClipPlanes;
                 clip.Box = new BoundingBox3D(
-                    new Point3D(-ClipPlaneHorizontalExtent, -ClipPlaneHorizontalExtent, bottom),
-                    new Point3D( ClipPlaneHorizontalExtent,  ClipPlaneHorizontalExtent, top));
+                    new Point3D(-ClipPlaneHorizontalExtent, -ClipPlaneHorizontalExtent, lo),
+                    new Point3D( ClipPlaneHorizontalExtent,  ClipPlaneHorizontalExtent, hi));
                 clip.Mode    = ClipPlaneSetMode.Box;
                 clip.Enabled = true;
                 doc.CurrentViewpoint.CopyFrom(vp);
@@ -533,6 +611,9 @@ namespace LemoineNavisworks.LevelModels
                     ExcludeHiddenItems          = true,
                     EmbedXrefs                  = embedXrefs,
                     PreventObjectPropertyExport = !keepProps,
+                    // Stamp the version explicitly rather than leaving it at the default, so the
+                    // NWD always opens as the same Navisworks version it was created from.
+                    FileVersion                 = (int)DocumentFileVersion.Navisworks2026,
                 };
                 bool ok = doc.TryExportToNwd(path, opts);                                // confirmed — 2026-only API per Autodesk's own docs, not present before
                 return ok ? "" : AppStrings.T("navis.levelModels.log.exportRefused");
@@ -544,28 +625,5 @@ namespace LemoineNavisworks.LevelModels
             }
         }
 
-        // ── Units ────────────────────────────────────────────────────────────
-
-        public static string UnitSuffix(Document doc)
-        {
-            try
-            {
-                switch (doc.Units)                                                       // Document.Units — confirmed (member names match; underlying ints differ from an earlier guess but C# switches by name)
-                {
-                    case Units.Feet:        return "ft";
-                    case Units.Inches:      return "in";
-                    case Units.Meters:      return "m";
-                    case Units.Centimeters: return "cm";
-                    case Units.Millimeters: return "mm";
-                    default:                return "";
-                }
-            }
-            catch (Exception ex)
-            {
-                // Cosmetic only — the band still works, the elevations just render unitless.
-                DiagnosticsLog.Swallowed("LevelModels: read document units", ex);
-                return "";
-            }
-        }
     }
 }

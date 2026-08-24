@@ -33,13 +33,14 @@ namespace LemoineNavisworks.LevelModels
     //   • Rescan and Run marshal back through NavisMainThread;
     //   • nothing else in this file may call the API.
     // =========================================================================
-    public sealed class LevelModelsViewModel : IStepFlowTool, IStepAware, IToolCleanup
+    public sealed class LevelModelsViewModel : IStepFlowTool, IStepAware, IStepNavigable, IToolCleanup
     {
         public string Title    => AppStrings.T("navis.levelModels.title");
         public string RunLabel => AppStrings.T("navis.levelModels.runLabel");
 
         public StepDefinition[] Steps => new[]
         {
+            new StepDefinition("S0", AppStrings.T("navis.levelModels.steps.S0"), required: true),
             new StepDefinition("S1", AppStrings.T("navis.levelModels.steps.S1"), required: true),
             new StepDefinition("S2", AppStrings.T("navis.levelModels.steps.S2"), required: true),
             new StepDefinition("S3", AppStrings.T("navis.levelModels.steps.S3"), required: false),
@@ -52,10 +53,11 @@ namespace LemoineNavisworks.LevelModels
 
         private readonly List<LevelDef>  _levels  = new List<LevelDef>();
         private List<ModelRef>           _models  = new List<ModelRef>();
-        private readonly string          _unit;
+        // Bands are always shown in FEET now, so this is a constant label rather than the
+        // document's own unit — a metric model still types and reads feet.
+        private const string             _unit = "ft";
         private readonly bool            _hasDoc;
         private readonly string          _docTitle;
-        private string                   _discoverNote = "";
 
         private StraddleRule _straddle    = StraddleRule.KeepOverlapping;
         private string       _outFolder   = "";
@@ -69,6 +71,16 @@ namespace LemoineNavisworks.LevelModels
         private StackPanel?     _levelHost;
         private StackPanel?     _warnHost;
 
+        // ── Scan state (step S0) ──────────────────────────────────────────────
+        private enum ScanState { Idle, Running, Done, Failed }
+        private ScanState _scan = ScanState.Idle;
+        private string    _scanMessage = "";
+        private string    _documentKey = "";
+        private bool      _restoredFromStore;
+        /// <summary>Key of the model the level list is read from. Empty until the scan picks one.</summary>
+        private string    _sourceModelKey = "";
+        private Action?   _stopThrobber;
+
         /// <summary>
         /// Built on Navisworks' MAIN thread (from AddInPlugin.Execute, before the window's thread
         /// starts), so every read here is a legal API call and needs no marshalling. Everything the
@@ -78,68 +90,232 @@ namespace LemoineNavisworks.LevelModels
         /// </summary>
         public LevelModelsViewModel()
         {
-            var doc = NavisApp.ActiveDocument;
-            _hasDoc = doc != null && !doc.IsClear;
-            _unit   = _hasDoc ? NavisLevelModels.UnitSuffix(doc!) : "";
+            // Deliberately CHEAP. The window must appear before any scanning starts, so this only
+            // reads what the chrome needs; the real work happens in step S0 once the window is up.
+            var doc   = NavisApp.ActiveDocument;
+            _hasDoc   = doc != null && !doc.IsClear;
             _docTitle = ReadDocTitle(doc);
-            if (!_hasDoc) return;
-
-            _models = NavisLevelModels.ListModels(doc!);
-            SeedLevelsFromDocument(doc!);
+            _documentKey = ReadDocumentKey(doc);
         }
 
-        /// <summary>Pre-fills the rows from the models' own Level property. Names and bands are
-        /// both editable afterwards — assignment is always manual.</summary>
-        private void SeedLevelsFromDocument(NavisDoc doc)
+        /// <summary>Identifies the document for the saved-setup store. The file path is the only
+        /// stable handle Navisworks offers; an unsaved document has none and simply does not
+        /// persist.</summary>
+        private static string ReadDocumentKey(NavisDoc? doc)
         {
-            List<DiscoveredLevel> found;
-            try { found = NavisLevelModels.DiscoverLevels(doc); }
+            try
+            {
+                string f = doc?.FileName ?? "";
+                if (!string.IsNullOrWhiteSpace(f)) return f;
+                string c = doc?.CurrentFileName ?? "";
+                if (!string.IsNullOrWhiteSpace(c)) return c;
+            }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("LevelModels: document key", ex); }
+            return "";
+        }
+
+        // ── Scan (step S0) ────────────────────────────────────────────────────
+
+        /// <summary>Kicks the scan off on Navisworks' main thread and repaints S0 when it lands.
+        /// Called from OnStepActivated("S0"), which fires as soon as the window opens — so the
+        /// window is on screen and showing a throbber before any work starts.</summary>
+        private void BeginScan(bool isRescan)
+        {
+            if (_scan == ScanState.Running) return;
+            _scan = ScanState.Running;
+            _scanMessage = "";
+            _rebuild?.Invoke("S0");
+            Changed();
+
+            NavisMainThread.Post(() =>
+            {
+                string message;
+                ScanState result;
+                try
+                {
+                    message = RunScan(isRescan);
+                    result  = ScanState.Done;
+                }
+                catch (Exception ex)
+                {
+                    DiagnosticsLog.Error("LevelModels: scan", ex);
+                    message = AppStrings.T("navis.levelModels.s0.failed", ex.Message);
+                    result  = ScanState.Failed;
+                }
+
+                // Back to the window's thread to touch any UI state.
+                _scan        = result;
+                _scanMessage = message;
+                _rebuild?.Invoke("S0");
+                _rebuild?.Invoke("S1");
+                Changed();
+                // Hand over to Levels & models. StepFlowWindow marshals this onto the window's
+                // own dispatcher, so raising it from Navisworks' main thread is safe.
+                if (result == ScanState.Done)
+                {
+                    try { NavigateRequested?.Invoke(this, 1); }
+                    catch (Exception ex) { DiagnosticsLog.Swallowed("LevelModels: advance past scan", ex); }
+                }
+            });
+        }
+
+        /// <summary>The scan itself. Runs on the main thread. Returns the line shown under the
+        /// throbber when it finishes.</summary>
+        private string RunScan(bool isRescan)
+        {
+            var doc = NavisApp.ActiveDocument;
+            if (doc == null || doc.IsClear) return AppStrings.T("navis.levelModels.s0.noDocument");
+
+            _models = NavisLevelModels.ListModels(doc);
+            if (_models.Count == 0) return AppStrings.T("navis.levelModels.s0.noModels");
+
+            // A saved setup wins on a first open — it is the user's own work from last time.
+            if (!isRescan && TryRestoreSaved()) return _scanMessage;
+
+            int sourceIndex = ResolveSourceModelIndex();
+            var found = NavisLevelModels.DiscoverLevels(doc, sourceIndex);
+            MergeDiscovered(found, isRescan);
+
+            if (_levels.Count == 0)
+            {
+                var rep = NavisLevelModels.LastDiscovery;
+                return rep.ChildNames.Count > 0
+                    ? AppStrings.T("navis.levelModels.s0.noLevelsButChildren",
+                                   rep.SourceModel, string.Join(", ", rep.ChildNames.Take(10)))
+                    : AppStrings.T("navis.levelModels.s0.noLevels", rep.SourceModel);
+            }
+
+            NavisLevelModels.AutoAssign(_models, _levels.Where(l => !l.UserEdited).ToList());
+
+            int assigned = _levels.SelectMany(l => l.Models).Distinct(StringComparer.OrdinalIgnoreCase).Count();
+            SaveSetup();
+            return AppStrings.T("navis.levelModels.s0.done",
+                                _levels.Count, NavisLevelModels.LastDiscovery.SourceModel,
+                                assigned, _models.Count);
+        }
+
+        /// <summary>Which model the level list is read from. Honours an explicit pick, otherwise
+        /// prefers an architectural model by name, otherwise the first model.</summary>
+        private int ResolveSourceModelIndex()
+        {
+            if (!string.IsNullOrEmpty(_sourceModelKey))
+            {
+                var picked = _models.FirstOrDefault(
+                    m => string.Equals(m.Key, _sourceModelKey, StringComparison.OrdinalIgnoreCase));
+                if (picked != null) return picked.Index;
+            }
+
+            // Default to the Arch file — it is the one that carries a full level structure.
+            var arch = _models.FirstOrDefault(m => LooksArchitectural(m));
+            var chosen = arch ?? _models.FirstOrDefault();
+            if (chosen != null) _sourceModelKey = chosen.Key;
+            return chosen?.Index ?? 0;
+        }
+
+        private static bool LooksArchitectural(ModelRef m)
+        {
+            string hay = ((m.DisplayName ?? "") + " " + (m.SourceFile ?? "")).ToUpperInvariant();
+            return hay.Contains("ARCH") || hay.Contains("-AR-") || hay.Contains("_AR_");
+        }
+
+        /// <summary>
+        /// Folds a fresh discovery into the current list. A level the user has touched is left
+        /// exactly as it is — name, band and models — so a rescan can never undo hand-tuning; an
+        /// untouched level takes the newly-read name and band; a level that is new to the model is
+        /// added; and an untouched level the model no longer has is dropped.
+        /// </summary>
+        private void MergeDiscovered(List<DiscoveredLevel> found, bool isRescan)
+        {
+            if (!isRescan) _levels.RemoveAll(l => !l.UserEdited);
+
+            foreach (var d in found)
+            {
+                var existing = _levels.FirstOrDefault(
+                    l => string.Equals(l.Name, d.Name, StringComparison.OrdinalIgnoreCase));
+
+                if (existing == null)
+                {
+                    _levels.Add(new LevelDef { Name = d.Name, Bottom = Finite(d.Elevation), Top = Finite(d.Top) });
+                    continue;
+                }
+                if (existing.UserEdited) continue;   // hands off — the user owns this row
+
+                existing.Bottom = Finite(d.Elevation);
+                existing.Top    = Finite(d.Top);
+            }
+
+            // Drop untouched rows the source model no longer reports.
+            var names = new HashSet<string>(found.Select(f => f.Name), StringComparer.OrdinalIgnoreCase);
+            _levels.RemoveAll(l => !l.UserEdited && !names.Contains(l.Name));
+
+            // Bands run floor-to-floor: each untouched level's top becomes the next one's bottom,
+            // which is more useful than the group's own geometry height (a level group's bounding
+            // box stops at its tallest element, leaving a gap under the floor above).
+            var ordered = _levels.OrderBy(l => l.Bottom).ToList();
+            for (int i = 0; i < ordered.Count - 1; i++)
+            {
+                if (ordered[i].UserEdited) continue;
+                double nextBottom = ordered[i + 1].Bottom;
+                if (nextBottom > ordered[i].Bottom) ordered[i].Top = nextBottom;
+            }
+
+            // Only impose discovery's ordering when the user has not arranged the list themselves.
+            if (!_levels.Any(l => l.UserEdited))
+            {
+                _levels.Clear();
+                _levels.AddRange(ordered);
+            }
+        }
+
+        // ── Saved setup ───────────────────────────────────────────────────────
+
+        private bool TryRestoreSaved()
+        {
+            try
+            {
+                var saved = LevelModelsStore.Load(_documentKey);
+                if (saved == null) return false;
+
+                _levels.Clear();
+                _levels.AddRange(saved.Value.Levels);
+                if (!string.IsNullOrEmpty(saved.Value.SourceModel)) _sourceModelKey = saved.Value.SourceModel;
+                _restoredFromStore = true;
+
+                // A model that has since left the federation must not linger as a phantom
+                // assignment that silently exports nothing.
+                var live = new HashSet<string>(_models.Select(m => m.Key), StringComparer.OrdinalIgnoreCase);
+                int dropped = 0;
+                foreach (var lv in _levels)
+                    for (int i = lv.Models.Count - 1; i >= 0; i--)
+                        if (!live.Contains(lv.Models[i])) { lv.Models.RemoveAt(i); dropped++; }
+
+                _scanMessage = dropped > 0
+                    ? AppStrings.T("navis.levelModels.s0.restoredDropped", _levels.Count, dropped)
+                    : AppStrings.T("navis.levelModels.s0.restored", _levels.Count);
+                return true;
+            }
             catch (Exception ex)
             {
-                DiagnosticsLog.Error("LevelModels: discover levels", ex);
-                found = new List<DiscoveredLevel>();
+                DiagnosticsLog.Error("LevelModels: restore saved setup", ex);
+                return false;
             }
-
-            _levels.Clear();
-            for (int i = 0; i < found.Count; i++)
-            {
-                // A level's band runs to the next level up; the topmost is left open (Top ==
-                // Bottom means "no band", so Trim stays off until the user gives it one).
-                // Discovery reports +infinity for a level it found by name but could not measure
-                // (a non-geometry group node has no bounding box) — that must not reach a stepper
-                // or a band, so it degrades to "no elevation known" and the user fills it in.
-                double bottom = Finite(found[i].Elevation);
-                double top    = i + 1 < found.Count ? Finite(found[i + 1].Elevation) : bottom;
-                if (top < bottom) top = bottom;
-                _levels.Add(new LevelDef { Name = found[i].Name, Bottom = bottom, Top = top });
-            }
-
-            // A silent empty result is indistinguishable from a broken collector — say which, and
-            // when nothing matched, name the properties the models DO carry so the next step is
-            // obvious instead of guesswork.
-            var report = NavisLevelModels.LastDiscovery;
-            if (found.Count > 0)
-            {
-                _discoverNote = AppStrings.T("navis.levelModels.s1.discovered", found.Count);
-                if (report.MatchedBy == "name")
-                    _discoverNote += " " + AppStrings.T("navis.levelModels.s1.matchedByName");
-            }
-            else
-            {
-                _discoverNote = AppStrings.T("navis.levelModels.s1.discoveredNone", report.ItemsScanned);
-                if (report.PropertyNames.Count > 0)
-                    _discoverNote += " " + AppStrings.T("navis.levelModels.s1.propertiesSeen",
-                                                        string.Join(", ", report.PropertyNames.Take(12)));
-            }
-            if (report.HitCap)
-                _discoverNote += " " + AppStrings.T("navis.levelModels.s1.scanCapped", report.ItemsScanned);
-            if (NavisLevelModels.ProbeFailures > 0)
-                _discoverNote += " " + AppStrings.T("navis.levelModels.s1.probeFailures",
-                                                    NavisLevelModels.ProbeFailures);
         }
 
-        /// <summary>Discovery uses +infinity for "level exists, elevation unknown"; the UI needs a
-        /// real number. Anything non-finite becomes 0 so the steppers stay usable.</summary>
+        private void SaveSetup()
+        {
+            if (string.IsNullOrEmpty(_documentKey)) return;
+            LevelModelsStore.Save(_documentKey, _levels, _sourceModelKey);
+        }
+
+        /// <summary>Marks a level as the user's and persists — every edit path calls this.</summary>
+        private void TouchLevel(LevelDef lv)
+        {
+            lv.UserEdited = true;
+            SaveSetup();
+        }
+
+        /// <summary>Discovery can report a level whose geometry could not be measured; the UI needs
+        /// a real number, so anything non-finite becomes 0.</summary>
         private static double Finite(double v) =>
             double.IsNaN(v) || double.IsInfinity(v) ? 0 : v;
 
@@ -149,6 +325,10 @@ namespace LemoineNavisworks.LevelModels
 
         public void OnStepActivated(string stepId)
         {
+            // S0 fires the moment the window opens (StepFlowWindow activates step 0 during setup),
+            // which is exactly the hook the scan wants: the window is already on screen.
+            if (stepId == "S0" && _scan == ScanState.Idle) { BeginScan(isRescan: false); return; }
+
             // S2's straddle row and S3's summary both read S1's state, and step content is built
             // eagerly at window construction — without this they'd render once and never update.
             if (stepId == "S2" || stepId == "S3") _rebuild?.Invoke(stepId);
@@ -158,6 +338,8 @@ namespace LemoineNavisworks.LevelModels
         {
             // Release the captured document data; nothing else is parked on a static handler
             // (Navisworks has no ExternalEvent, so Run() owns its own lifetime).
+            _stopThrobber?.Invoke();
+            _stopThrobber = null;
             _rebuild   = null;
             _levelHost = null;
             _warnHost  = null;
@@ -165,15 +347,104 @@ namespace LemoineNavisworks.LevelModels
             _levels.Clear();
         }
 
+        // ── IStepNavigable — lets the scan step hand over once it finishes ────
+
+        public event EventHandler<int>? NavigateRequested;
+
         // ── Step content ──────────────────────────────────────────────────────
 
         public FrameworkElement? GetStepContent(string stepId) => stepId switch
         {
+            "S0" => BuildScanStep(),
             "S1" => BuildLevelsStep(),
             "S2" => BuildOutputStep(),
             "S3" => BuildRunStep(),
             _    => null,
         };
+
+        // ── S0: scanning ──────────────────────────────────────────────────────
+
+        private FrameworkElement BuildScanStep()
+        {
+            var panel = new StackPanel();
+
+            if (!_hasDoc)
+                { panel.Children.Add(Hint(AppStrings.T("navis.levelModels.s1.noDocument"))); return panel; }
+
+            var row = new StackPanel { Orientation = Orientation.Horizontal };
+            if (_scan == ScanState.Running) row.Children.Add(BuildThrobber());
+
+            var status = new TextBlock
+            {
+                VerticalAlignment = VerticalAlignment.Center,
+                TextWrapping      = TextWrapping.Wrap,
+                Text = _scan switch
+                {
+                    ScanState.Running => AppStrings.T("navis.levelModels.s0.running"),
+                    ScanState.Done    => _scanMessage,
+                    ScanState.Failed  => _scanMessage,
+                    _                 => AppStrings.T("navis.levelModels.s0.idle"),
+                },
+            };
+            status.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            status.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
+            status.SetResourceReference(TextBlock.ForegroundProperty,
+                _scan == ScanState.Failed ? "LemoineRed" : "LemoineText");
+            row.Children.Add(status);
+            panel.Children.Add(row);
+
+            panel.Children.Add(Gap());
+            panel.Children.Add(Sub(AppStrings.T("navis.levelModels.s0.explain")));
+
+            if (_scan == ScanState.Done || _scan == ScanState.Failed)
+            {
+                panel.Children.Add(Gap());
+                var again = ControlStyles.BuildSmallButton(AppStrings.T("navis.levelModels.s0.scanAgain"));
+                again.Click += (s, e) => BeginScan(isRescan: true);
+                panel.Children.Add(again);
+            }
+            return panel;
+        }
+
+        /// <summary>A spinning arc. The animation and its transform are built PER INSTANCE and
+        /// never shared: a static Freezable reused across tool windows crashes Revit/Navisworks
+        /// outright (CLAUDE.md), because each window is a separate STA thread.</summary>
+        private FrameworkElement BuildThrobber()
+        {
+            var arc = new System.Windows.Shapes.Path
+            {
+                Width  = 16,
+                Height = 16,
+                StrokeThickness = 2,
+                Margin = new Thickness(0, 0, 9, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+                Data = System.Windows.Media.Geometry.Parse(
+                    "M 8,1 A 7,7 0 1 1 1,8"),   // three-quarter arc
+                RenderTransformOrigin = new Point(0.5, 0.5),
+            };
+            arc.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty, "LemoineAccent");
+
+            var spin = new RotateTransform(0);
+            arc.RenderTransform = spin;
+
+            var anim = new System.Windows.Media.Animation.DoubleAnimation
+            {
+                From           = 0,
+                To             = 360,
+                Duration       = new Duration(TimeSpan.FromSeconds(0.9)),
+                RepeatBehavior = System.Windows.Media.Animation.RepeatBehavior.Forever,
+            };
+            spin.BeginAnimation(RotateTransform.AngleProperty, anim);
+
+            // Stopped explicitly on close: an animation left running holds the render thread's
+            // clock and keeps the visual alive after the window has gone.
+            _stopThrobber = () =>
+            {
+                try { spin.BeginAnimation(RotateTransform.AngleProperty, null); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("LevelModels: stop throbber", ex); }
+            };
+            return arc;
+        }
 
         // ── S1: levels & models ───────────────────────────────────────────────
 
@@ -183,10 +454,31 @@ namespace LemoineNavisworks.LevelModels
 
             var panel = new StackPanel();
             panel.Children.Add(Sub(AppStrings.T("navis.levelModels.s1.intro")));
-            panel.Children.Add(Sub(_discoverNote));
             if (_models.Count == 0)
                 panel.Children.Add(Warn(AppStrings.T("navis.levelModels.s1.noModels")));
             panel.Children.Add(Gap());
+
+            // Which model the levels are read from. Defaults to the Arch file; changing it
+            // rescans, because the level list is that model's tree.
+            if (_models.Count > 0)
+            {
+                var src = new SingleSelect
+                {
+                    Label = AppStrings.T("navis.levelModels.s1.sourceModel"),
+                    Items = _models.Select(m => m.Key).ToList(),
+                };
+                if (!string.IsNullOrEmpty(_sourceModelKey)) src.SelectedItem = _sourceModelKey;
+                src.SelectionChanged += sel =>
+                {
+                    if (string.IsNullOrEmpty(sel) || sel == _sourceModelKey) return;
+                    _sourceModelKey = sel!;
+                    SaveSetup();
+                    BeginScan(isRescan: true);
+                };
+                panel.Children.Add(src);
+                panel.Children.Add(Sub(AppStrings.T("navis.levelModels.s1.sourceModelHint")));
+                panel.Children.Add(Gap());
+            }
 
             panel.Children.Add(BuildColumnHeader());
 
@@ -197,7 +489,8 @@ namespace LemoineNavisworks.LevelModels
 
             var buttons = new StackPanel { Orientation = Orientation.Horizontal };
             var rescan = ControlStyles.BuildSmallButton(AppStrings.T("navis.levelModels.s1.rescan"));
-            rescan.Click += (s, e) => Rescan();
+            rescan.ToolTip = AppStrings.T("navis.levelModels.s1.rescanTip");
+            rescan.Click += (s, e) => BeginScan(isRescan: true);
             var add = ControlStyles.BuildButton(AppStrings.T("navis.levelModels.s1.addLevel"),
                                                 ControlStyles.ButtonVariant.Primary);
             add.Margin = new Thickness(8, 0, 0, 0);
@@ -253,7 +546,8 @@ namespace LemoineNavisworks.LevelModels
         {
             var row = new Grid { Margin = new Thickness(0, 0, 0, 6) };
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(18) });                    // caret
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(124) });                   // name
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });                       // reorder
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(114) });                   // name
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });  // models
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });                       // remove
 
@@ -279,6 +573,19 @@ namespace LemoineNavisworks.LevelModels
             Grid.SetColumn(caretHit, 0);
             row.Children.Add(caretHit);
 
+            // Reorder — explicit up/down rather than drag. The rows carry a text box, a dropdown
+            // and a delete button, so a drag would fight every one of them for the same gesture.
+            int idx = _levels.IndexOf(lv);
+            var moves = new StackPanel { Orientation = Orientation.Vertical, Margin = new Thickness(4, 0, 0, 0) };
+            var up = MoveButton("▲", AppStrings.T("navis.levelModels.s1.moveUp"), idx > 0,
+                                () => MoveLevel(lv, -1));
+            var down = MoveButton("▼", AppStrings.T("navis.levelModels.s1.moveDown"), idx < _levels.Count - 1,
+                                () => MoveLevel(lv, +1));
+            moves.Children.Add(up);
+            moves.Children.Add(down);
+            Grid.SetColumn(moves, 1);
+            row.Children.Add(moves);
+
             var name = new TextBox { Text = lv.Name, Margin = new Thickness(8, 0, 0, 0) };
             name.SetResourceReference(Control.BackgroundProperty, "LemoineSelectBg");
             name.SetResourceReference(Control.ForegroundProperty, "LemoineText");
@@ -287,8 +594,8 @@ namespace LemoineNavisworks.LevelModels
             name.SetResourceReference(Control.FontSizeProperty,   "LemoineFS_MD");
             name.SetResourceReference(Control.PaddingProperty,    "LemoineTh_InputPad");
             name.SetResourceReference(Control.MinHeightProperty,  "LemoineH_Input");
-            name.TextChanged += (s, e) => { lv.Name = name.Text ?? ""; RefreshWarnings(); Changed(); };
-            Grid.SetColumn(name, 1);
+            name.TextChanged += (s, e) => { lv.Name = name.Text ?? ""; TouchLevel(lv); RefreshWarnings(); Changed(); };
+            Grid.SetColumn(name, 2);
             row.Children.Add(name);
 
             var picker = new MultiSelectDropdown
@@ -300,8 +607,8 @@ namespace LemoineNavisworks.LevelModels
                 Placeholder   = AppStrings.T("navis.levelModels.s1.pickModels"),
                 AccessibleName = AppStrings.T("navis.levelModels.s1.pickerAccessible", lv.Name),
             };
-            picker.SelectionChanged += _ => { RefreshWarnings(); Changed(); };
-            Grid.SetColumn(picker, 2);
+            picker.SelectionChanged += _ => { TouchLevel(lv); RefreshWarnings(); Changed(); };
+            Grid.SetColumn(picker, 3);
             row.Children.Add(picker);
 
             var del = ControlStyles.BuildSmallButton(char.ConvertFromUtf32(0xE74D),
@@ -311,11 +618,12 @@ namespace LemoineNavisworks.LevelModels
             del.Click += (s, e) =>
             {
                 _levels.Remove(lv);
+                SaveSetup();
                 RebuildLevelRows();
                 RefreshWarnings();
                 Changed();
             };
-            Grid.SetColumn(del, 3);
+            Grid.SetColumn(del, 4);
             row.Children.Add(del);
 
             return row;
@@ -339,27 +647,14 @@ namespace LemoineNavisworks.LevelModels
             var zrow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0) };
             zrow.Children.Add(BandCaption(AppStrings.T("navis.levelModels.s1.bottom")));
             var bottom = BandStepper(lv.Bottom);
-            bottom.ValueChanged += (s, v) => { lv.Bottom = v; RefreshWarnings(); Changed(); };
+            bottom.ValueChanged += (s, v) => { lv.Bottom = v; TouchLevel(lv); RefreshWarnings(); Changed(); };
             zrow.Children.Add(bottom);
             zrow.Children.Add(BandCaption(AppStrings.T("navis.levelModels.s1.top")));
             var top = BandStepper(lv.Top);
-            top.ValueChanged += (s, v) => { lv.Top = v; RefreshWarnings(); Changed(); };
+            top.ValueChanged += (s, v) => { lv.Top = v; TouchLevel(lv); RefreshWarnings(); Changed(); };
             zrow.Children.Add(top);
-            if (!string.IsNullOrEmpty(_unit)) zrow.Children.Add(BandCaption(_unit));
+            zrow.Children.Add(BandCaption(_unit));   // always feet, whatever the model is authored in
             stack.Children.Add(zrow);
-
-            var trim = new CheckBox
-            {
-                IsChecked = lv.Trim,
-                Content   = AppStrings.T("navis.levelModels.s1.trim"),
-                Margin    = new Thickness(0, 9, 0, 0),
-            };
-            trim.SetResourceReference(Control.ForegroundProperty, "LemoineText");
-            trim.SetResourceReference(Control.FontFamilyProperty, "LemoineUiFont");
-            trim.SetResourceReference(Control.FontSizeProperty,   "LemoineFS_MD");
-            trim.Checked   += (s, e) => { lv.Trim = true;  RefreshWarnings(); Changed(); };
-            trim.Unchecked += (s, e) => { lv.Trim = false; RefreshWarnings(); Changed(); };
-            stack.Children.Add(trim);
 
             var note = Sub(AppStrings.T("navis.levelModels.s1.trimNote"));
             note.Margin    = new Thickness(0, 6, 0, 0);
@@ -381,30 +676,46 @@ namespace LemoineNavisworks.LevelModels
             VerticalAlignment = VerticalAlignment.Center,
         };
 
-        private void AddLevel()
+        /// <summary>Moves a level one place up or down. Reordering IS an edit — it is the user
+        /// arranging the list — so it marks the row and persists, which also stops the next
+        /// rescan from re-sorting the list back into elevation order.</summary>
+        private void MoveLevel(LevelDef lv, int delta)
         {
-            _levels.Add(new LevelDef { Name = AppStrings.T("navis.levelModels.s1.newLevelName", _levels.Count + 1) });
+            int from = _levels.IndexOf(lv);
+            int to   = from + delta;
+            if (from < 0 || to < 0 || to >= _levels.Count) return;
+
+            _levels.RemoveAt(from);
+            _levels.Insert(to, lv);
+            lv.UserEdited = true;
+            SaveSetup();
             RebuildLevelRows();
-            RefreshWarnings();
             Changed();
         }
 
-        // Runs on the window's own thread (a button click), so the document reads have to hop to
-        // the main thread. Synchronous because the user is waiting on the result, and bounded by
-        // NavisMainThread's timeout so a wedged main thread cannot hang the window.
-        private void Rescan()
+        private Button MoveButton(string glyph, string tip, bool enabled, Action onClick)
         {
-            bool ok = NavisMainThread.Invoke(() =>
-            {
-                var doc = NavisApp.ActiveDocument;
-                if (doc == null || doc.IsClear) return false;
-                _models = NavisLevelModels.ListModels(doc);
-                SeedLevelsFromDocument(doc);
-                return true;
-            }, fallback: false, timeoutSeconds: 120);   // a full federation scan is not quick
+            var b = ControlStyles.BuildSmallButton(glyph);
+            b.ToolTip   = tip;
+            b.IsEnabled = enabled;
+            b.MinWidth  = 22;
+            b.Padding   = new Thickness(0);
+            b.Margin    = new Thickness(0, 0, 0, 1);
+            b.Click    += (s, e) => onClick();
+            return b;
+        }
 
-            if (!ok) return;
-            _rebuild?.Invoke("S1");   // repopulate the whole step, including the discovery note
+        private void AddLevel()
+        {
+            var lv = new LevelDef
+            {
+                Name       = AppStrings.T("navis.levelModels.s1.newLevelName", _levels.Count + 1),
+                UserEdited = true,   // hand-added: a rescan must never remove or rewrite it
+            };
+            _levels.Add(lv);
+            SaveSetup();
+            RebuildLevelRows();
+            RefreshWarnings();
             Changed();
         }
 
@@ -422,7 +733,7 @@ namespace LemoineNavisworks.LevelModels
             foreach (var m in _models.Where(m => !assigned.Contains(m.Key)))
                 list.Add(AppStrings.T("navis.levelModels.warn.modelUnassigned", m.Key));
 
-            foreach (var lv in _levels.Where(l => l.Trim && !l.HasBand))
+            foreach (var lv in _levels.Where(l => !l.HasBand))
                 list.Add(AppStrings.T("navis.levelModels.warn.trimNoBand", Display(lv)));
 
             // Two levels writing the same filename would silently overwrite each other.
@@ -511,7 +822,7 @@ namespace LemoineNavisworks.LevelModels
 
             // Only meaningful when something actually trims — hidden otherwise rather than shown
             // disabled, so the step never offers a control that cannot affect the run.
-            if (_levels.Any(l => l.Trim))
+            if (_levels.Any(l => l.HasBand))
             {
                 var straddle = new SingleSelect
                 {
@@ -577,7 +888,7 @@ namespace LemoineNavisworks.LevelModels
 
             foreach (var lv in exportable)
             {
-                string band = lv.Trim && lv.HasBand
+                string band = lv.HasBand
                     ? AppStrings.T("navis.levelModels.s3.withBand", Fmt(lv.Bottom), Fmt(lv.Top))
                     : "";
                 panel.Children.Add(Sub($"• {ResolveFileName(lv.Name)}  —  "
@@ -592,6 +903,7 @@ namespace LemoineNavisworks.LevelModels
 
         public bool IsValid(string stepId) => stepId switch
         {
+            "S0" => _scan == ScanState.Done || _scan == ScanState.Failed,
             "S1" => _hasDoc && Exportable().Any(),
             "S2" => !string.IsNullOrWhiteSpace(_outFolder) && !string.IsNullOrWhiteSpace(_pattern),
             _    => true,
@@ -602,6 +914,14 @@ namespace LemoineNavisworks.LevelModels
             int levels = Exportable().Count();
             switch (stepId)
             {
+                case "S0":
+                    return _scan switch
+                    {
+                        ScanState.Running => AppStrings.T("navis.levelModels.summary.s0Running"),
+                        ScanState.Done    => AppStrings.T("navis.levelModels.summary.s0Done", _levels.Count, _models.Count),
+                        ScanState.Failed  => AppStrings.T("navis.levelModels.summary.s0Failed"),
+                        _                 => AppStrings.T("navis.levelModels.summary.s0Idle"),
+                    };
                 case "S1":
                     int assigned = _levels.SelectMany(l => l.Models)
                                           .Distinct(StringComparer.OrdinalIgnoreCase).Count();
@@ -686,7 +1006,7 @@ namespace LemoineNavisworks.LevelModels
             // Everything the run mutates, captured so the model is restored exactly as found.
             var roots  = NavisLevelModels.RootItems(doc);
             var byKey  = _models.ToDictionary(m => m.Key, m => m.Index, StringComparer.OrdinalIgnoreCase);
-            bool anyTrim = targets.Any(l => l.Trim && l.HasBand);
+            bool anyTrim = targets.Any(l => l.HasBand);
 
             List<ItemZ> items = new List<ItemZ>();
             if (anyTrim)
@@ -716,6 +1036,14 @@ namespace LemoineNavisworks.LevelModels
             var touched   = new List<NavisItem>(roots);
             touched.AddRange(allItems);
             var wasHidden = NavisLevelModels.CurrentlyHidden(touched);
+
+            // Each exported NWD must contain ONLY the viewpoint this run makes for that level.
+            // The document's existing viewpoints are taken out for the duration and put back in
+            // the finally below — nothing here saves the document, so a failure costs the
+            // session's viewpoint list, never the file's.
+            var heldViewpoints = NavisLevelModels.TakeViewpoints(doc);
+            if (heldViewpoints != null)
+                pushLog(AppStrings.T("navis.levelModels.log.viewpointsHeld", heldViewpoints.Count), "info");
 
             pushLog(AppStrings.T("navis.levelModels.log.start", targets.Count, folder), "info");
             if (_viewpoints)
@@ -761,6 +1089,7 @@ namespace LemoineNavisworks.LevelModels
             finally
             {
                 RestoreVisibility(doc, touched, wasHidden, pushLog);
+                NavisLevelModels.RestoreViewpoints(doc, heldViewpoints);
                 if (_clip) NavisLevelModels.ClearClip(doc);
                 items.Clear();
                 allItems.Clear();
@@ -781,7 +1110,7 @@ namespace LemoineNavisworks.LevelModels
             {
                 Level   = Display(lv),
                 Models  = lv.Models.Count,
-                Trimmed = lv.Trim && lv.HasBand,
+                Trimmed = lv.HasBand,
                 File    = ResolveFileName(lv.Name),
             };
 
@@ -799,6 +1128,9 @@ namespace LemoineNavisworks.LevelModels
                 if (allItems.Count > 0) NavisLevelModels.SetHidden(doc, allItems, false);
                 NavisLevelModels.SetHidden(doc, hide, true);
 
+                // Drop the previous level's viewpoint before adding this one, or level 2's NWD
+                // would ship carrying level 1's as well.
+                NavisLevelModels.ClearViewpoints(doc);
                 if (_viewpoints)
                     outcome.Clipped = NavisLevelModels.SaveViewpoint(doc, Display(lv), lv, _clip, pushLog);
 

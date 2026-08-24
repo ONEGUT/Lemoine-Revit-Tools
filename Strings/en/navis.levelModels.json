@@ -12,6 +12,7 @@
   "runLabel": "Export Level NWDs →",
 
   "steps": {
+    "S0": "Scanning",
     "S1": "Levels & models",
     "S2": "Output",
     "S3": "Run"
@@ -19,14 +20,25 @@
 
   "unnamedLevel": "(unnamed level)",
 
+  // s0 — the scan step. The window opens first and this runs after, so the user
+  // sees the tool immediately rather than a frozen Navisworks.
+  "s0": {
+    "idle":       "Preparing\u2026",
+    "running":    "Reading levels and models from the federation\u2026",
+    "explain":    "The level list is read from one model's own structure \u2014 no element scan \u2014 and models are matched to levels by file name. Both are editable on the next step.",
+    "scanAgain":  "Scan again",
+    "done":       "Found {0} level(s) in {1}. {2} of {3} models matched by name.",
+    "failed":     "Scan failed: {0}",
+    "noDocument": "No model open. Open your federated NWF/NWD and reopen this tool.",
+    "noModels":   "This document has no appended models, so there is nothing to scan.",
+    "noLevels":   "{0} has no level groups \u2014 add levels by hand on the next step, or pick a different model.",
+    "noLevelsButChildren": "{0} has no level groups. What it does contain: {1}. Pick a different model, or add levels by hand.",
+    "restored":   "Restored your saved setup \u2014 {0} level(s).",
+    "restoredDropped": "Restored your saved setup \u2014 {0} level(s); {1} assignment(s) dropped for models no longer in this federation."
+  },
+
   "s1": {
     "intro":            "Each level exports one NWD holding only the models you assign to it — everything else is hidden before the export. Open a row to trim its models to an elevation band.",
-    "discovered":       "Found {0} level(s) in the model. Names and elevations are editable.",
-    "discoveredNone":   "No levels found after scanning {0} item(s) — add them manually below.",
-    "propertiesSeen":   "The models do carry these properties: {0}. If one of them holds the level, say so and it can be matched.",
-    "matchedByName":    "Matched on item names rather than a Level property.",
-    "scanCapped":       "Scan stopped at {0} items; rescan or add remaining levels by hand.",
-    "probeFailures":    "{0} item(s) could not be measured; see diagnostics.log.",
     "noDocument":       "No model open. Open your federated NWF/NWD and reopen this tool.",
     "noModels":         "This document has no appended models, so there is nothing to assign.",
     "noLevels":         "No levels yet — use “+ Add level” to create one.",
@@ -35,13 +47,17 @@
     "pickModels":       "Select models…",
     "pickerAccessible": "Models assigned to {0}",                 // {0} = level name
     "removeLevel":      "Remove this level",
+    "sourceModel":      "Read levels from",
+    "sourceModelHint":  "The model whose structure supplies the level list. Defaults to the architectural file. Changing it rescans.",
     "rescan":           "Rescan levels",
+    "rescanTip":        "Re-reads levels and re-matches models. Levels you have edited are left untouched.",
+    "moveUp":           "Move this level up",
+    "moveDown":         "Move this level down",
     "addLevel":         "+ Add level",
     "newLevelName":     "Level {0}",                              // {0} = next row number
     "bandLabel":        "Elevation band",
     "bottom":           "Bottom",
     "top":              "Top",
-    "trim":             "Trim assigned models to this band",
     "trimNote":         "Hides whole elements outside the band. Navisworks cannot cut a solid — a one-piece full-height riser is kept or dropped, never halved."
   },
 
@@ -84,6 +100,10 @@
   },
 
   "summary": {
+    "s0Idle":    "Not started",
+    "s0Running": "Scanning\u2026",
+    "s0Done":    "{0} level(s) \u00b7 {1} model(s)",
+    "s0Failed":  "Scan failed",
     "s1":     "{0} level(s) · {1} of {2} models assigned",
     "s2":     "{0} level(s) → {1}",
     "s2None": "No output folder",
@@ -102,6 +122,7 @@
     "scanFailed":     "Could not read geometry extents: {0}",
     "probeFailures":  "{0} item(s) could not be measured and are treated as outside every band — see diagnostics.log.",
     "start":          "Exporting {0} level(s) to {1}",
+    "viewpointsHeld": "Holding {0} existing viewpoint(s) aside so each NWD carries only its own; they are restored when the run ends.",
     "viewpointHint":  "Viewpoints record the per-level hide state only if Options ▸ Interface ▸ Viewpoint Defaults ▸ “Save Hide/Required Attributes” is enabled.",
     "viewpointFailed":"Could not save viewpoint “{0}” — the export itself is unaffected.",
     "clipBadBand":    "This level's band has no height (top must be above bottom) — the viewpoint saves without a clip.",
