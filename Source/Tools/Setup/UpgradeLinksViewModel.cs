@@ -161,7 +161,7 @@ namespace LemoineTools.Tools.Setup
             {
                 var table = new StackPanel();
                 table.Children.Add(BuildHeaderRow());
-                foreach (var row in _rows) table.Children.Add(BuildFileRow(row));
+                for (int i = 0; i < _rows.Count; i++) table.Children.Add(BuildFileRow(_rows[i], first: i == 0));
 
                 var border = new Border { BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(6) };
                 border.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
@@ -236,107 +236,155 @@ namespace LemoineTools.Tools.Setup
             }
         }
 
-        private Grid BuildHeaderRow()
+        // Width of the placement column, shared by the header and every row's line 3 so the
+        // "Placement" caption sits directly above the pickers.
+        private const double PlacementColWidth = 150;
+
+        private FrameworkElement BuildHeaderRow()
         {
-            var g = FileRowGrid();
-            g.SetResourceReference(Grid.BackgroundProperty, "LemoineRaised");
-            var file = Dim(AppStrings.T("upgradeLinks.labels.colFile"));       Grid.SetColumn(file, 1);
-            var ver  = Dim(AppStrings.T("upgradeLinks.labels.colVersion"));    Grid.SetColumn(ver, 2);
-            var plc  = Dim(AppStrings.T("upgradeLinks.labels.colPlacement"));  Grid.SetColumn(plc, 3);
-            g.Children.Add(file); g.Children.Add(ver); g.Children.Add(plc);
-            return g;
+            var g = new Grid();
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(PlacementColWidth) });
+
+            var file = Dim(AppStrings.T("upgradeLinks.labels.colFile"));      file.Margin = new Thickness(0);
+            var plc  = Dim(AppStrings.T("upgradeLinks.labels.colPlacement")); plc.Margin  = new Thickness(0);
+            Grid.SetColumn(file, 0); Grid.SetColumn(plc, 1);
+            g.Children.Add(file); g.Children.Add(plc);
+
+            // A Border with Padding (not a Grid with Margin) so the raised background actually
+            // spans the full table width — a margin insets the fill and leaves bare strips at
+            // the left/right edges of the surrounding border.
+            var b = new Border
+            {
+                Padding      = new Thickness(12, 6, 12, 6),
+                CornerRadius = new CornerRadius(6, 6, 0, 0),
+                Child        = g,
+            };
+            b.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");
+            return b;
         }
 
-        private Grid BuildFileRow(UpgradeFileRow row)
+        /// <summary>
+        /// One queued file as a three-line card: the original name (with its version badge and the
+        /// remove button), the source folder, then the editable "save as" box beside the placement
+        /// picker. The window is only 540 px wide, so the old single-row five-column grid left the
+        /// name box ~120 px — too narrow to read, let alone type in — and never showed the original
+        /// name at all.
+        /// </summary>
+        private FrameworkElement BuildFileRow(UpgradeFileRow row, bool first)
         {
-            var g = FileRowGrid();
+            var stack = new StackPanel();
 
-            // Column 1 — editable "save as" name + source path
-            var names = new StackPanel();
-            Grid.SetColumn(names, 1);
+            // ── Line 1 — original file name · version badge · remove ──────────────
+            var l1 = new Grid();
+            l1.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            l1.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            l1.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-            var nameGrid = new Grid();
-            nameGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            nameGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var orig = new TextBlock
+            {
+                Text              = System.IO.Path.GetFileName(row.Path),
+                TextTrimming      = TextTrimming.CharacterEllipsis,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin            = new Thickness(0, 0, 8, 0),
+                ToolTip           = row.Path,   // name and folder both ellipsize — the tooltip is the full path
+            };
+            orig.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            orig.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            orig.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+            Grid.SetColumn(orig, 0);
+            l1.Children.Add(orig);
+
+            var badge = VersionBadge(row);
+            badge.VerticalAlignment = VerticalAlignment.Center;
+            badge.Margin = new Thickness(0, 0, 8, 0);
+            Grid.SetColumn(badge, 1);
+            l1.Children.Add(badge);
+
+            var rm = ControlStyles.BuildSmallButton(char.ConvertFromUtf32(0xE74D), ControlStyles.ButtonVariant.Danger); // Delete (trash)
+            rm.FontFamily = new FontFamily("Segoe MDL2 Assets");   // glyph font — LemoineUiFont can't render MDL2 codepoints
+            rm.VerticalAlignment = VerticalAlignment.Center;
+            rm.Click += (s, e) => { _rows.Remove(row); RebuildFilesTable(); Changed(); };
+            Grid.SetColumn(rm, 2);
+            l1.Children.Add(rm);
+
+            stack.Children.Add(l1);
+
+            // ── Line 2 — source folder ────────────────────────────────────────────
+            var path = new TextBlock
+            {
+                Text         = row.Folder,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                Margin       = new Thickness(0, 3, 0, 0),
+                ToolTip      = row.Folder,
+            };
+            path.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            path.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            path.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+            stack.Children.Add(path);
+
+            // ── Line 3 — editable save-as name · .rvt · placement ─────────────────
+            var l3 = new Grid { Margin = new Thickness(0, 7, 0, 0) };
+            l3.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            l3.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            l3.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(PlacementColWidth) });
+
             var nameBox = BuildInlineNameBox(row);
             Grid.SetColumn(nameBox, 0);
-            var ext = new TextBlock { Text = ".rvt", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 0, 0) };
+            l3.Children.Add(nameBox);
+
+            var ext = new TextBlock { Text = ".rvt", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 8, 0) };
             ext.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             ext.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
             ext.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             Grid.SetColumn(ext, 1);
-            nameGrid.Children.Add(nameBox);
-            nameGrid.Children.Add(ext);
+            l3.Children.Add(ext);
 
-            var path = new TextBlock { Text = row.Folder, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 4, 0, 0) };
-            path.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            path.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            path.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-            names.Children.Add(nameGrid); names.Children.Add(path);
-            g.Children.Add(names);
-
-            // Column 2 — version badge. Top-aligned (not Center) so it lines up with the
-            // first line of the two-line name+path cell rather than the cell's full height.
-            var badge = VersionBadge(row);
-            badge.VerticalAlignment = VerticalAlignment.Top;
-            Grid.SetColumn(badge, 2);
-            g.Children.Add(badge);
-
-            // Column 3 — placement picker (same top-alignment as the badge above).
-            var pick = new SingleSelect { IsEnabled = Usable(row), VerticalAlignment = VerticalAlignment.Top };
+            var pick = new SingleSelect { IsEnabled = Usable(row), VerticalAlignment = VerticalAlignment.Center };
             pick.Items = PlacementLabels();
             pick.SelectedItem = PlacementLabel(row.Placement);
             pick.SelectionChanged += lblSel =>
             {
                 if (TryLabelToPlacement(lblSel, out var p)) { row.Placement = p; Changed(); }
             };
-            Grid.SetColumn(pick, 3);
-            g.Children.Add(pick);
+            Grid.SetColumn(pick, 2);
+            l3.Children.Add(pick);
 
-            // Column 4 — remove
-            var rm = ControlStyles.BuildSmallButton(char.ConvertFromUtf32(0xE74D), ControlStyles.ButtonVariant.Danger); // Delete (trash)
-            rm.FontFamily = new FontFamily("Segoe MDL2 Assets");   // glyph font — LemoineUiFont can't render MDL2 codepoints
-            rm.VerticalAlignment = VerticalAlignment.Center;
-            rm.Click += (s, e) => { _rows.Remove(row); RebuildFilesTable(); Changed(); };
-            Grid.SetColumn(rm, 4);
-            g.Children.Add(rm);
+            stack.Children.Add(l3);
 
-            return g;
+            // Rows after the first carry a separator on top — the cards are tall enough that
+            // without one the three lines of two files read as one block.
+            var card = new Border
+            {
+                Padding         = new Thickness(12, 9, 12, 9),
+                BorderThickness = new Thickness(0, first ? 0 : 1, 0, 0),
+                Child           = stack,
+            };
+            card.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            return card;
         }
 
         private WpfTextBox BuildInlineNameBox(UpgradeFileRow row)
         {
             var tb = new WpfTextBox
             {
-                Text = row.SaveAsName,
-                IsEnabled = Usable(row),
+                Text                     = row.SaveAsName,
+                IsEnabled                = Usable(row),
                 VerticalContentAlignment = VerticalAlignment.Center,
-                Padding = new Thickness(4, 2, 4, 2),
+                Padding                  = new Thickness(8, 4, 8, 4),
             };
             tb.SetResourceReference(WpfTextBox.BackgroundProperty,     "LemoineSelectBg");
             tb.SetResourceReference(WpfTextBox.ForegroundProperty,     "LemoineText");
             tb.SetResourceReference(WpfTextBox.BorderBrushProperty,    "LemoineBorderMid");
             tb.SetResourceReference(WpfTextBox.CaretBrushProperty,     "LemoineText");
             tb.SetResourceReference(WpfTextBox.FontFamilyProperty,     "LemoineMonoFont");
-            tb.SetResourceReference(WpfTextBox.FontSizeProperty,       "LemoineFS_SM");
+            // MD (not SM) and a full input height — this is the one field the user actually types
+            // a name into, so it gets the same weight as any other text input in the app.
+            tb.SetResourceReference(WpfTextBox.FontSizeProperty,       "LemoineFS_MD");
+            tb.SetResourceReference(WpfTextBox.MinHeightProperty,      "LemoineH_Input");
             tb.SetResourceReference(WpfTextBox.SelectionBrushProperty, "LemoineAccent");
             tb.TextChanged += (s, e) => { row.SaveAsName = tb.Text; Changed(); };
             return tb;
-        }
-
-        private static Grid FileRowGrid()
-        {
-            var g = new Grid { Margin = new Thickness(12, 9, 12, 9) };
-            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(4) });                     // 0 left inset
-            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });  // 1 name + path
-            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(118) });                   // 2 version badge
-            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(168) });                   // 3 placement picker
-            // Fixed (not Auto) so the header row — which never populates column 4 with a
-            // button — reserves the same width as a data row's remove button. An Auto
-            // column collapses to 0 in the header, which pushes the star column 1 wider
-            // there and throws Version/Placement out of alignment with the rows below.
-            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(40) });                    // 4 remove
-            return g;
         }
 
         private FrameworkElement VersionBadge(UpgradeFileRow row)
@@ -451,54 +499,90 @@ namespace LemoineTools.Tools.Setup
             return outer;
         }
 
-        // Top level: Local vs Cloud (Cloud hidden unless the host is itself a cloud model).
-        // Local reveals two sub-choices: Selected folder / Current location.
+        // The accent highlight marks the destination that is actually selected — which is always
+        // one of the two Local sub-choices, or Cloud. "Local" itself is never highlighted: it is a
+        // grouping heading, not a destination, and when the host is not a cloud model it is the only
+        // top-level card on screen, so highlighting it says nothing at all. In that case it isn't
+        // rendered — the two real choices are promoted to top level.
         private void RebuildDestCards()
         {
             if (_destContainer == null) return;
             _destContainer.Children.Clear();
 
-            bool localSelected = _dest != UpgradeDestination.Cloud;
-            _destContainer.Children.Add(BuildCard(
-                selected: localSelected, sub: false,
-                title: AppStrings.T("upgradeLinks.labels.optLocalTitle"),
-                desc:  AppStrings.T("upgradeLinks.labels.optLocalDesc"),
-                onClick: () => { if (_dest == UpgradeDestination.Cloud) { _dest = UpgradeDestination.SelectedFolder; RebuildDestCards(); Changed(); } },
-                extra: localSelected ? BuildLocalSubCards() : null));
-
-            if (_hostIsCloud)
+            if (!_hostIsCloud)
             {
-                bool cloudSelected = _dest == UpgradeDestination.Cloud;
-                _destContainer.Children.Add(BuildCard(
-                    selected: cloudSelected, sub: false,
-                    title: AppStrings.T("upgradeLinks.labels.optCloudTitle"),
-                    desc:  AppStrings.T("upgradeLinks.labels.optCloudDesc"),
-                    onClick: () => { if (_dest != UpgradeDestination.Cloud) { _dest = UpgradeDestination.Cloud; RebuildDestCards(); Changed(); } },
-                    extra: cloudSelected ? Dim(AppStrings.T("upgradeLinks.labels.optCloudNote")) : null));
+                _destContainer.Children.Add(BuildSelectedFolderCard(sub: false));
+                _destContainer.Children.Add(BuildCurrentLocationCard(sub: false));
+                return;
             }
+
+            _destContainer.Children.Add(BuildLocalGroup());
+
+            bool cloudSelected = _dest == UpgradeDestination.Cloud;
+            _destContainer.Children.Add(BuildCard(
+                selected: cloudSelected, sub: false,
+                title: AppStrings.T("upgradeLinks.labels.optCloudTitle"),
+                desc:  AppStrings.T("upgradeLinks.labels.optCloudDesc"),
+                onClick: () => { if (_dest != UpgradeDestination.Cloud) { _dest = UpgradeDestination.Cloud; RebuildDestCards(); Changed(); } },
+                extra: cloudSelected ? Dim(AppStrings.T("upgradeLinks.labels.optCloudNote")) : null));
         }
 
-        private FrameworkElement BuildLocalSubCards()
+        // Plain, never-highlighted container for the two Local sub-choices — no accent, no cursor
+        // and no click handler, because clicking a heading has nothing to select.
+        private FrameworkElement BuildLocalGroup()
         {
-            var panel = new StackPanel { Margin = new Thickness(0, 8, 0, 0) };
+            var content = new StackPanel();
 
-            bool selFolder = _dest == UpgradeDestination.SelectedFolder;
-            panel.Children.Add(BuildCard(
-                selected: selFolder, sub: true,
+            var titleTb = new TextBlock { Text = AppStrings.T("upgradeLinks.labels.optLocalTitle"), FontWeight = FontWeights.SemiBold };
+            titleTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
+            titleTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            titleTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            content.Children.Add(titleTb);
+            content.Children.Add(Dim(AppStrings.T("upgradeLinks.labels.optLocalDesc")));
+
+            // Both sub-cards are always listed, even while Cloud is selected — they are how the
+            // user gets back to a Local destination.
+            var subs = new StackPanel { Margin = new Thickness(0, 8, 0, 0) };
+            subs.Children.Add(BuildSelectedFolderCard(sub: true));
+            subs.Children.Add(BuildCurrentLocationCard(sub: true));
+            content.Children.Add(subs);
+
+            var group = new Border
+            {
+                BorderThickness = new Thickness(1),
+                CornerRadius    = new CornerRadius(6),
+                Padding         = new Thickness(14, 12, 14, 12),
+                Margin          = new Thickness(0, 0, 0, 10),
+                Child           = content,
+            };
+            group.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            group.Background = Brushes.Transparent;   // direct assignment — "Transparent" is not a resource key
+            return group;
+        }
+
+        private FrameworkElement BuildSelectedFolderCard(bool sub)
+        {
+            bool selected = _dest == UpgradeDestination.SelectedFolder;
+            return BuildCard(
+                selected: selected, sub: sub,
                 title: AppStrings.T("upgradeLinks.labels.optSelectedFolderTitle"),
                 desc:  AppStrings.T("upgradeLinks.labels.optSelectedFolderDesc"),
-                onClick: () => { _dest = UpgradeDestination.SelectedFolder; RebuildDestCards(); Changed(); },
-                extra: selFolder ? BuildSelectedFolderExtra() : null));
+                // Guarded: without it, a click that lands anywhere inside the live FolderBrowser
+                // bubbles up to the card and rebuilds the whole step, tearing the picker (and any
+                // half-typed path) out from under the user.
+                onClick: () => { if (_dest != UpgradeDestination.SelectedFolder) { _dest = UpgradeDestination.SelectedFolder; RebuildDestCards(); Changed(); } },
+                extra: selected ? BuildSelectedFolderExtra() : null);
+        }
 
-            bool curLoc = _dest == UpgradeDestination.CurrentLocation;
-            panel.Children.Add(BuildCard(
-                selected: curLoc, sub: true,
+        private FrameworkElement BuildCurrentLocationCard(bool sub)
+        {
+            bool selected = _dest == UpgradeDestination.CurrentLocation;
+            return BuildCard(
+                selected: selected, sub: sub,
                 title: AppStrings.T("upgradeLinks.labels.optCurrentLocationTitle"),
                 desc:  AppStrings.T("upgradeLinks.labels.optCurrentLocationDesc"),
-                onClick: () => { _dest = UpgradeDestination.CurrentLocation; RebuildDestCards(); Changed(); },
-                extra: curLoc ? BuildCurrentLocationExtra() : null));
-
-            return panel;
+                onClick: () => { if (_dest != UpgradeDestination.CurrentLocation) { _dest = UpgradeDestination.CurrentLocation; RebuildDestCards(); Changed(); } },
+                extra: selected ? BuildCurrentLocationExtra() : null);
         }
 
         private FrameworkElement BuildCurrentLocationExtra()
